@@ -10,7 +10,8 @@ const config = {
 			pages: 'build',
 			assets: 'build',
 			fallback: 'index.html',
-			precompress: false
+			precompress: false,
+			strict: false
 		}),
 		alias: {
 			$lib: './src/lib'
