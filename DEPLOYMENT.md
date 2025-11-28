@@ -30,13 +30,17 @@ npm uninstall vite && npm install --legacy-peer-deps vite@5.4.11
 # 2. Build
 npm run build
 
-# 3. Start with PM2
+# 3. Initialize database
+npm run migrate  # Create database tables
+npm run seed     # Add currencies and sample accounts
+
+# 4. Start with PM2
 mkdir -p logs
 pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup  # Follow instructions
 
-# 4. Check status
+# 5. Check status
 pm2 status
 ```
 
@@ -48,7 +52,7 @@ pm2 status
 ```bash
 cd ~/accounting
 chmod +x deploy.sh  # First time only
-./deploy.sh
+./deploy.sh         # Handles git pull, npm install, build, migrations, and PM2 restart
 ```
 
 **Manual**
@@ -57,6 +61,7 @@ cd ~/accounting
 git pull
 npm install --legacy-peer-deps
 npm run build
+npm run migrate     # Run any new migrations
 pm2 restart all
 ```
 
@@ -141,6 +146,16 @@ sudo netstat -tlnp | grep -E '3000|5173'
 sudo ufw status
 sudo ufw allow 5173/tcp
 sudo ufw allow 3000/tcp
+```
+
+**Database tables missing (backend crashes)**
+```bash
+# Check backend logs for "no such table" errors
+pm2 logs accounting-backend --lines 50
+
+# Run migrations to create tables
+npm run migrate
+pm2 restart accounting-backend
 ```
 
 **Database locked**

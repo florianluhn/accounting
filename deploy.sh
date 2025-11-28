@@ -42,13 +42,25 @@ echo "Step 3: Building application for production..."
 npm run build
 echo ""
 
-# Step 4: Create logs directory
-echo "Step 4: Creating logs directory..."
+# Step 4: Run database migrations
+echo "Step 4: Running database migrations..."
+if [ ! -f "data/accounting.db" ]; then
+    echo "Database not found. Running migrations and seed..."
+    npm run migrate
+    npm run seed
+else
+    echo "Database exists. Running migrations only..."
+    npm run migrate
+fi
+echo ""
+
+# Step 5: Create logs directory
+echo "Step 5: Creating logs directory..."
 mkdir -p logs
 echo ""
 
-# Step 5: Restart PM2 services
-echo "Step 5: Restarting PM2 services..."
+# Step 6: Restart PM2 services
+echo "Step 6: Restarting PM2 services..."
 if command -v pm2 &> /dev/null; then
     # Check if services are running
     if pm2 list | grep -q "accounting"; then
