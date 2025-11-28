@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom styles */
+@layer base {
+	body {
+		@apply min-h-screen bg-base-200;
+	}
+
+	/* Prevent zoom on input focus for iOS */
+	input,
+	select,
+	textarea {
+		font-size: 16px;
+	}
+}
+
+@layer components {
+	/* Print styles for reports */
+	@media print {
+		.no-print {
+			display: none !important;
+		}
+
+		.print-break-before {
+			break-before: page;
+		}
+
+		.print-break-after {
+			break-after: page;
+		}
+
+		body {
+			@apply bg-white text-black;
+		}
+
+		.card,
+		.table {
+			@apply shadow-none border border-gray-300;
+		}
+	}
+
+	/* Mobile touch targets */
+	.touch-target {
+		@apply min-h-[44px] min-w-[44px];
+	}
+
+	/* Loading skeleton */
+	.skeleton {
+		@apply animate-pulse bg-base-300 rounded;
+	}
+}
+
+/* PWA Install Button Hide when installed */
+.pwa-installed #install-button {
+	display: none;
+}

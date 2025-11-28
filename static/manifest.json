@@ -1,0 +1,12 @@
+{
+	"name": "Accounting App - Personal Finance",
+	"short_name": "Accounting",
+	"description": "Personal finance accounting with double-entry bookkeeping",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"orientation": "portrait",
+	"theme_color": "#1f2937",
+	"background_color": "#ffffff",
+	"categories": ["finance", "productivity"]
+}
