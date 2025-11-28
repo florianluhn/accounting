@@ -131,8 +131,12 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			const totalEquity = equity.reduce((sum, a) => sum + a.balance, 0);
 
 			// Calculate retained earnings (from Profit and Loss accounts)
-			const profitLoss = balances.filter((b) => ['Profit', 'Loss'].includes(b.glAccountType));
-			const retainedEarnings = profitLoss.reduce((sum, a) => sum + a.balance, 0);
+			// Retained Earnings = Revenue (Profit) - Expenses (Loss)
+			const revenue = balances.filter((b) => b.glAccountType === 'Profit');
+			const expenses = balances.filter((b) => b.glAccountType === 'Loss');
+			const totalRevenue = revenue.reduce((sum, a) => sum + a.balance, 0);
+			const totalExpenses = expenses.reduce((sum, a) => sum + a.balance, 0);
+			const retainedEarnings = totalRevenue - totalExpenses;
 
 			return {
 				asOfDate: endDate || new Date(),
@@ -200,27 +204,40 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			// Trial balance shows all account balances
 			const balances = await calculateBalances(undefined, endDate, currencyCode);
 
-			// Separate debits and credits
-			const debits = balances
-				.filter((b) => b.balance > 0)
-				.map((b) => ({ ...b, debit: b.balance, credit: 0 }));
+			// Separate debits and credits based on account type
+			// Debit normal balance: Assets, Cash, Accounts Receivable, Loss (Expenses)
+			// Credit normal balance: Liabilities (Accounts Payable), Equity, Profit (Revenue)
+			const accountsWithBalances = balances
+				.filter((b) => Math.abs(b.balance) > 0.01) // Only show accounts with non-zero balances
+				.map((b) => {
+					const isDebitAccount = ['Asset', 'Cash', 'Accounts Receivable', 'Loss'].includes(b.glAccountType);
 
-			const credits = balances
-				.filter((b) => b.balance < 0)
-				.map((b) => ({ ...b, debit: 0, credit: Math.abs(b.balance) }));
-
-			const allAccounts = [...debits, ...credits].sort((a, b) =>
-				a.accountNumber.localeCompare(b.accountNumber)
-			);
+					// For debit-normal accounts: positive balance = debit, negative = credit
+					// For credit-normal accounts: positive balance = credit, negative = debit
+					if (isDebitAccount) {
+						return {
+							...b,
+							debit: b.balance > 0 ? b.balance : 0,
+							credit: b.balance < 0 ? Math.abs(b.balance) : 0
+						};
+					} else {
+						return {
+							...b,
+							debit: b.balance < 0 ? Math.abs(b.balance) : 0,
+							credit: b.balance > 0 ? b.balance : 0
+						};
+					}
+				})
+				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber));
 
 			// Calculate totals
-			const totalDebits = debits.reduce((sum, a) => sum + a.debit, 0);
-			const totalCredits = credits.reduce((sum, a) => sum + a.credit, 0);
+			const totalDebits = accountsWithBalances.reduce((sum, a) => sum + a.debit, 0);
+			const totalCredits = accountsWithBalances.reduce((sum, a) => sum + a.credit, 0);
 
 			return {
 				asOfDate: endDate || new Date(),
 				currencyCode,
-				accounts: allAccounts,
+				accounts: accountsWithBalances,
 				totalDebits,
 				totalCredits,
 				balanced: Math.abs(totalDebits - totalCredits) < 0.01

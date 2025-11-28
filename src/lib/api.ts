@@ -1,5 +1,6 @@
-// API base URL - configurable via environment variable
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+// API base URL - uses relative path to leverage Vite proxy in development
+// In production, configure this via environment variable if needed
+const API_BASE_URL = '';
 
 // Generic fetch wrapper with error handling
 async function apiFetch<T>(

@@ -1,24 +1,23 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { currenciesAPI, type Currency } from '$lib/api';
 
-	let currencies: Currency[] = [];
-	let loading = true;
-	let error = '';
-	let showAddModal = false;
-	let editingCurrency: Currency | null = null;
+	let currencies = $state<Currency[]>([]);
+	let loading = $state(true);
+	let error = $state('');
+	let showAddModal = $state(false);
+	let editingCurrency = $state<Currency | null>(null);
 
 	// Form state
-	let formData = {
+	let formData = $state({
 		code: '',
 		name: '',
 		symbol: '',
 		exchangeRate: 1.0,
 		isDefault: false
-	};
+	});
 
-	onMount(async () => {
-		await loadCurrencies();
+	$effect(() => {
+		loadCurrencies();
 	});
 
 	async function loadCurrencies() {
@@ -117,7 +116,7 @@
 		<div class="card-body">
 			<div class="flex justify-between items-center mb-4">
 				<h2 class="card-title text-2xl">Currencies</h2>
-				<button class="btn btn-primary" on:click={openAddModal}>+ Add Currency</button>
+				<button class="btn btn-primary" onclick={openAddModal}>+ Add Currency</button>
 			</div>
 
 			{#if loading}
@@ -170,13 +169,13 @@
 										<div class="flex gap-2">
 											<button
 												class="btn btn-sm btn-ghost"
-												on:click={() => openEditModal(currency)}
+												onclick={() => openEditModal(currency)}
 											>
 												Edit
 											</button>
 											<button
 												class="btn btn-sm btn-ghost text-error"
-												on:click={() => handleDelete(currency.code)}
+												onclick={() => handleDelete(currency.code)}
 												disabled={currency.isDefault}
 											>
 												Delete
@@ -218,7 +217,7 @@
 				{editingCurrency ? 'Edit Currency' : 'Add New Currency'}
 			</h3>
 
-			<form on:submit|preventDefault={handleSubmit}>
+			<form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
 				<div class="form-control mb-4">
 					<label class="label">
 						<span class="label-text">Currency Code (3 letters)</span>
@@ -287,13 +286,13 @@
 				</div>
 
 				<div class="modal-action">
-					<button type="button" class="btn" on:click={closeModal}>Cancel</button>
+					<button type="button" class="btn" onclick={closeModal}>Cancel</button>
 					<button type="submit" class="btn btn-primary">
 						{editingCurrency ? 'Save Changes' : 'Add Currency'}
 					</button>
 				</div>
 			</form>
 		</div>
-		<div class="modal-backdrop" on:click={closeModal}></div>
+		<div class="modal-backdrop" onclick={closeModal}></div>
 	</div>
 {/if}

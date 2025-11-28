@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import {
 		glAccountsAPI,
 		subledgerAccountsAPI,
@@ -10,37 +9,37 @@
 		type AccountType
 	} from '$lib/api';
 
-	let activeTab: 'gl' | 'subledger' = 'gl';
-	let glLoading = true;
-	let subledgerLoading = true;
-	let currenciesLoading = true;
-	let error = '';
+	let activeTab = $state<'gl' | 'subledger'>('gl');
+	let glLoading = $state(true);
+	let subledgerLoading = $state(true);
+	let currenciesLoading = $state(true);
+	let error = $state('');
 
 	// GL Accounts
-	let glAccounts: GLAccount[] = [];
-	let showGLModal = false;
-	let editingGL: GLAccount | null = null;
-	let glFormData = {
+	let glAccounts = $state<GLAccount[]>([]);
+	let showGLModal = $state(false);
+	let editingGL = $state<GLAccount | null>(null);
+	let glFormData = $state({
 		accountNumber: '',
 		name: '',
 		type: 'Asset' as AccountType,
 		description: '',
 		isActive: true
-	};
+	});
 
 	// Subledger Accounts
-	let subledgerAccounts: SubledgerAccount[] = [];
-	let currencies: Currency[] = [];
-	let showSubledgerModal = false;
-	let editingSubledger: SubledgerAccount | null = null;
-	let subledgerFormData = {
+	let subledgerAccounts = $state<SubledgerAccount[]>([]);
+	let currencies = $state<Currency[]>([]);
+	let showSubledgerModal = $state(false);
+	let editingSubledger = $state<SubledgerAccount | null>(null);
+	let subledgerFormData = $state({
 		glAccountId: 0,
 		accountNumber: '',
 		name: '',
 		currencyCode: 'USD',
 		description: '',
 		isActive: true
-	};
+	});
 
 	const accountTypes: AccountType[] = [
 		'Asset',
@@ -53,8 +52,7 @@
 		'Opening Balance'
 	];
 
-	onMount(async () => {
-		// Load all data concurrently but manage loading states separately
+	$effect(() => {
 		loadGLAccounts();
 		loadSubledgerAccounts();
 		loadCurrencies();
@@ -66,6 +64,7 @@
 			error = '';
 			glAccounts = await glAccountsAPI.list();
 		} catch (e) {
+			console.error('Error loading GL accounts:', e);
 			error = e instanceof Error ? e.message : 'Failed to load GL accounts';
 		} finally {
 			glLoading = false;
@@ -253,7 +252,7 @@
 			role="tab"
 			class="tab"
 			class:tab-active={activeTab === 'gl'}
-			on:click={() => (activeTab = 'gl')}
+			onclick={() => (activeTab = 'gl')}
 		>
 			GL Accounts
 		</button>
@@ -261,7 +260,7 @@
 			role="tab"
 			class="tab"
 			class:tab-active={activeTab === 'subledger'}
-			on:click={() => (activeTab = 'subledger')}
+			onclick={() => (activeTab = 'subledger')}
 		>
 			Subledger Accounts
 		</button>
@@ -273,7 +272,7 @@
 			<div class="card-body">
 				<div class="flex justify-between items-center mb-4">
 					<h2 class="card-title">GL Accounts</h2>
-					<button class="btn btn-primary" on:click={openGLModal}>+ New GL Account</button>
+					<button class="btn btn-primary" onclick={openGLModal}>+ New GL Account</button>
 				</div>
 
 				{#if glLoading}
@@ -328,13 +327,13 @@
 											<div class="flex gap-2">
 												<button
 													class="btn btn-sm btn-ghost"
-													on:click={() => openEditGLModal(account)}
+													onclick={() => openEditGLModal(account)}
 												>
 													Edit
 												</button>
 												<button
 													class="btn btn-sm btn-ghost text-error"
-													on:click={() => handleGLDelete(account.id)}
+													onclick={() => handleGLDelete(account.id)}
 												>
 													Delete
 												</button>
@@ -358,7 +357,7 @@
 					<h2 class="card-title">Subledger Accounts</h2>
 					<button
 						class="btn btn-primary"
-						on:click={openSubledgerModal}
+						onclick={openSubledgerModal}
 						disabled={glAccounts.length === 0}
 					>
 						+ New Subledger Account
@@ -436,13 +435,13 @@
 											<div class="flex gap-2">
 												<button
 													class="btn btn-sm btn-ghost"
-													on:click={() => openEditSubledgerModal(account)}
+													onclick={() => openEditSubledgerModal(account)}
 												>
 													Edit
 												</button>
 												<button
 													class="btn btn-sm btn-ghost text-error"
-													on:click={() => handleSubledgerDelete(account.id)}
+													onclick={() => handleSubledgerDelete(account.id)}
 												>
 													Delete
 												</button>
@@ -467,7 +466,7 @@
 				{editingGL ? 'Edit GL Account' : 'Add New GL Account'}
 			</h3>
 
-			<form on:submit|preventDefault={handleGLSubmit}>
+			<form onsubmit={(e) => { e.preventDefault(); handleGLSubmit(); }}>
 				<div class="form-control mb-4">
 					<label class="label">
 						<span class="label-text">Account Number</span>
@@ -522,14 +521,14 @@
 				</div>
 
 				<div class="modal-action">
-					<button type="button" class="btn" on:click={closeGLModal}>Cancel</button>
+					<button type="button" class="btn" onclick={closeGLModal}>Cancel</button>
 					<button type="submit" class="btn btn-primary">
 						{editingGL ? 'Save Changes' : 'Add GL Account'}
 					</button>
 				</div>
 			</form>
 		</div>
-		<div class="modal-backdrop" on:click={closeGLModal}></div>
+		<div class="modal-backdrop" onclick={closeGLModal}></div>
 	</div>
 {/if}
 
@@ -541,7 +540,7 @@
 				{editingSubledger ? 'Edit Subledger Account' : 'Add New Subledger Account'}
 			</h3>
 
-			<form on:submit|preventDefault={handleSubledgerSubmit}>
+			<form onsubmit={(e) => { e.preventDefault(); handleSubledgerSubmit(); }}>
 				<div class="form-control mb-4">
 					<label class="label">
 						<span class="label-text">GL Account</span>
@@ -619,13 +618,13 @@
 				</div>
 
 				<div class="modal-action">
-					<button type="button" class="btn" on:click={closeSubledgerModal}>Cancel</button>
+					<button type="button" class="btn" onclick={closeSubledgerModal}>Cancel</button>
 					<button type="submit" class="btn btn-primary">
 						{editingSubledger ? 'Save Changes' : 'Add Subledger Account'}
 					</button>
 				</div>
 			</form>
 		</div>
-		<div class="modal-backdrop" on:click={closeSubledgerModal}></div>
+		<div class="modal-backdrop" onclick={closeSubledgerModal}></div>
 	</div>
 {/if}
