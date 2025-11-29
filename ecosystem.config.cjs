@@ -2,18 +2,12 @@ module.exports = {
   apps: [
     {
       name: 'accounting-backend',
-      script: './node_modules/.bin/tsx',
-      args: 'src/server/index.ts',
+      script: './start-backend.sh',
       cwd: process.cwd(),
       instances: 1,
       autorestart: true,
       watch: false,
       max_memory_restart: '500M',
-      env: {
-        NODE_ENV: 'production',
-        PORT: 3000,
-        HOST: '0.0.0.0'
-      },
       error_file: './logs/backend-error.log',
       out_file: './logs/backend-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
