@@ -111,8 +111,22 @@ sqlite.run(`
  * Save database to disk
  */
 export async function saveDatabase(): Promise<void> {
+	// Check what's in the database before export
+	const checkResult = sqlite.exec('SELECT COUNT(*) as count FROM currencies');
+	const count = checkResult.length > 0 ? checkResult[0].values[0][0] : 0;
+	console.log(`Currencies count before export: ${count}`);
+
 	const data = sqlite.export();
 	console.log(`Saving database to ${DATABASE_PATH}, size: ${data.byteLength} bytes`);
+
+	// Try loading the exported data into a new database to check it
+	const SQL = await import('sql.js').then(m => m.default());
+	const testDb = new SQL.Database(data);
+	const testResult = testDb.exec('SELECT COUNT(*) as count FROM currencies');
+	const testCount = testResult.length > 0 ? testResult[0].values[0][0] : 0;
+	console.log(`Currencies count in exported data: ${testCount}`);
+	testDb.close();
+
 	await writeFile(DATABASE_PATH, data);
 	console.log('Write complete');
 
