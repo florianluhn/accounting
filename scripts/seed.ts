@@ -68,14 +68,30 @@ async function seed() {
 		await writeFile(DATABASE_PATH, data);
 		console.log(`✓ Database saved to ${DATABASE_PATH}`);
 
+		// Force file system sync
+		const fs = await import('fs');
+		const fd = fs.openSync(DATABASE_PATH, 'r+');
+		fs.fsyncSync(fd);
+		fs.closeSync(fd);
+		console.log('✓ File system synced');
+
+		// Wait a moment for FS to settle
+		await new Promise(resolve => setTimeout(resolve, 500));
+
 		// Verify by reading back
 		const verifyBuffer = await readFile(DATABASE_PATH);
+		console.log(`Verify buffer size: ${verifyBuffer.byteLength} bytes`);
 		const verifyDb = new SQL.Database(verifyBuffer);
 		const verifyResult = verifyDb.exec('SELECT * FROM currencies');
 		console.log('Data after write and read:', JSON.stringify(verifyResult, null, 2));
 		verifyDb.close();
 
 		sqlite.close();
+		console.log('✓ Database closed');
+
+		// Wait before exit to ensure everything completes
+		await new Promise(resolve => setTimeout(resolve, 500));
+		console.log('✓ Exit delay complete');
 
 		console.log('✓ Database seeded successfully');
 		console.log('\nNote: The database starts empty. You can now:');

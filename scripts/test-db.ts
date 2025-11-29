@@ -1,9 +1,18 @@
 import initSqlJs from 'sql.js';
-import { readFile } from 'fs/promises';
+import { readFile, stat } from 'fs/promises';
 
 async function testDb() {
+	const dbPath = './data/accounting.db';
+
+	// Check file stats
+	const stats = await stat(dbPath);
+	console.log('File modification time:', stats.mtime.toISOString());
+	console.log('File size:', stats.size, 'bytes');
+	console.log('Current time:', new Date().toISOString());
+	console.log('');
+
 	const SQL = await initSqlJs();
-	const buffer = await readFile('./data/accounting.db');
+	const buffer = await readFile(dbPath);
 	const db = new SQL.Database(buffer);
 
 	// Check what tables exist
@@ -14,6 +23,7 @@ async function testDb() {
 	const result = db.exec('SELECT * FROM currencies');
 	console.log('\nCurrencies query result:', JSON.stringify(result, null, 2));
 
+	db.close();
 	process.exit(0);
 }
 
