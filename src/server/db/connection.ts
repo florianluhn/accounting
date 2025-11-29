@@ -19,8 +19,14 @@ let sqlite: any;
 if (existsSync(DATABASE_PATH)) {
 	// Load existing database
 	const buffer = await readFile(DATABASE_PATH);
+	console.log(`Loading database from ${DATABASE_PATH}, file size: ${buffer.byteLength} bytes`);
 	sqlite = new SQL.Database(buffer);
 	console.log('✓ Database loaded from', DATABASE_PATH);
+
+	// Debug: check what's in the loaded database
+	const tablesResult = sqlite.exec("SELECT name FROM sqlite_master WHERE type='table'");
+	const tables = tablesResult.length > 0 ? tablesResult[0].values.map(v => v[0]).join(', ') : 'none';
+	console.log('Tables in loaded database:', tables);
 } else {
 	// Create new database
 	sqlite = new SQL.Database();
