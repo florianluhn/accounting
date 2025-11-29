@@ -2,8 +2,8 @@ module.exports = {
   apps: [
     {
       name: 'accounting-backend',
-      script: 'npx',
-      args: 'tsx src/server/index.ts',
+      script: './node_modules/.bin/tsx',
+      args: 'src/server/index.ts',
       cwd: process.cwd(),
       instances: 1,
       autorestart: true,
