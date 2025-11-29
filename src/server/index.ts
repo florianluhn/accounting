@@ -21,9 +21,14 @@ const fastify = Fastify({
 // Plugins
 // ========================================
 
-// CORS - Allow requests from SvelteKit dev server
+// CORS - Allow requests from SvelteKit dev server and production deployment
 await fastify.register(cors, {
-	origin: CONFIG.NODE_ENV === 'development' ? 'http://localhost:5173' : true,
+	origin: CONFIG.NODE_ENV === 'development'
+		? 'http://localhost:5173'
+		: (origin, callback) => {
+			// In production, allow requests from any origin (frontend can be accessed via different IPs)
+			callback(null, true);
+		},
 	credentials: true
 });
 
