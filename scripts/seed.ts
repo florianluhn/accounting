@@ -35,8 +35,8 @@ async function seed() {
 		console.log('  3. Add subledger accounts');
 		console.log('  4. Start creating journal entries');
 
-		// Small delay to let async operations complete
-		await new Promise(resolve => setTimeout(resolve, 100));
+		// Exit successfully
+		process.exit(0);
 	} catch (error) {
 		console.error('❌ Seeding failed:', error);
 		process.exit(1);
