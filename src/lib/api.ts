@@ -1,6 +1,9 @@
 // API base URL - uses relative path to leverage Vite proxy in development
-// In production, configure this via environment variable if needed
-const API_BASE_URL = '';
+// In production, the frontend runs on port 5173 and backend on port 3000
+// Check if we're in dev mode (Vite proxy available) or production (direct backend connection)
+const API_BASE_URL = typeof window !== 'undefined' && window.location.port === '5173'
+	? 'http://localhost:3000'
+	: '';
 
 // Generic fetch wrapper with error handling
 async function apiFetch<T>(
