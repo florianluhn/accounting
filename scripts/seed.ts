@@ -1,4 +1,4 @@
-import db, { saveDatabase } from '../src/server/db/connection.js';
+import db, { saveDatabase, sqlite } from '../src/server/db/connection.js';
 import { currencies } from '../src/server/db/schema.js';
 import { eq } from 'drizzle-orm';
 
@@ -11,19 +11,23 @@ async function seed() {
 		console.log('Existing USD check:', existingUSD);
 
 		if (existingUSD.length === 0) {
-			// Insert default USD currency
-			const result = await db.insert(currencies).values({
-				code: 'USD',
-				name: 'US Dollar',
-				symbol: '$',
-				exchangeRate: 1.0,
-				isDefault: true
-			});
-			console.log('Insert result:', result);
+			// Try direct SQL insert as a test
+			console.log('Attempting direct SQL insert...');
+			const timestamp = Math.floor(Date.now() / 1000);
+			sqlite.run(
+				`INSERT INTO currencies (code, name, symbol, exchange_rate, is_default, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				['USD', 'US Dollar', '$', 1.0, 1, timestamp, timestamp]
+			);
+			console.log('Direct SQL insert complete');
 
-			// Verify insert worked
+			// Verify with direct SQL
+			const directCheck = sqlite.exec('SELECT * FROM currencies WHERE code = ?', ['USD']);
+			console.log('Direct SQL verification:', JSON.stringify(directCheck, null, 2));
+
+			// Verify with Drizzle
 			const verify = await db.select().from(currencies).where(eq(currencies.code, 'USD'));
-			console.log('Verification after insert:', verify);
+			console.log('Drizzle verification:', verify);
 
 			console.log('✓ Added default currency: USD');
 		} else {
