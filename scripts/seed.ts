@@ -8,16 +8,22 @@ async function seed() {
 	try {
 		// Check if USD currency already exists
 		const existingUSD = await db.select().from(currencies).where(eq(currencies.code, 'USD'));
+		console.log('Existing USD check:', existingUSD);
 
 		if (existingUSD.length === 0) {
 			// Insert default USD currency
-			await db.insert(currencies).values({
+			const result = await db.insert(currencies).values({
 				code: 'USD',
 				name: 'US Dollar',
 				symbol: '$',
 				exchangeRate: 1.0,
 				isDefault: true
 			});
+			console.log('Insert result:', result);
+
+			// Verify insert worked
+			const verify = await db.select().from(currencies).where(eq(currencies.code, 'USD'));
+			console.log('Verification after insert:', verify);
 
 			console.log('✓ Added default currency: USD');
 		} else {
