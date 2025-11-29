@@ -1,9 +1,13 @@
-import db, { saveDatabase, sqlite } from '../src/server/db/connection.js';
+import db, { saveDatabase, sqlite, stopAutoSave } from '../src/server/db/connection.js';
 import { currencies } from '../src/server/db/schema.js';
 import { eq } from 'drizzle-orm';
 
 async function seed() {
 	console.log('🌱 Seeding database...');
+
+	// Ensure auto-save is not running
+	stopAutoSave();
+	console.log('✓ Auto-save disabled');
 
 	try {
 		// Check if USD currency already exists
@@ -37,6 +41,10 @@ async function seed() {
 		// Save database to disk
 		await saveDatabase();
 		console.log('✓ Database saved to disk');
+
+		// Wait a moment to ensure write completes
+		await new Promise(resolve => setTimeout(resolve, 100));
+		console.log('✓ Write delay complete');
 
 		console.log('✓ Database seeded successfully');
 		console.log('\nNote: The database starts empty. You can now:');

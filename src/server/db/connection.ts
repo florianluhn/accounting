@@ -114,10 +114,19 @@ export async function saveDatabase(): Promise<void> {
 	// Check what's in the database before export
 	const checkResult = sqlite.exec('SELECT COUNT(*) as count FROM currencies');
 	const count = checkResult.length > 0 ? checkResult[0].values[0][0] : 0;
-	console.log(`Currencies count before export: ${count}`);
+	console.log(`[${new Date().toISOString()}] Currencies count before export: ${count}`);
+
+	// Check database page count to see if it's been modified
+	const pageCountResult = sqlite.exec('PRAGMA page_count');
+	const pageCount = pageCountResult.length > 0 ? pageCountResult[0].values[0][0] : 0;
+	console.log(`[${new Date().toISOString()}] Database page count: ${pageCount}`);
+
+	// Log who's calling this to debug race conditions
+	const stack = new Error().stack?.split('\n')[2]?.trim() || 'unknown';
+	console.log(`[${new Date().toISOString()}] saveDatabase called from:`, stack);
 
 	const data = sqlite.export();
-	console.log(`Saving database to ${DATABASE_PATH}, size: ${data.byteLength} bytes`);
+	console.log(`[${new Date().toISOString()}] Saving database to ${DATABASE_PATH}, size: ${data.byteLength} bytes`);
 
 	// Try loading the exported data into a new database to check it
 	const SQL = await import('sql.js').then(m => m.default());
