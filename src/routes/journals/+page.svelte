@@ -103,7 +103,11 @@
 
 	async function loadSubledgerAccounts() {
 		try {
-			subledgerAccounts = await subledgerAccountsAPI.list();
+			const accounts = await subledgerAccountsAPI.list();
+			// Sort by account number (numeric sort: 1001, 1002, 1010 not 1001, 1010, 1002)
+			subledgerAccounts = accounts.sort((a, b) =>
+				a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true })
+			);
 		} catch (e) {
 			console.error('Error loading subledger accounts:', e);
 		}
