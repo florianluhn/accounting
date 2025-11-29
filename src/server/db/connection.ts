@@ -106,7 +106,13 @@ sqlite.run(`
  */
 export async function saveDatabase(): Promise<void> {
 	const data = sqlite.export();
+	console.log(`Saving database to ${DATABASE_PATH}, size: ${data.byteLength} bytes`);
 	await writeFile(DATABASE_PATH, data);
+	console.log('Write complete');
+
+	// Verify the write by reading back
+	const verify = await readFile(DATABASE_PATH);
+	console.log(`Verified file size: ${verify.byteLength} bytes`);
 }
 
 /**
