@@ -1,50 +1,81 @@
-import db, { saveDatabase, sqlite, stopAutoSave } from '../src/server/db/connection.js';
+import initSqlJs from 'sql.js';
+import { drizzle } from 'drizzle-orm/sql-js';
+import * as schema from '../src/server/db/schema.js';
 import { currencies } from '../src/server/db/schema.js';
 import { eq } from 'drizzle-orm';
+import { readFile, writeFile } from 'fs/promises';
+import { resolve } from 'path';
+import { existsSync } from 'fs';
+
+const DATABASE_PATH = resolve(process.env.DATABASE_PATH || './data/accounting.db');
 
 async function seed() {
 	console.log('🌱 Seeding database...');
 
-	// Ensure auto-save is not running
-	stopAutoSave();
-	console.log('✓ Auto-save disabled');
-
 	try {
+		// Initialize SQL.js with a fresh instance
+		const SQL = await initSqlJs();
+
+		// Load the database file
+		if (!existsSync(DATABASE_PATH)) {
+			console.error('❌ Database file not found. Run npm run migrate first.');
+			process.exit(1);
+		}
+
+		const buffer = await readFile(DATABASE_PATH);
+		console.log(`Loading database from ${DATABASE_PATH}, file size: ${buffer.byteLength} bytes`);
+
+		const sqlite = new SQL.Database(buffer);
+		const db = drizzle(sqlite, { schema });
+
 		// Check if USD currency already exists
 		const existingUSD = await db.select().from(currencies).where(eq(currencies.code, 'USD'));
 		console.log('Existing USD check:', existingUSD);
 
 		if (existingUSD.length === 0) {
-			// Try direct SQL insert as a test
-			console.log('Attempting direct SQL insert...');
-			const timestamp = Math.floor(Date.now() / 1000);
-			sqlite.run(
-				`INSERT INTO currencies (code, name, symbol, exchange_rate, is_default, created_at, updated_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-				['USD', 'US Dollar', '$', 1.0, 1, timestamp, timestamp]
-			);
-			console.log('Direct SQL insert complete');
+			// Use Drizzle ORM to insert
+			console.log('Inserting USD currency...');
+			await db.insert(currencies).values({
+				code: 'USD',
+				name: 'US Dollar',
+				symbol: '$',
+				exchangeRate: 1.0,
+				isDefault: true
+			});
+			console.log('Insert complete');
 
-			// Verify with direct SQL
-			const directCheck = sqlite.exec('SELECT * FROM currencies WHERE code = ?', ['USD']);
-			console.log('Direct SQL verification:', JSON.stringify(directCheck, null, 2));
-
-			// Verify with Drizzle
+			// Verify
 			const verify = await db.select().from(currencies).where(eq(currencies.code, 'USD'));
-			console.log('Drizzle verification:', verify);
+			console.log('Verification:', verify);
 
 			console.log('✓ Added default currency: USD');
 		} else {
 			console.log('✓ Default currency USD already exists');
 		}
 
-		// Save database to disk
-		await saveDatabase();
-		console.log('✓ Database saved to disk');
+		// Export and save
+		console.log('Exporting database...');
+		const data = sqlite.export();
+		console.log(`Database export size: ${data.byteLength} bytes`);
 
-		// Wait a moment to ensure write completes
-		await new Promise(resolve => setTimeout(resolve, 100));
-		console.log('✓ Write delay complete');
+		// Verify the export contains data
+		const testDb = new SQL.Database(data);
+		const testResult = testDb.exec('SELECT * FROM currencies');
+		console.log('Data in export:', JSON.stringify(testResult, null, 2));
+		testDb.close();
+
+		// Write to file
+		await writeFile(DATABASE_PATH, data);
+		console.log(`✓ Database saved to ${DATABASE_PATH}`);
+
+		// Verify by reading back
+		const verifyBuffer = await readFile(DATABASE_PATH);
+		const verifyDb = new SQL.Database(verifyBuffer);
+		const verifyResult = verifyDb.exec('SELECT * FROM currencies');
+		console.log('Data after write and read:', JSON.stringify(verifyResult, null, 2));
+		verifyDb.close();
+
+		sqlite.close();
 
 		console.log('✓ Database seeded successfully');
 		console.log('\nNote: The database starts empty. You can now:');
@@ -53,7 +84,6 @@ async function seed() {
 		console.log('  3. Add subledger accounts');
 		console.log('  4. Start creating journal entries');
 
-		// Exit successfully
 		process.exit(0);
 	} catch (error) {
 		console.error('❌ Seeding failed:', error);
