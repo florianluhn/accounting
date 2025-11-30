@@ -118,12 +118,18 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			// Balance sheet shows balances as of a specific date
 			const balances = await calculateBalances(undefined, endDate, currencyCode);
 
-			// Group by GL account type
-			const assets = balances.filter((b) =>
-				['Asset', 'Cash', 'Accounts Receivable'].includes(b.glAccountType)
-			);
-			const liabilities = balances.filter((b) => b.glAccountType === 'Accounts Payable');
-			const equity = balances.filter((b) => b.glAccountType === 'Equity');
+			// Group by GL account type and sort by account number
+			const assets = balances
+				.filter((b) =>
+					['Asset', 'Cash', 'Accounts Receivable'].includes(b.glAccountType)
+				)
+				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true }));
+			const liabilities = balances
+				.filter((b) => b.glAccountType === 'Accounts Payable')
+				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true }));
+			const equity = balances
+				.filter((b) => b.glAccountType === 'Equity')
+				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true }));
 
 			// Calculate totals
 			const totalAssets = assets.reduce((sum, a) => sum + a.balance, 0);
@@ -169,9 +175,13 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			// P&L shows performance over a period
 			const balances = await calculateBalances(startDate, endDate, currencyCode);
 
-			// Filter for Profit and Loss accounts
-			const revenue = balances.filter((b) => b.glAccountType === 'Profit');
-			const expenses = balances.filter((b) => b.glAccountType === 'Loss');
+			// Filter for Profit and Loss accounts and sort by account number
+			const revenue = balances
+				.filter((b) => b.glAccountType === 'Profit')
+				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true }));
+			const expenses = balances
+				.filter((b) => b.glAccountType === 'Loss')
+				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true }));
 
 			// Calculate totals
 			const totalRevenue = revenue.reduce((sum, a) => sum + a.balance, 0);

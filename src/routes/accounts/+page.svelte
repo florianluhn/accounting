@@ -62,7 +62,11 @@
 		try {
 			glLoading = true;
 			error = '';
-			glAccounts = await glAccountsAPI.list();
+			const accounts = await glAccountsAPI.list();
+			// Sort by account number (numeric sort)
+			glAccounts = accounts.sort((a, b) =>
+				a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true })
+			);
 		} catch (e) {
 			console.error('Error loading GL accounts:', e);
 			error = e instanceof Error ? e.message : 'Failed to load GL accounts';
@@ -75,7 +79,11 @@
 		try {
 			subledgerLoading = true;
 			error = '';
-			subledgerAccounts = await subledgerAccountsAPI.list();
+			const accounts = await subledgerAccountsAPI.list();
+			// Sort by account number (numeric sort)
+			subledgerAccounts = accounts.sort((a, b) =>
+				a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true })
+			);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load subledger accounts';
 		} finally {
