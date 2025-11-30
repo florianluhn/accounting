@@ -13,12 +13,15 @@ async function apiFetch<T>(
 	const url = `${API_BASE_URL}${endpoint}`;
 
 	try {
+		// Only set Content-Type header if there's a body
+		const headers: Record<string, string> = { ...options.headers };
+		if (options.body) {
+			headers['Content-Type'] = 'application/json';
+		}
+
 		const response = await fetch(url, {
 			...options,
-			headers: {
-				'Content-Type': 'application/json',
-				...options.headers
-			}
+			headers
 		});
 
 		if (!response.ok) {
