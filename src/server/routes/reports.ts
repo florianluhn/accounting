@@ -238,7 +238,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 						};
 					}
 				})
-				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber));
+				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true }));
 
 			// Calculate totals
 			const totalDebits = accountsWithBalances.reduce((sum, a) => sum + a.debit, 0);
