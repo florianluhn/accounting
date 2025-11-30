@@ -34,6 +34,12 @@
 	let selectedFiles = $state<File[]>([]);
 	let uploadingFiles = $state(false);
 
+	// Search state for account dropdowns
+	let debitAccountSearch = $state('');
+	let creditAccountSearch = $state('');
+	let showDebitDropdown = $state(false);
+	let showCreditDropdown = $state(false);
+
 	$effect(() => {
 		loadData();
 	});
@@ -92,10 +98,45 @@
 
 	async function loadSubledgerAccounts() {
 		try {
-			subledgerAccounts = await subledgerAccountsAPI.list();
+			const accounts = await subledgerAccountsAPI.list();
+			// Sort by account number (numeric sort: 1001, 1002, 1010 not 1001, 1010, 1002)
+			subledgerAccounts = accounts.sort((a, b) =>
+				a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true })
+			);
 		} catch (e) {
 			console.error('Error loading subledger accounts:', e);
 		}
+	}
+
+	// Filter accounts based on search query (searches both account number and name)
+	function filterAccounts(search: string): SubledgerAccount[] {
+		if (!search.trim()) return subledgerAccounts;
+
+		const searchLower = search.toLowerCase();
+		return subledgerAccounts.filter(account =>
+			account.accountNumber.toLowerCase().includes(searchLower) ||
+			account.name.toLowerCase().includes(searchLower)
+		);
+	}
+
+	// Get account display text
+	function getAccountDisplay(accountId: number): string {
+		const account = subledgerAccounts.find(a => a.id === accountId);
+		return account ? `${account.accountNumber} - ${account.name}` : '';
+	}
+
+	// Select debit account
+	function selectDebitAccount(account: SubledgerAccount) {
+		formData.debitAccountId = account.id;
+		debitAccountSearch = getAccountDisplay(account.id);
+		showDebitDropdown = false;
+	}
+
+	// Select credit account
+	function selectCreditAccount(account: SubledgerAccount) {
+		formData.creditAccountId = account.id;
+		creditAccountSearch = getAccountDisplay(account.id);
+		showCreditDropdown = false;
 	}
 
 	function formatCurrency(amount: number): string {
@@ -108,17 +149,24 @@
 	}
 
 	function openModal() {
+		const defaultDebitId = subledgerAccounts.length > 0 ? subledgerAccounts[0].id : 0;
+		const defaultCreditId = subledgerAccounts.length > 1 ? subledgerAccounts[1].id : 0;
+
 		formData = {
 			entryDate: new Date().toISOString().split('T')[0],
 			amount: '',
 			currencyCode: currencies.find(c => c.isDefault)?.code || 'USD',
-			debitAccountId: subledgerAccounts.length > 0 ? subledgerAccounts[0].id : 0,
-			creditAccountId: subledgerAccounts.length > 1 ? subledgerAccounts[1].id : 0,
+			debitAccountId: defaultDebitId,
+			creditAccountId: defaultCreditId,
 			description: '',
 			category: '',
 			comment: ''
 		};
 		selectedFiles = [];
+		debitAccountSearch = getAccountDisplay(defaultDebitId);
+		creditAccountSearch = getAccountDisplay(defaultCreditId);
+		showDebitDropdown = false;
+		showCreditDropdown = false;
 		showModal = true;
 	}
 
@@ -147,6 +195,17 @@
 	async function handleSubmit() {
 		try {
 			error = '';
+
+			// Validate that valid accounts are selected
+			if (!formData.debitAccountId || formData.debitAccountId === 0) {
+				error = 'Please select a valid debit account';
+				return;
+			}
+			if (!formData.creditAccountId || formData.creditAccountId === 0) {
+				error = 'Please select a valid credit account';
+				return;
+			}
+
 			const data = {
 				entryDate: new Date(formData.entryDate),
 				amount: parseFloat(formData.amount),
@@ -355,8 +414,17 @@
 
 <!-- Journal Entry Modal -->
 {#if showModal}
-	<div class="modal modal-open">
-		<div class="modal-box max-w-2xl">
+	<div class="modal modal-open" onclick={(e) => {
+		if (e.target === e.currentTarget) closeModal();
+	}}>
+		<div class="modal-box max-w-2xl" onclick={(e) => {
+			// Close dropdowns when clicking anywhere in the modal box
+			const target = e.target as HTMLElement;
+			if (!target.closest('.relative')) {
+				showDebitDropdown = false;
+				showCreditDropdown = false;
+			}
+		}}>
 			<h3 class="font-bold text-lg mb-4">New Journal Entry</h3>
 
 			<form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
@@ -389,31 +457,67 @@
 					</div>
 
 					<!-- Debit Account -->
-					<div class="form-control col-span-2">
+					<div class="form-control col-span-2 relative">
 						<label class="label">
 							<span class="label-text">Debit Account</span>
 						</label>
-						<select class="select select-bordered" bind:value={formData.debitAccountId} required>
-							{#each subledgerAccounts as account}
-								<option value={account.id}>
-									{account.accountNumber} - {account.name} ({account.currencyCode})
-								</option>
-							{/each}
-						</select>
+						<input
+							type="text"
+							class="input input-bordered"
+							bind:value={debitAccountSearch}
+							onfocus={() => {
+								debitAccountSearch = '';
+								showDebitDropdown = true;
+							}}
+							oninput={() => showDebitDropdown = true}
+							placeholder="Search by account number or name..."
+							required
+						/>
+						{#if showDebitDropdown && filterAccounts(debitAccountSearch).length > 0}
+							<div class="absolute z-10 w-full bg-base-100 shadow-lg rounded-box mt-1 max-h-60 overflow-y-auto border border-base-300" style="top: 100%">
+								{#each filterAccounts(debitAccountSearch) as account}
+									<button
+										type="button"
+										class="w-full text-left px-4 py-2 hover:bg-base-200 cursor-pointer"
+										onclick={() => selectDebitAccount(account)}
+									>
+										{account.accountNumber} - {account.name} ({account.currencyCode})
+									</button>
+								{/each}
+							</div>
+						{/if}
 					</div>
 
 					<!-- Credit Account -->
-					<div class="form-control col-span-2">
+					<div class="form-control col-span-2 relative">
 						<label class="label">
 							<span class="label-text">Credit Account</span>
 						</label>
-						<select class="select select-bordered" bind:value={formData.creditAccountId} required>
-							{#each subledgerAccounts as account}
-								<option value={account.id}>
-									{account.accountNumber} - {account.name} ({account.currencyCode})
-								</option>
-							{/each}
-						</select>
+						<input
+							type="text"
+							class="input input-bordered"
+							bind:value={creditAccountSearch}
+							onfocus={() => {
+								creditAccountSearch = '';
+								showCreditDropdown = true;
+							}}
+							oninput={() => showCreditDropdown = true}
+							placeholder="Search by account number or name..."
+							required
+						/>
+						{#if showCreditDropdown && filterAccounts(creditAccountSearch).length > 0}
+							<div class="absolute z-10 w-full bg-base-100 shadow-lg rounded-box mt-1 max-h-60 overflow-y-auto border border-base-300" style="top: 100%">
+								{#each filterAccounts(creditAccountSearch) as account}
+									<button
+										type="button"
+										class="w-full text-left px-4 py-2 hover:bg-base-200 cursor-pointer"
+										onclick={() => selectCreditAccount(account)}
+									>
+										{account.accountNumber} - {account.name} ({account.currencyCode})
+									</button>
+								{/each}
+							</div>
+						{/if}
 					</div>
 
 					<!-- Amount -->

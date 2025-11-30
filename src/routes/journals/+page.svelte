@@ -633,7 +633,10 @@
 							type="text"
 							class="input input-bordered"
 							bind:value={debitAccountSearch}
-							onfocus={() => showDebitDropdown = true}
+							onfocus={() => {
+								debitAccountSearch = '';
+								showDebitDropdown = true;
+							}}
 							oninput={() => showDebitDropdown = true}
 							placeholder="Search by account number or name..."
 							required
@@ -662,7 +665,10 @@
 							type="text"
 							class="input input-bordered"
 							bind:value={creditAccountSearch}
-							onfocus={() => showCreditDropdown = true}
+							onfocus={() => {
+								creditAccountSearch = '';
+								showCreditDropdown = true;
+							}}
 							oninput={() => showCreditDropdown = true}
 							placeholder="Search by account number or name..."
 							required
