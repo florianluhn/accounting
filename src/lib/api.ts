@@ -24,14 +24,13 @@ const getApiBaseUrl = () => {
 	return '';
 };
 
-const API_BASE_URL = getApiBaseUrl();
-
 // Generic fetch wrapper with error handling
 async function apiFetch<T>(
 	endpoint: string,
 	options: RequestInit = {}
 ): Promise<T> {
-	const url = `${API_BASE_URL}${endpoint}`;
+	// Call getApiBaseUrl() at request time, not module load time
+	const url = `${getApiBaseUrl()}${endpoint}`;
 
 	try {
 		// Only set Content-Type header if there's a body
@@ -305,7 +304,7 @@ export const attachmentsAPI = {
 		formData.append('file', file);
 
 		const response = await fetch(
-			`${API_BASE_URL}/api/attachments?journalEntryId=${journalEntryId}`,
+			`${getApiBaseUrl()}/api/attachments?journalEntryId=${journalEntryId}`,
 			{
 				method: 'POST',
 				body: formData
@@ -324,7 +323,7 @@ export const attachmentsAPI = {
 	},
 
 	getDownloadUrl(id: number): string {
-		return `${API_BASE_URL}/api/attachments/${id}/download`;
+		return `${getApiBaseUrl()}/api/attachments/${id}/download`;
 	},
 
 	async delete(id: number): Promise<void> {
