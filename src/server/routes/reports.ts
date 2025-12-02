@@ -52,10 +52,16 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		// Build conditions for date range
 		const conditions: any[] = [];
 		if (startDate) {
-			conditions.push(gte(journalEntries.entryDate, startDate));
+			// Set start date to beginning of day (00:00:00.000)
+			const startOfDay = new Date(startDate);
+			startOfDay.setHours(0, 0, 0, 0);
+			conditions.push(gte(journalEntries.entryDate, startOfDay));
 		}
 		if (endDate) {
-			conditions.push(lte(journalEntries.entryDate, endDate));
+			// Set end date to end of day (23:59:59.999) to include all entries on that day
+			const endOfDay = new Date(endDate);
+			endOfDay.setHours(23, 59, 59, 999);
+			conditions.push(lte(journalEntries.entryDate, endOfDay));
 		}
 
 		// Get all journal entries in date range
@@ -292,11 +298,15 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		}
 
 		// Build conditions for date range
-		const conditions: any[] = [];
+		const conditions: any[] = [
+			sql`${journalEntries.debitAccountId} = ${accountId} OR ${journalEntries.creditAccountId} = ${accountId}`
+		];
 
 		if (request.query.startDate) {
 			const startDate = new Date(request.query.startDate);
 			if (!isNaN(startDate.getTime())) {
+				// Set start date to beginning of day (00:00:00.000)
+				startDate.setHours(0, 0, 0, 0);
 				conditions.push(gte(journalEntries.entryDate, startDate));
 			}
 		}
@@ -304,22 +314,18 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		if (request.query.endDate) {
 			const endDate = new Date(request.query.endDate);
 			if (!isNaN(endDate.getTime())) {
+				// Set end date to end of day (23:59:59.999) to include all entries on that day
+				endDate.setHours(23, 59, 59, 999);
 				conditions.push(lte(journalEntries.entryDate, endDate));
 			}
 		}
 
 		// Get all transactions for this account
-		let query = db
+		const query = db
 			.select()
 			.from(journalEntries)
-			.where(
-				sql`${journalEntries.debitAccountId} = ${accountId} OR ${journalEntries.creditAccountId} = ${accountId}`
-			)
+			.where(and(...conditions))
 			.orderBy(desc(journalEntries.entryDate));
-
-		if (conditions.length > 0) {
-			query = query.where(and(...conditions)) as any;
-		}
 
 		const transactions = await query;
 

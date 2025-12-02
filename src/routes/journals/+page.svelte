@@ -35,6 +35,8 @@
 	});
 	let selectedFiles = $state<File[]>([]);
 	let uploadingFiles = $state(false);
+	let uploadingCSV = $state(false);
+	let csvUploadResult = $state<{ success: number; failed: number; errors: string[] } | null>(null);
 
 	// Search state for account dropdowns
 	let debitAccountSearch = $state('');
@@ -325,6 +327,46 @@
 		endDate = '';
 	}
 
+	async function handleDownloadCSV() {
+		try {
+			error = '';
+			const params: any = {};
+			if (startDate) params.startDate = new Date(startDate);
+			if (endDate) params.endDate = new Date(endDate);
+
+			await journalEntriesAPI.downloadCSV(params);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to download CSV';
+		}
+	}
+
+	function handleCSVFileSelect(event: Event) {
+		const input = event.target as HTMLInputElement;
+		if (input.files && input.files[0]) {
+			uploadCSVFile(input.files[0]);
+		}
+	}
+
+	async function uploadCSVFile(file: File) {
+		try {
+			error = '';
+			uploadingCSV = true;
+			csvUploadResult = null;
+
+			const result = await journalEntriesAPI.uploadCSV(file);
+			csvUploadResult = result;
+
+			// Reload entries if any were successfully imported
+			if (result.success > 0) {
+				await loadEntries();
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to upload CSV';
+		} finally {
+			uploadingCSV = false;
+		}
+	}
+
 	function formatFileSize(bytes: number): string {
 		if (bytes < 1024) return bytes + ' B';
 		if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -419,8 +461,8 @@
 			{/if}
 		</div>
 
-		<!-- Search and New Entry Button -->
-		<div class="flex justify-between items-center">
+		<!-- Search and Actions -->
+		<div class="flex justify-between items-center gap-4 flex-wrap">
 			<div class="form-control">
 				<input
 					type="text"
@@ -429,14 +471,74 @@
 					bind:value={searchQuery}
 				/>
 			</div>
-			<button
-				class="btn btn-primary"
-				onclick={() => openModal()}
-				disabled={subledgerAccounts.length < 2}
-			>
-				+ New Journal Entry
-			</button>
+			<div class="flex gap-2 flex-wrap">
+				<button
+					class="btn btn-outline"
+					onclick={handleDownloadCSV}
+					disabled={entries.length === 0}
+					title="Download filtered entries as CSV"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+					</svg>
+					Download CSV
+				</button>
+				<label class="btn btn-outline" class:loading={uploadingCSV}>
+					<input
+						type="file"
+						accept=".csv"
+						class="hidden"
+						onchange={handleCSVFileSelect}
+						disabled={uploadingCSV}
+					/>
+					{#if uploadingCSV}
+						<span class="loading loading-spinner loading-sm"></span>
+						Uploading...
+					{:else}
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+						</svg>
+						Upload CSV
+					{/if}
+				</label>
+				<button
+					class="btn btn-primary"
+					onclick={() => openModal()}
+					disabled={subledgerAccounts.length < 2}
+				>
+					+ New Journal Entry
+				</button>
+			</div>
 		</div>
+
+		<!-- CSV Upload Result -->
+		{#if csvUploadResult}
+			<div class="alert {csvUploadResult.failed === 0 ? 'alert-success' : 'alert-warning'}">
+				<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+				</svg>
+				<div>
+					<h3 class="font-bold">CSV Upload Complete</h3>
+					<div class="text-sm">
+						<p>Successfully imported: {csvUploadResult.success} entries</p>
+						{#if csvUploadResult.failed > 0}
+							<p>Failed: {csvUploadResult.failed} entries</p>
+							<details class="mt-2">
+								<summary class="cursor-pointer font-medium">Show errors</summary>
+								<ul class="list-disc list-inside mt-1 space-y-1">
+									{#each csvUploadResult.errors as error}
+										<li class="text-xs">{error}</li>
+									{/each}
+								</ul>
+							</details>
+						{/if}
+					</div>
+				</div>
+				<button class="btn btn-sm btn-ghost" onclick={() => csvUploadResult = null}>
+					Dismiss
+				</button>
+			</div>
+		{/if}
 	</div>
 
 	<!-- Journal Entries List -->

@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
-import { journalEntries, subledgerAccounts, currencies } from '../db/schema.js';
+import { journalEntries, subledgerAccounts, currencies, glAccounts } from '../db/schema.js';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
+import { parse } from 'csv-parse/sync';
+import { stringify } from 'csv-stringify/sync';
 
 // Validation schemas
 const createJournalEntrySchema = z.object({
@@ -327,5 +329,259 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 		await saveDatabase();
 
 		return reply.status(204).send();
+	});
+
+	// GET /api/journal-entries/export/csv - Export journal entries as CSV
+	fastify.get<{
+		Querystring: {
+			startDate?: string;
+			endDate?: string;
+			debitAccountId?: string;
+			creditAccountId?: string;
+			category?: string;
+			currencyCode?: string;
+		}
+	}>('/export/csv', async (request, reply) => {
+		// Build query with same filters as list endpoint
+		let query = db
+			.select({
+				id: journalEntries.id,
+				entryDate: journalEntries.entryDate,
+				debitAccountId: journalEntries.debitAccountId,
+				debitAccountNumber: subledgerAccounts.accountNumber,
+				debitAccountName: subledgerAccounts.name,
+				creditAccountId: journalEntries.creditAccountId,
+				creditAccountNumber: subledgerAccounts.accountNumber,
+				creditAccountName: subledgerAccounts.name,
+				amount: journalEntries.amount,
+				currencyCode: journalEntries.currencyCode,
+				description: journalEntries.description,
+				category: journalEntries.category,
+				comment: journalEntries.comment
+			})
+			.from(journalEntries)
+			.leftJoin(
+				subledgerAccounts,
+				eq(journalEntries.debitAccountId, subledgerAccounts.id)
+			)
+			.orderBy(desc(journalEntries.entryDate));
+
+		// Apply filters
+		const conditions: any[] = [];
+
+		if (request.query.startDate) {
+			const startDate = new Date(request.query.startDate);
+			if (!isNaN(startDate.getTime())) {
+				conditions.push(gte(journalEntries.entryDate, startDate));
+			}
+		}
+
+		if (request.query.endDate) {
+			const endDate = new Date(request.query.endDate);
+			if (!isNaN(endDate.getTime())) {
+				conditions.push(lte(journalEntries.entryDate, endDate));
+			}
+		}
+
+		if (request.query.debitAccountId) {
+			const debitAccountId = parseInt(request.query.debitAccountId);
+			if (!isNaN(debitAccountId)) {
+				conditions.push(eq(journalEntries.debitAccountId, debitAccountId));
+			}
+		}
+
+		if (request.query.creditAccountId) {
+			const creditAccountId = parseInt(request.query.creditAccountId);
+			if (!isNaN(creditAccountId)) {
+				conditions.push(eq(journalEntries.creditAccountId, creditAccountId));
+			}
+		}
+
+		if (request.query.category) {
+			conditions.push(eq(journalEntries.category, request.query.category));
+		}
+
+		if (request.query.currencyCode) {
+			conditions.push(eq(journalEntries.currencyCode, request.query.currencyCode));
+		}
+
+		if (conditions.length > 0) {
+			query = query.where(and(...conditions)) as any;
+		}
+
+		const entries = await query;
+
+		// Get credit account details for each entry
+		const entriesWithAccounts = await Promise.all(
+			entries.map(async (entry) => {
+				const creditAccount = await db
+					.select({
+						accountNumber: subledgerAccounts.accountNumber,
+						name: subledgerAccounts.name
+					})
+					.from(subledgerAccounts)
+					.where(eq(subledgerAccounts.id, entry.creditAccountId))
+					.limit(1);
+
+				return {
+					...entry,
+					creditAccountNumber: creditAccount[0]?.accountNumber || '',
+					creditAccountName: creditAccount[0]?.name || ''
+				};
+			})
+		);
+
+		// Convert to CSV format
+		const csvData = entriesWithAccounts.map((entry) => ({
+			Date: entry.entryDate instanceof Date
+				? entry.entryDate.toISOString().split('T')[0]
+				: new Date(entry.entryDate).toISOString().split('T')[0],
+			'Debit Account': entry.debitAccountNumber,
+			'Debit Account Name': entry.debitAccountName,
+			'Credit Account': entry.creditAccountNumber,
+			'Credit Account Name': entry.creditAccountName,
+			Amount: entry.amount,
+			Currency: entry.currencyCode,
+			Description: entry.description,
+			Category: entry.category || '',
+			Comment: entry.comment || ''
+		}));
+
+		const csv = stringify(csvData, {
+			header: true,
+			columns: [
+				'Date',
+				'Debit Account',
+				'Debit Account Name',
+				'Credit Account',
+				'Credit Account Name',
+				'Amount',
+				'Currency',
+				'Description',
+				'Category',
+				'Comment'
+			]
+		});
+
+		reply.header('Content-Type', 'text/csv');
+		reply.header('Content-Disposition', 'attachment; filename="journal-entries.csv"');
+		return csv;
+	});
+
+	// POST /api/journal-entries/import/csv - Import journal entries from CSV
+	fastify.post('/import/csv', async (request, reply) => {
+		const data = await request.file();
+
+		if (!data) {
+			return reply.status(400).send({
+				error: 'Bad Request',
+				message: 'No file uploaded'
+			});
+		}
+
+		const buffer = await data.toBuffer();
+		const csvContent = buffer.toString('utf-8');
+
+		// Parse CSV
+		let records: any[];
+		try {
+			records = parse(csvContent, {
+				columns: true,
+				skip_empty_lines: true,
+				trim: true
+			});
+		} catch (error) {
+			return reply.status(400).send({
+				error: 'Bad Request',
+				message: 'Invalid CSV format'
+			});
+		}
+
+		const results = {
+			success: 0,
+			failed: 0,
+			errors: [] as string[]
+		};
+
+		// Process each record
+		for (let i = 0; i < records.length; i++) {
+			const record = records[i];
+			try {
+				// Parse date
+				const entryDate = new Date(record.Date);
+				if (isNaN(entryDate.getTime())) {
+					throw new Error(`Invalid date: ${record.Date}`);
+				}
+
+				// Find debit account by account number
+				const debitAccount = await db
+					.select()
+					.from(subledgerAccounts)
+					.where(eq(subledgerAccounts.accountNumber, record['Debit Account']))
+					.limit(1);
+
+				if (debitAccount.length === 0) {
+					throw new Error(`Debit account not found: ${record['Debit Account']}`);
+				}
+
+				// Find credit account by account number
+				const creditAccount = await db
+					.select()
+					.from(subledgerAccounts)
+					.where(eq(subledgerAccounts.accountNumber, record['Credit Account']))
+					.limit(1);
+
+				if (creditAccount.length === 0) {
+					throw new Error(`Credit account not found: ${record['Credit Account']}`);
+				}
+
+				// Parse amount
+				const amount = parseFloat(record.Amount);
+				if (isNaN(amount) || amount <= 0) {
+					throw new Error(`Invalid amount: ${record.Amount}`);
+				}
+
+				// Get currency code (default to USD)
+				const currencyCode = record.Currency || 'USD';
+
+				// Check if currency exists and get exchange rate
+				const currency = await db
+					.select()
+					.from(currencies)
+					.where(eq(currencies.code, currencyCode))
+					.limit(1);
+
+				if (currency.length === 0) {
+					throw new Error(`Currency not found: ${currencyCode}`);
+				}
+
+				// Calculate amount in USD
+				const amountInUSD = amount * currency[0].exchangeRate;
+
+				// Create journal entry
+				await db.insert(journalEntries).values({
+					entryDate,
+					amount,
+					currencyCode,
+					amountInUSD,
+					debitAccountId: debitAccount[0].id,
+					creditAccountId: creditAccount[0].id,
+					description: record.Description || 'Imported from CSV',
+					category: record.Category || null,
+					comment: record.Comment || null
+				});
+
+				results.success++;
+			} catch (error) {
+				results.failed++;
+				const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+				results.errors.push(`Row ${i + 2}: ${errorMsg}`);
+			}
+		}
+
+		// Save database
+		await saveDatabase();
+
+		return reply.status(200).send(results);
 	});
 }

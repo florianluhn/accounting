@@ -34,7 +34,7 @@ async function apiFetch<T>(
 
 	try {
 		// Only set Content-Type header if there's a body
-		const headers: Record<string, string> = { ...options.headers };
+		const headers: Record<string, string> = { ...(options.headers as Record<string, string>) };
 		if (options.body) {
 			headers['Content-Type'] = 'application/json';
 		}
@@ -270,6 +270,69 @@ export const journalEntriesAPI = {
 		return apiFetch(`/api/journal-entries/${id}`, {
 			method: 'DELETE'
 		});
+	},
+
+	async downloadCSV(params?: {
+		startDate?: Date;
+		endDate?: Date;
+		debitAccountId?: number;
+		creditAccountId?: number;
+		category?: string;
+		currencyCode?: string;
+	}): Promise<void> {
+		const query = new URLSearchParams();
+		if (params?.startDate) query.set('startDate', params.startDate.toISOString());
+		if (params?.endDate) query.set('endDate', params.endDate.toISOString());
+		if (params?.debitAccountId) query.set('debitAccountId', String(params.debitAccountId));
+		if (params?.creditAccountId) query.set('creditAccountId', String(params.creditAccountId));
+		if (params?.category) query.set('category', params.category);
+		if (params?.currencyCode) query.set('currencyCode', params.currencyCode);
+
+		const queryString = query.toString();
+		const url = `${getApiBaseUrl()}/api/journal-entries/export/csv${queryString ? `?${queryString}` : ''}`;
+
+		// Download the CSV file
+		const response = await fetch(url);
+		if (!response.ok) {
+			throw new Error('Failed to download CSV');
+		}
+
+		const blob = await response.blob();
+		const downloadUrl = window.URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = downloadUrl;
+		a.download = 'journal-entries.csv';
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		window.URL.revokeObjectURL(downloadUrl);
+	},
+
+	async uploadCSV(file: File): Promise<{
+		success: number;
+		failed: number;
+		errors: string[];
+	}> {
+		const formData = new FormData();
+		formData.append('file', file);
+
+		const response = await fetch(
+			`${getApiBaseUrl()}/api/journal-entries/import/csv`,
+			{
+				method: 'POST',
+				body: formData
+			}
+		);
+
+		if (!response.ok) {
+			const error = await response.json().catch(() => ({
+				error: 'Unknown Error',
+				message: response.statusText
+			}));
+			throw new Error(error.message || `HTTP ${response.status}`);
+		}
+
+		return response.json();
 	}
 };
 
