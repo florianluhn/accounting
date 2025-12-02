@@ -25,16 +25,16 @@
 		return `${year}-${month}-${day}`;
 	}
 
-	// Convert YYYY-MM-DD string to local Date at start of day (for start dates)
+	// Convert YYYY-MM-DD string to Date (backend will handle time boundaries in UTC)
 	function parseLocalDateStart(dateString: string): Date {
-		const [year, month, day] = dateString.split('-').map(Number);
-		return new Date(year, month - 1, day, 0, 0, 0);
+		// Just parse the date string - backend will set to 00:00:00 UTC
+		return new Date(dateString);
 	}
 
-	// Convert YYYY-MM-DD string to local Date at end of day (for end dates)
+	// Convert YYYY-MM-DD string to Date (backend will handle time boundaries in UTC)
 	function parseLocalDateEnd(dateString: string): Date {
-		const [year, month, day] = dateString.split('-').map(Number);
-		return new Date(year, month - 1, day, 23, 59, 59);
+		// Just parse the date string - backend will set to 23:59:59.999 UTC
+		return new Date(dateString);
 	}
 
 	// Date filters

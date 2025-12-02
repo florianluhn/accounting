@@ -52,15 +52,15 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		// Build conditions for date range
 		const conditions: any[] = [];
 		if (startDate) {
-			// Set start date to beginning of day (00:00:00.000)
+			// Set start date to beginning of day in UTC (00:00:00.000)
 			const startOfDay = new Date(startDate);
-			startOfDay.setHours(0, 0, 0, 0);
+			startOfDay.setUTCHours(0, 0, 0, 0);
 			conditions.push(gte(journalEntries.entryDate, startOfDay));
 		}
 		if (endDate) {
-			// Set end date to end of day (23:59:59.999) to include all entries on that day
+			// Set end date to end of day in UTC (23:59:59.999) to include all entries on that day
 			const endOfDay = new Date(endDate);
-			endOfDay.setHours(23, 59, 59, 999);
+			endOfDay.setUTCHours(23, 59, 59, 999);
 			conditions.push(lte(journalEntries.entryDate, endOfDay));
 		}
 
@@ -305,8 +305,8 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		if (request.query.startDate) {
 			const startDate = new Date(request.query.startDate);
 			if (!isNaN(startDate.getTime())) {
-				// Set start date to beginning of day (00:00:00.000)
-				startDate.setHours(0, 0, 0, 0);
+				// Set start date to beginning of day in UTC (00:00:00.000)
+				startDate.setUTCHours(0, 0, 0, 0);
 				conditions.push(gte(journalEntries.entryDate, startDate));
 			}
 		}
@@ -314,8 +314,8 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		if (request.query.endDate) {
 			const endDate = new Date(request.query.endDate);
 			if (!isNaN(endDate.getTime())) {
-				// Set end date to end of day (23:59:59.999) to include all entries on that day
-				endDate.setHours(23, 59, 59, 999);
+				// Set end date to end of day in UTC (23:59:59.999) to include all entries on that day
+				endDate.setUTCHours(23, 59, 59, 999);
 				conditions.push(lte(journalEntries.entryDate, endDate));
 			}
 		}
