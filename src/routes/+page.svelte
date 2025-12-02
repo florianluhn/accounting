@@ -72,8 +72,12 @@
 
 	async function loadBalanceSheet() {
 		try {
+			// Use local date at noon to avoid timezone issues
+			const now = new Date();
+			const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
+
 			balanceSheet = await reportsAPI.balanceSheet({
-				endDate: new Date(),
+				endDate: endDate,
 				currencyCode: selectedCurrency
 			});
 		} catch (e) {
@@ -83,13 +87,14 @@
 
 	async function loadJournalEntries() {
 		try {
-			// Get entries from the start of this month
+			// Get entries from the start of this month (using local dates at noon)
 			const now = new Date();
-			const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+			const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 12, 0, 0);
+			const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
 
 			journalEntries = await journalEntriesAPI.list({
 				startDate: startOfMonth,
-				endDate: now
+				endDate: endOfToday
 			});
 		} catch (e) {
 			console.error('Error loading journal entries:', e);

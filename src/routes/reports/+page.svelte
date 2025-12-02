@@ -25,6 +25,12 @@
 		return `${year}-${month}-${day}`;
 	}
 
+	// Convert YYYY-MM-DD string to local Date at noon (to avoid timezone issues)
+	function parseLocalDate(dateString: string): Date {
+		const [year, month, day] = dateString.split('-').map(Number);
+		return new Date(year, month - 1, day, 12, 0, 0);
+	}
+
 	// Date filters
 	let startDate = $state(getLocalDateString(new Date(new Date().getFullYear(), 0, 1)));
 	let endDate = $state(getLocalDateString());
@@ -57,18 +63,18 @@
 
 			if (activeReport === 'balance-sheet') {
 				balanceSheet = await reportsAPI.balanceSheet({
-					endDate: new Date(endDate),
+					endDate: parseLocalDate(endDate),
 					currencyCode: selectedCurrency
 				});
 			} else if (activeReport === 'profit-loss') {
 				profitLoss = await reportsAPI.profitLoss({
-					startDate: new Date(startDate),
-					endDate: new Date(endDate),
+					startDate: parseLocalDate(startDate),
+					endDate: parseLocalDate(endDate),
 					currencyCode: selectedCurrency
 				});
 			} else if (activeReport === 'trial-balance') {
 				trialBalance = await reportsAPI.trialBalance({
-					endDate: new Date(endDate),
+					endDate: parseLocalDate(endDate),
 					currencyCode: selectedCurrency
 				});
 			}
