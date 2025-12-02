@@ -158,12 +158,21 @@
 		showCreditDropdown = false;
 	}
 
+	// Get local date in YYYY-MM-DD format (without timezone conversion)
+	function getLocalDateString(): string {
+		const now = new Date();
+		const year = now.getFullYear();
+		const month = String(now.getMonth() + 1).padStart(2, '0');
+		const day = String(now.getDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
+	}
+
 	function openModal() {
 		const defaultDebitId = subledgerAccounts.length > 0 ? subledgerAccounts[0].id : 0;
 		const defaultCreditId = subledgerAccounts.length > 1 ? subledgerAccounts[1].id : 0;
 
 		formData = {
-			entryDate: new Date().toISOString().split('T')[0],
+			entryDate: getLocalDateString(),
 			amount: '',
 			currencyCode: currencies.find(c => c.isDefault)?.code || 'USD',
 			debitAccountId: defaultDebitId,

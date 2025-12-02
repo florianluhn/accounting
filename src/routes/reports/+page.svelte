@@ -16,9 +16,18 @@
 	let loading = $state(false);
 	let error = $state('');
 
+	// Get local date in YYYY-MM-DD format (without timezone conversion)
+	function getLocalDateString(date?: Date): string {
+		const d = date || new Date();
+		const year = d.getFullYear();
+		const month = String(d.getMonth() + 1).padStart(2, '0');
+		const day = String(d.getDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
+	}
+
 	// Date filters
-	let startDate = $state(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]);
-	let endDate = $state(new Date().toISOString().split('T')[0]);
+	let startDate = $state(getLocalDateString(new Date(new Date().getFullYear(), 0, 1)));
+	let endDate = $state(getLocalDateString());
 
 	// Report data
 	let balanceSheet = $state<BalanceSheetReport | null>(null);
