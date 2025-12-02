@@ -1,9 +1,30 @@
-// API base URL - uses relative path to leverage Vite proxy in development
-// In production, the frontend runs on port 5173 and backend on port 3000
-// Use the same hostname as the frontend, just with port 3000
-const API_BASE_URL = typeof window !== 'undefined' && window.location.port === '5173'
-	? `http://${window.location.hostname}:3000`
-	: '';
+// API base URL - configurable via environment variable or auto-detect
+// Priority: 1) PUBLIC_API_URL env var, 2) Auto-detect based on frontend port
+// In production, the frontend and backend can run on different ports
+const getApiBaseUrl = () => {
+	// Server-side rendering - return empty string (use relative paths)
+	if (typeof window === 'undefined') return '';
+
+	// Get public env vars (available at runtime)
+	const apiUrl = (globalThis as any).APP_CONFIG?.API_URL;
+	const backendPort = (globalThis as any).APP_CONFIG?.BACKEND_PORT || '3000';
+	const frontendPort = (globalThis as any).APP_CONFIG?.FRONTEND_PORT || '5173';
+
+	// If API_URL is explicitly set, use it
+	if (apiUrl) {
+		return apiUrl;
+	}
+
+	// Auto-detect: if frontend port matches, construct backend URL
+	if (window.location.port === frontendPort) {
+		return `http://${window.location.hostname}:${backendPort}`;
+	}
+
+	// Default: use relative path
+	return '';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 // Generic fetch wrapper with error handling
 async function apiFetch<T>(

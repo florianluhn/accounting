@@ -4,9 +4,14 @@ import { config } from 'dotenv';
 config();
 
 export const CONFIG = {
+	// Application
+	APP_NAME: process.env.APP_NAME || 'Accounting App',
+	APP_SHORT_NAME: process.env.APP_SHORT_NAME || 'Accounting',
+	APP_DESCRIPTION: process.env.APP_DESCRIPTION || 'Personal finance accounting with double-entry bookkeeping',
+
 	// Server
-	PORT: parseInt(process.env.PORT || '3000', 10),
-	HOST: process.env.HOST || '0.0.0.0',
+	PORT: parseInt(process.env.BACKEND_PORT || process.env.PORT || '3000', 10),
+	HOST: process.env.BACKEND_HOST || process.env.HOST || '0.0.0.0',
 	NODE_ENV: process.env.NODE_ENV || 'development',
 
 	// Database

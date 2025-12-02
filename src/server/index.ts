@@ -134,7 +134,7 @@ async function start() {
 		});
 
 		console.log('');
-		console.log('🚀 Accounting API Server');
+		console.log(`🚀 ${CONFIG.APP_NAME} - API Server`);
 		console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 		console.log(`📡 Server running at: http://${CONFIG.HOST}:${CONFIG.PORT}`);
 		console.log(`🏠 Local access: http://localhost:${CONFIG.PORT}`);

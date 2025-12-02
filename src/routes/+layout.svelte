@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { page } from '$app/stores';
+	import { browser } from '$app/environment';
 
 	const navItems = [
 		{ href: '/', label: 'Dashboard', icon: '📊' },
@@ -9,7 +10,16 @@
 		{ href: '/reports', label: 'Reports', icon: '📈' },
 		{ href: '/settings', label: 'Settings', icon: '⚙️' }
 	];
+
+	// Get app name from global config (injected via hooks.server.ts)
+	const appName = browser && (globalThis as any).APP_CONFIG?.APP_SHORT_NAME || 'Accounting';
+	const appFullName = browser && (globalThis as any).APP_CONFIG?.APP_NAME || 'Accounting App';
+	const appDescription = browser && (globalThis as any).APP_CONFIG?.APP_DESCRIPTION || 'Personal Finance';
 </script>
+
+<svelte:head>
+	<title>{appFullName}</title>
+</svelte:head>
 
 <div class="drawer lg:drawer-open">
 	<input id="drawer" type="checkbox" class="drawer-toggle" />
@@ -35,7 +45,7 @@
 				</label>
 			</div>
 			<div class="flex-1">
-				<span class="text-xl font-bold">Accounting</span>
+				<span class="text-xl font-bold">{appName}</span>
 			</div>
 		</div>
 
@@ -51,8 +61,8 @@
 		<aside class="bg-base-100 w-64 h-full flex flex-col">
 			<!-- Logo/Title -->
 			<div class="p-4 border-b border-base-300">
-				<h1 class="text-2xl font-bold">💰 Accounting</h1>
-				<p class="text-sm text-base-content/70">Personal Finance</p>
+				<h1 class="text-2xl font-bold">💰 {appName}</h1>
+				<p class="text-sm text-base-content/70">{appDescription}</p>
 			</div>
 
 			<!-- Navigation -->

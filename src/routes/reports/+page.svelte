@@ -25,10 +25,16 @@
 		return `${year}-${month}-${day}`;
 	}
 
-	// Convert YYYY-MM-DD string to local Date at noon (to avoid timezone issues)
-	function parseLocalDate(dateString: string): Date {
+	// Convert YYYY-MM-DD string to local Date at start of day (for start dates)
+	function parseLocalDateStart(dateString: string): Date {
 		const [year, month, day] = dateString.split('-').map(Number);
-		return new Date(year, month - 1, day, 12, 0, 0);
+		return new Date(year, month - 1, day, 0, 0, 0);
+	}
+
+	// Convert YYYY-MM-DD string to local Date at end of day (for end dates)
+	function parseLocalDateEnd(dateString: string): Date {
+		const [year, month, day] = dateString.split('-').map(Number);
+		return new Date(year, month - 1, day, 23, 59, 59);
 	}
 
 	// Date filters
@@ -63,18 +69,18 @@
 
 			if (activeReport === 'balance-sheet') {
 				balanceSheet = await reportsAPI.balanceSheet({
-					endDate: parseLocalDate(endDate),
+					endDate: parseLocalDateEnd(endDate),
 					currencyCode: selectedCurrency
 				});
 			} else if (activeReport === 'profit-loss') {
 				profitLoss = await reportsAPI.profitLoss({
-					startDate: parseLocalDate(startDate),
-					endDate: parseLocalDate(endDate),
+					startDate: parseLocalDateStart(startDate),
+					endDate: parseLocalDateEnd(endDate),
 					currencyCode: selectedCurrency
 				});
 			} else if (activeReport === 'trial-balance') {
 				trialBalance = await reportsAPI.trialBalance({
-					endDate: parseLocalDate(endDate),
+					endDate: parseLocalDateEnd(endDate),
 					currencyCode: selectedCurrency
 				});
 			}
