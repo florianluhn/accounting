@@ -2,6 +2,9 @@
 	import '../app.css';
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
+	import type { LayoutData } from './$types';
+
+	export let data: LayoutData;
 
 	const navItems = [
 		{ href: '/', label: 'Dashboard', icon: '📊' },
@@ -11,10 +14,15 @@
 		{ href: '/settings', label: 'Settings', icon: '⚙️' }
 	];
 
-	// Get app name from global config (injected via hooks.server.ts)
-	const appName = browser && (globalThis as any).APP_CONFIG?.APP_SHORT_NAME || 'Accounting';
-	const appFullName = browser && (globalThis as any).APP_CONFIG?.APP_NAME || 'Accounting App';
-	const appDescription = browser && (globalThis as any).APP_CONFIG?.APP_DESCRIPTION || 'Personal Finance';
+	// Inject app config into window for API client to use
+	if (browser) {
+		(globalThis as any).APP_CONFIG = data.appConfig;
+	}
+
+	// Get app name from server-loaded config
+	const appName = data.appConfig.APP_SHORT_NAME || 'Accounting';
+	const appFullName = data.appConfig.APP_NAME || 'Accounting App';
+	const appDescription = data.appConfig.APP_DESCRIPTION || 'Personal Finance';
 </script>
 
 <svelte:head>
