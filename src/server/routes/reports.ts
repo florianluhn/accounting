@@ -137,18 +137,18 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				.filter((b) => b.glAccountType === 'Equity')
 				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true }));
 
-			// Calculate totals
-			const totalAssets = assets.reduce((sum, a) => sum + a.balance, 0);
-			const totalLiabilities = liabilities.reduce((sum, a) => sum + a.balance, 0);
-			const totalEquity = equity.reduce((sum, a) => sum + a.balance, 0);
+			// Calculate totals (round to 2 decimal places to avoid floating-point precision issues)
+			const totalAssets = Math.round(assets.reduce((sum, a) => sum + a.balance, 0) * 100) / 100;
+			const totalLiabilities = Math.round(liabilities.reduce((sum, a) => sum + a.balance, 0) * 100) / 100;
+			const totalEquity = Math.round(equity.reduce((sum, a) => sum + a.balance, 0) * 100) / 100;
 
 			// Calculate retained earnings (from Profit and Loss accounts)
 			// Retained Earnings = Revenue (Profit) - Expenses (Loss)
 			const revenue = balances.filter((b) => b.glAccountType === 'Profit');
 			const expenses = balances.filter((b) => b.glAccountType === 'Loss');
-			const totalRevenue = revenue.reduce((sum, a) => sum + a.balance, 0);
-			const totalExpenses = expenses.reduce((sum, a) => sum + a.balance, 0);
-			const retainedEarnings = totalRevenue - totalExpenses;
+			const totalRevenue = Math.round(revenue.reduce((sum, a) => sum + a.balance, 0) * 100) / 100;
+			const totalExpenses = Math.round(expenses.reduce((sum, a) => sum + a.balance, 0) * 100) / 100;
+			const retainedEarnings = Math.round((totalRevenue - totalExpenses) * 100) / 100;
 
 			return {
 				asOfDate: endDate || new Date(),
@@ -189,10 +189,10 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				.filter((b) => b.glAccountType === 'Loss')
 				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true }));
 
-			// Calculate totals
-			const totalRevenue = revenue.reduce((sum, a) => sum + a.balance, 0);
-			const totalExpenses = expenses.reduce((sum, a) => sum + a.balance, 0);
-			const netIncome = totalRevenue - totalExpenses;
+			// Calculate totals (round to 2 decimal places to avoid floating-point precision issues)
+			const totalRevenue = Math.round(revenue.reduce((sum, a) => sum + a.balance, 0) * 100) / 100;
+			const totalExpenses = Math.round(expenses.reduce((sum, a) => sum + a.balance, 0) * 100) / 100;
+			const netIncome = Math.round((totalRevenue - totalExpenses) * 100) / 100;
 
 			return {
 				startDate: startDate || new Date(0),
@@ -246,9 +246,9 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				})
 				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true }));
 
-			// Calculate totals
-			const totalDebits = accountsWithBalances.reduce((sum, a) => sum + a.debit, 0);
-			const totalCredits = accountsWithBalances.reduce((sum, a) => sum + a.credit, 0);
+			// Calculate totals (round to 2 decimal places to avoid floating-point precision issues)
+			const totalDebits = Math.round(accountsWithBalances.reduce((sum, a) => sum + a.debit, 0) * 100) / 100;
+			const totalCredits = Math.round(accountsWithBalances.reduce((sum, a) => sum + a.credit, 0) * 100) / 100;
 
 			return {
 				asOfDate: endDate || new Date(),
