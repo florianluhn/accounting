@@ -108,7 +108,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				glAccountNumber: account.glAccountNumber,
 				glAccountName: account.glAccountName,
 				glAccountType: account.glAccountType,
-				balance
+				balance: Math.round(balance * 100) / 100  // Round to 2 decimal places
 			};
 		});
 
