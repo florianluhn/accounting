@@ -503,7 +503,19 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			errors: [] as string[]
 		};
 
-		// Process each record
+		// Phase 1: Validate all records and prepare data
+		const validatedEntries: Array<{
+			entryDate: Date;
+			amount: number;
+			currencyCode: string;
+			amountInUSD: number;
+			debitAccountId: number;
+			creditAccountId: number;
+			description: string;
+			category: string | null;
+			comment: string | null;
+		}> = [];
+
 		for (let i = 0; i < records.length; i++) {
 			const record = records[i];
 			try {
@@ -535,6 +547,11 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 					throw new Error(`Credit account not found: ${record['Credit Account']}`);
 				}
 
+				// Validate debit and credit accounts are different
+				if (debitAccount[0].id === creditAccount[0].id) {
+					throw new Error('Debit and credit accounts must be different');
+				}
+
 				// Parse amount
 				const amount = parseFloat(record.Amount);
 				if (isNaN(amount) || amount <= 0) {
@@ -558,8 +575,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 				// Calculate amount in USD
 				const amountInUSD = amount * currency[0].exchangeRate;
 
-				// Create journal entry
-				await db.insert(journalEntries).values({
+				// Add to validated entries
+				validatedEntries.push({
 					entryDate,
 					amount,
 					currencyCode,
@@ -570,13 +587,27 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 					category: record.Category || null,
 					comment: record.Comment || null
 				});
-
-				results.success++;
 			} catch (error) {
 				results.failed++;
 				const errorMsg = error instanceof Error ? error.message : 'Unknown error';
 				results.errors.push(`Row ${i + 2}: ${errorMsg}`);
 			}
+		}
+
+		// If any errors occurred during validation, return errors without inserting anything
+		if (results.failed > 0) {
+			return reply.status(400).send({
+				success: 0,
+				failed: results.failed,
+				errors: results.errors,
+				message: 'Validation failed. No entries were imported.'
+			});
+		}
+
+		// Phase 2: Insert all validated entries
+		for (const entry of validatedEntries) {
+			await db.insert(journalEntries).values(entry);
+			results.success++;
 		}
 
 		// Save database

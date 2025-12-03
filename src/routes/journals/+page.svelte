@@ -36,7 +36,7 @@
 	let selectedFiles = $state<File[]>([]);
 	let uploadingFiles = $state(false);
 	let uploadingCSV = $state(false);
-	let csvUploadResult = $state<{ success: number; failed: number; errors: string[] } | null>(null);
+	let csvUploadResult = $state<{ success: number; failed: number; errors: string[]; message?: string } | null>(null);
 
 	// Search state for account dropdowns
 	let debitAccountSearch = $state('');
@@ -513,13 +513,16 @@
 
 		<!-- CSV Upload Result -->
 		{#if csvUploadResult}
-			<div class="alert {csvUploadResult.failed === 0 ? 'alert-success' : 'alert-warning'}">
+			<div class="alert {csvUploadResult.failed === 0 ? 'alert-success' : csvUploadResult.success === 0 ? 'alert-error' : 'alert-warning'}">
 				<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
 				</svg>
 				<div>
-					<h3 class="font-bold">CSV Upload Complete</h3>
+					<h3 class="font-bold">{csvUploadResult.success === 0 ? 'CSV Upload Failed' : 'CSV Upload Complete'}</h3>
 					<div class="text-sm">
+						{#if csvUploadResult.message}
+							<p class="font-medium">{csvUploadResult.message}</p>
+						{/if}
 						<p>Successfully imported: {csvUploadResult.success} entries</p>
 						{#if csvUploadResult.failed > 0}
 							<p>Failed: {csvUploadResult.failed} entries</p>

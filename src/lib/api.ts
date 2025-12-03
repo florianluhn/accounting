@@ -312,6 +312,7 @@ export const journalEntriesAPI = {
 		success: number;
 		failed: number;
 		errors: string[];
+		message?: string;
 	}> {
 		const formData = new FormData();
 		formData.append('file', file);
@@ -324,6 +325,12 @@ export const journalEntriesAPI = {
 			}
 		);
 
+		// For validation errors (400), return the error details instead of throwing
+		if (response.status === 400) {
+			return response.json();
+		}
+
+		// For other errors, throw
 		if (!response.ok) {
 			const error = await response.json().catch(() => ({
 				error: 'Unknown Error',
