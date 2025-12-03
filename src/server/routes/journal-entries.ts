@@ -168,8 +168,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 				});
 			}
 
-			// Calculate amount in USD
-			const amountInUSD = validatedData.amount * currency[0].exchangeRate;
+			// Calculate amount in USD (round to 2 decimal places)
+			const amountInUSD = Math.round(validatedData.amount * currency[0].exchangeRate * 100) / 100;
 
 			// Insert new journal entry
 			const newEntry = await db
@@ -281,7 +281,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 				});
 			}
 
-			updateData.amountInUSD = amount * currency[0].exchangeRate;
+			updateData.amountInUSD = Math.round(amount * currency[0].exchangeRate * 100) / 100;
 		}
 
 		// Update journal entry
@@ -572,8 +572,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 					throw new Error(`Currency not found: ${currencyCode}`);
 				}
 
-				// Calculate amount in USD
-				const amountInUSD = amount * currency[0].exchangeRate;
+				// Calculate amount in USD (round to 2 decimal places)
+				const amountInUSD = Math.round(amount * currency[0].exchangeRate * 100) / 100;
 
 				// Add to validated entries
 				validatedEntries.push({
