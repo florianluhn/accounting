@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { auditLogsAPI, type AuditLog, type AuditLogFilters } from '$lib/api';
-	import { onMount } from 'svelte';
 
 	let logs = $state<AuditLog[]>([]);
-	let loading = $state(true);
+	let loading = $state(false);
 	let error = $state('');
 
 	// Filter state
@@ -40,6 +39,11 @@
 			loading = false;
 		}
 	}
+
+	// Load logs on component mount
+	$effect(() => {
+		loadLogs();
+	});
 
 	function viewDetails(log: AuditLog) {
 		selectedLog = log;
@@ -109,10 +113,6 @@
 	function formatResourceType(type: string): string {
 		return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 	}
-
-	onMount(() => {
-		loadLogs();
-	});
 </script>
 
 <svelte:head>
