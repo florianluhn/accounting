@@ -163,17 +163,23 @@ async function transferToNAS(localPath: string): Promise<string> {
 			// Create mount point
 			await execAsync(`sudo mkdir -p ${mountPoint}`);
 
-			// Mount NAS share
-			const mountCmd = `sudo mount -t cifs "//${CONFIG.BACKUP_NAS_HOST}/${CONFIG.BACKUP_NAS_SHARE}" ${mountPoint} -o username=${CONFIG.BACKUP_NAS_USERNAME},password="${CONFIG.BACKUP_NAS_PASSWORD}"`;
+			// Get current user's UID and GID
+			const { stdout: uidOutput } = await execAsync('id -u');
+			const { stdout: gidOutput } = await execAsync('id -g');
+			const uid = uidOutput.trim();
+			const gid = gidOutput.trim();
+
+			// Mount NAS share with proper permissions
+			const mountCmd = `sudo mount -t cifs "//${CONFIG.BACKUP_NAS_HOST}/${CONFIG.BACKUP_NAS_SHARE}" ${mountPoint} -o username=${CONFIG.BACKUP_NAS_USERNAME},password="${CONFIG.BACKUP_NAS_PASSWORD}",uid=${uid},gid=${gid},file_mode=0755,dir_mode=0755`;
 			await execAsync(mountCmd);
 
-			// Create destination folder
+			// Create destination folder (no sudo needed now due to uid/gid mount options)
 			const destFolder = `${mountPoint}/${CONFIG.BACKUP_NAS_FOLDER}`;
-			await execAsync(`sudo mkdir -p "${destFolder}"`);
+			await execAsync(`mkdir -p "${destFolder}"`);
 
-			// Copy backup
+			// Copy backup (no sudo needed)
 			const destPath = `${destFolder}/${backupName}`;
-			await execAsync(`sudo cp -r "${localPath}" "${destPath}"`);
+			await execAsync(`cp -r "${localPath}" "${destPath}"`);
 
 			// Unmount
 			await execAsync(`sudo umount ${mountPoint}`);
