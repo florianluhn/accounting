@@ -3,6 +3,7 @@ import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
 import { subledgerAccounts, glAccounts, currencies } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
+import { logAudit } from '../services/audit.js';
 
 // Validation schemas
 const createSubledgerAccountSchema = z.object({
@@ -132,6 +133,15 @@ export default async function subledgerAccountsRoutes(fastify: FastifyInstance) 
 			// Insert new subledger account
 			const newAccount = await db.insert(subledgerAccounts).values(validatedData).returning();
 
+			// Log audit entry
+			await logAudit({
+				operation: 'CREATE',
+				resourceType: 'subledger_account',
+				resourceId: newAccount[0].id,
+				source: 'Web UI',
+				newData: newAccount[0]
+			});
+
 			// Save database
 			await saveDatabase();
 
@@ -224,6 +234,16 @@ export default async function subledgerAccountsRoutes(fastify: FastifyInstance) 
 			.where(eq(subledgerAccounts.id, id))
 			.returning();
 
+		// Log audit entry
+		await logAudit({
+			operation: 'UPDATE',
+			resourceType: 'subledger_account',
+			resourceId: id,
+			source: 'Web UI',
+			oldData: existing[0],
+			newData: updated[0]
+		});
+
 		// Save database
 		await saveDatabase();
 
@@ -257,6 +277,15 @@ export default async function subledgerAccountsRoutes(fastify: FastifyInstance) 
 
 		// Note: Deletion will be restricted by foreign key constraint if journal entries exist
 		await db.delete(subledgerAccounts).where(eq(subledgerAccounts.id, id));
+
+		// Log audit entry
+		await logAudit({
+			operation: 'DELETE',
+			resourceType: 'subledger_account',
+			resourceId: id,
+			source: 'Web UI',
+			oldData: existing[0]
+		});
 
 		// Save database
 		await saveDatabase();

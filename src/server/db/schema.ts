@@ -186,6 +186,35 @@ export const accountBalances = sqliteTable(
 );
 
 // ========================================
+// Audit Logs Table
+// ========================================
+export const auditLogs = sqliteTable(
+	'audit_logs',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		operation: text('operation', { enum: ['CREATE', 'UPDATE', 'DELETE'] }).notNull(),
+		resourceType: text('resource_type', {
+			enum: ['currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment']
+		}).notNull(),
+		resourceId: text('resource_id').notNull(),
+		source: text('source', { enum: ['Web UI', 'CSV Import', 'API'] }).notNull().default('Web UI'),
+		batchId: text('batch_id'),
+		batchSummary: text('batch_summary'),
+		oldData: text('old_data'),
+		newData: text('new_data'),
+		timestamp: integer('timestamp', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+		description: text('description')
+	},
+	(table) => ({
+		timestampIdx: index('idx_audit_logs_timestamp').on(table.timestamp),
+		resourceIdx: index('idx_audit_logs_resource').on(table.resourceType, table.resourceId),
+		operationIdx: index('idx_audit_logs_operation').on(table.operation),
+		sourceIdx: index('idx_audit_logs_source').on(table.source),
+		batchIdx: index('idx_audit_logs_batch').on(table.batchId)
+	})
+);
+
+// ========================================
 // Type exports for TypeScript
 // ========================================
 export type Currency = typeof currencies.$inferSelect;
@@ -205,3 +234,6 @@ export type NewAttachment = typeof attachments.$inferInsert;
 
 export type AccountBalance = typeof accountBalances.$inferSelect;
 export type NewAccountBalance = typeof accountBalances.$inferInsert;
+
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type NewAuditLog = typeof auditLogs.$inferInsert;

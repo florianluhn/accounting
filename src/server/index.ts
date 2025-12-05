@@ -66,6 +66,7 @@ import subledgerAccountsRoutes from './routes/subledger-accounts.js';
 import journalEntriesRoutes from './routes/journal-entries.js';
 import attachmentsRoutes from './routes/attachments.js';
 import reportsRoutes from './routes/reports.js';
+import auditLogsRoutes from './routes/audit-logs.js';
 
 await fastify.register(currenciesRoutes, { prefix: '/api/currencies' });
 await fastify.register(glAccountsRoutes, { prefix: '/api/gl-accounts' });
@@ -73,6 +74,7 @@ await fastify.register(subledgerAccountsRoutes, { prefix: '/api/subledger-accoun
 await fastify.register(journalEntriesRoutes, { prefix: '/api/journal-entries' });
 await fastify.register(attachmentsRoutes, { prefix: '/api/attachments' });
 await fastify.register(reportsRoutes, { prefix: '/api/reports' });
+await fastify.register(auditLogsRoutes, { prefix: '/api/audit-logs' });
 
 // ========================================
 // Error Handler

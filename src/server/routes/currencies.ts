@@ -3,6 +3,7 @@ import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
 import { currencies } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { logAudit } from '../services/audit.js';
 
 // Validation schemas
 const createCurrencySchema = z.object({
@@ -65,6 +66,15 @@ export default async function currenciesRoutes(fastify: FastifyInstance) {
 			// Insert new currency
 			const newCurrency = await db.insert(currencies).values(validatedData).returning();
 
+			// Log audit entry
+			await logAudit({
+				operation: 'CREATE',
+				resourceType: 'currency',
+				resourceId: newCurrency[0].code,
+				source: 'Web UI',
+				newData: newCurrency[0]
+			});
+
 			// Save database
 			await saveDatabase();
 
@@ -109,6 +119,16 @@ export default async function currenciesRoutes(fastify: FastifyInstance) {
 			.where(eq(currencies.code, code.toUpperCase()))
 			.returning();
 
+		// Log audit entry
+		await logAudit({
+			operation: 'UPDATE',
+			resourceType: 'currency',
+			resourceId: code.toUpperCase(),
+			source: 'Web UI',
+			oldData: existing[0],
+			newData: updated[0]
+		});
+
 		// Save database
 		await saveDatabase();
 
@@ -143,6 +163,15 @@ export default async function currenciesRoutes(fastify: FastifyInstance) {
 
 		// Delete currency
 		await db.delete(currencies).where(eq(currencies.code, code.toUpperCase()));
+
+		// Log audit entry
+		await logAudit({
+			operation: 'DELETE',
+			resourceType: 'currency',
+			resourceId: code.toUpperCase(),
+			source: 'Web UI',
+			oldData: existing[0]
+		});
 
 		// Save database
 		await saveDatabase();

@@ -521,3 +521,84 @@ export const reportsAPI = {
 		return apiFetch(`/api/reports/account-ledger/${accountId}${queryString ? `?${queryString}` : ''}`);
 	}
 };
+
+// ========================================
+// Audit Logs API
+// ========================================
+export interface AuditLog {
+	id: number;
+	operation: 'CREATE' | 'UPDATE' | 'DELETE';
+	resourceType: 'currency' | 'gl_account' | 'subledger_account' | 'journal_entry' | 'attachment';
+	resourceId: string;
+	source: 'Web UI' | 'CSV Import' | 'API';
+	batchId: string | null;
+	batchSummary: string | null;
+	oldData: any | null;
+	newData: any | null;
+	timestamp: Date;
+	description: string | null;
+}
+
+export interface AuditLogFilters {
+	startDate?: Date;
+	endDate?: Date;
+	resourceType?: string;
+	operation?: string;
+	source?: string;
+	resourceId?: string;
+	batchId?: string;
+}
+
+export const auditLogsAPI = {
+	async list(filters?: AuditLogFilters): Promise<AuditLog[]> {
+		const query = new URLSearchParams();
+		if (filters?.startDate) query.set('startDate', filters.startDate.toISOString());
+		if (filters?.endDate) query.set('endDate', filters.endDate.toISOString());
+		if (filters?.resourceType) query.set('resourceType', filters.resourceType);
+		if (filters?.operation) query.set('operation', filters.operation);
+		if (filters?.source) query.set('source', filters.source);
+		if (filters?.resourceId) query.set('resourceId', filters.resourceId);
+		if (filters?.batchId) query.set('batchId', filters.batchId);
+
+		const queryString = query.toString();
+		return apiFetch(`/api/audit-logs${queryString ? `?${queryString}` : ''}`);
+	},
+
+	async get(id: number): Promise<AuditLog> {
+		return apiFetch(`/api/audit-logs/${id}`);
+	},
+
+	async downloadCSV(filters?: AuditLogFilters): Promise<void> {
+		const query = new URLSearchParams();
+		if (filters?.startDate) query.set('startDate', filters.startDate.toISOString());
+		if (filters?.endDate) query.set('endDate', filters.endDate.toISOString());
+		if (filters?.resourceType) query.set('resourceType', filters.resourceType);
+		if (filters?.operation) query.set('operation', filters.operation);
+		if (filters?.source) query.set('source', filters.source);
+		if (filters?.resourceId) query.set('resourceId', filters.resourceId);
+		if (filters?.batchId) query.set('batchId', filters.batchId);
+
+		const queryString = query.toString();
+		const url = `${getApiBaseUrl()}/api/audit-logs/export/csv${queryString ? `?${queryString}` : ''}`;
+
+		// Trigger download
+		window.open(url, '_blank');
+	},
+
+	async downloadJSON(filters?: AuditLogFilters): Promise<void> {
+		const query = new URLSearchParams();
+		if (filters?.startDate) query.set('startDate', filters.startDate.toISOString());
+		if (filters?.endDate) query.set('endDate', filters.endDate.toISOString());
+		if (filters?.resourceType) query.set('resourceType', filters.resourceType);
+		if (filters?.operation) query.set('operation', filters.operation);
+		if (filters?.source) query.set('source', filters.source);
+		if (filters?.resourceId) query.set('resourceId', filters.resourceId);
+		if (filters?.batchId) query.set('batchId', filters.batchId);
+
+		const queryString = query.toString();
+		const url = `${getApiBaseUrl()}/api/audit-logs/export/json${queryString ? `?${queryString}` : ''}`;
+
+		// Trigger download
+		window.open(url, '_blank');
+	}
+};

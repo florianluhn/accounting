@@ -8,6 +8,7 @@ import { mkdir, writeFile, unlink, readFile, stat } from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { CONFIG } from '../config.js';
 import { existsSync } from 'fs';
+import { logAudit } from '../services/audit.js';
 
 export default async function attachmentsRoutes(fastify: FastifyInstance) {
 	// GET /api/attachments - List all attachments
@@ -182,6 +183,15 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 				})
 				.returning();
 
+			// Log audit entry
+			await logAudit({
+				operation: 'CREATE',
+				resourceType: 'attachment',
+				resourceId: newAttachment[0].id,
+				source: 'Web UI',
+				newData: newAttachment[0]
+			});
+
 			// Save database
 			await saveDatabase();
 
@@ -228,6 +238,15 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 
 		// Delete attachment record
 		await db.delete(attachments).where(eq(attachments.id, id));
+
+		// Log audit entry
+		await logAudit({
+			operation: 'DELETE',
+			resourceType: 'attachment',
+			resourceId: id,
+			source: 'Web UI',
+			oldData: attachment[0]
+		});
 
 		// Save database
 		await saveDatabase();

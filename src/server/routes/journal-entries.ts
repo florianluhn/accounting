@@ -5,6 +5,7 @@ import { journalEntries, subledgerAccounts, currencies, glAccounts } from '../db
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
+import { logAudit, generateBatchId } from '../services/audit.js';
 
 // Validation schemas
 const createJournalEntrySchema = z.object({
@@ -180,6 +181,15 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 				})
 				.returning();
 
+			// Log audit entry
+			await logAudit({
+				operation: 'CREATE',
+				resourceType: 'journal_entry',
+				resourceId: newEntry[0].id,
+				source: 'Web UI',
+				newData: newEntry[0]
+			});
+
 			// Save database
 			await saveDatabase();
 
@@ -291,6 +301,16 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			.where(eq(journalEntries.id, id))
 			.returning();
 
+		// Log audit entry
+		await logAudit({
+			operation: 'UPDATE',
+			resourceType: 'journal_entry',
+			resourceId: id,
+			source: 'Web UI',
+			oldData: existing[0],
+			newData: updated[0]
+		});
+
 		// Save database
 		await saveDatabase();
 
@@ -324,6 +344,15 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 
 		// Delete journal entry
 		await db.delete(journalEntries).where(eq(journalEntries.id, id));
+
+		// Log audit entry
+		await logAudit({
+			operation: 'DELETE',
+			resourceType: 'journal_entry',
+			resourceId: id,
+			source: 'Web UI',
+			oldData: existing[0]
+		});
 
 		// Save database
 		await saveDatabase();
@@ -605,10 +634,22 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 		}
 
 		// Phase 2: Insert all validated entries
+		const batchId = generateBatchId();
 		for (const entry of validatedEntries) {
 			await db.insert(journalEntries).values(entry);
 			results.success++;
 		}
+
+		// Log audit entry for batch import
+		await logAudit({
+			operation: 'CREATE',
+			resourceType: 'journal_entry',
+			resourceId: batchId,
+			source: 'CSV Import',
+			batchId,
+			batchSummary: `Imported ${results.success} journal entries from CSV`,
+			newData: { count: results.success, entries: validatedEntries.length }
+		});
 
 		// Save database
 		await saveDatabase();

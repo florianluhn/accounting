@@ -215,6 +215,57 @@ if (!isScript) {
 	});
 }
 
+// ========================================
+// Migrations
+// ========================================
+
+/**
+ * Run audit logs table migration
+ */
+function migrateAuditLogs(): void {
+	try {
+		// Check if audit_logs table exists
+		const tableCheck = sqlite.exec(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name='audit_logs'"
+		);
+
+		if (tableCheck.length === 0 || tableCheck[0].values.length === 0) {
+			console.log('Creating audit_logs table...');
+
+			// Create audit_logs table
+			sqlite.run(`
+				CREATE TABLE IF NOT EXISTS audit_logs (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					operation TEXT NOT NULL CHECK(operation IN ('CREATE', 'UPDATE', 'DELETE')),
+					resource_type TEXT NOT NULL CHECK(resource_type IN ('currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment')),
+					resource_id TEXT NOT NULL,
+					source TEXT NOT NULL DEFAULT 'Web UI' CHECK(source IN ('Web UI', 'CSV Import', 'API')),
+					batch_id TEXT,
+					batch_summary TEXT,
+					old_data TEXT,
+					new_data TEXT,
+					timestamp INTEGER NOT NULL DEFAULT (unixepoch()),
+					description TEXT
+				)
+			`);
+
+			// Create indexes
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type, resource_id)');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_operation ON audit_logs(operation)');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_source ON audit_logs(source)');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_batch ON audit_logs(batch_id)');
+
+			console.log('✓ audit_logs table created successfully');
+		} else {
+			console.log('✓ audit_logs table already exists');
+		}
+	} catch (error) {
+		console.error('Failed to create audit_logs table:', error);
+		throw error;
+	}
+}
+
 // Run integrity check on startup
 if (!checkIntegrity()) {
 	console.error('❌ Database integrity check failed!');
@@ -222,6 +273,9 @@ if (!checkIntegrity()) {
 } else {
 	console.log('✓ Database integrity check passed');
 }
+
+// Run migrations
+migrateAuditLogs();
 
 export { sqlite };
 export default db;

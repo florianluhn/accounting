@@ -3,6 +3,7 @@ import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
 import { glAccounts, ACCOUNT_TYPES } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { logAudit } from '../services/audit.js';
 
 // Validation schemas
 const createGLAccountSchema = z.object({
@@ -90,6 +91,15 @@ export default async function glAccountsRoutes(fastify: FastifyInstance) {
 			// Insert new GL account
 			const newAccount = await db.insert(glAccounts).values(validatedData).returning();
 
+			// Log audit entry
+			await logAudit({
+				operation: 'CREATE',
+				resourceType: 'gl_account',
+				resourceId: newAccount[0].id,
+				source: 'Web UI',
+				newData: newAccount[0]
+			});
+
 			// Save database
 			await saveDatabase();
 
@@ -146,6 +156,16 @@ export default async function glAccountsRoutes(fastify: FastifyInstance) {
 			.where(eq(glAccounts.id, id))
 			.returning();
 
+		// Log audit entry
+		await logAudit({
+			operation: 'UPDATE',
+			resourceType: 'gl_account',
+			resourceId: id,
+			source: 'Web UI',
+			oldData: existing[0],
+			newData: updated[0]
+		});
+
 		// Save database
 		await saveDatabase();
 
@@ -175,6 +195,15 @@ export default async function glAccountsRoutes(fastify: FastifyInstance) {
 
 		// Note: Deletion will be restricted by foreign key constraint if subledgers exist
 		await db.delete(glAccounts).where(eq(glAccounts.id, id));
+
+		// Log audit entry
+		await logAudit({
+			operation: 'DELETE',
+			resourceType: 'gl_account',
+			resourceId: id,
+			source: 'Web UI',
+			oldData: existing[0]
+		});
 
 		// Save database
 		await saveDatabase();
