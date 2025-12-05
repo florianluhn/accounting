@@ -1,11 +1,16 @@
 <script lang="ts">
-	import { currenciesAPI, type Currency } from '$lib/api';
+	import { currenciesAPI, type Currency, backupAPI, type BackupStatus } from '$lib/api';
 
 	let currencies = $state<Currency[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 	let showAddModal = $state(false);
 	let editingCurrency = $state<Currency | null>(null);
+
+	// Backup state
+	let backupStatus = $state<BackupStatus | null>(null);
+	let backupLoading = $state(false);
+	let backupMessage = $state('');
 
 	// Form state
 	let formData = $state({
@@ -18,6 +23,7 @@
 
 	$effect(() => {
 		loadCurrencies();
+		loadBackupStatus();
 	});
 
 	async function loadCurrencies() {
@@ -81,6 +87,34 @@
 			await loadCurrencies();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to delete currency';
+		}
+	}
+
+	async function loadBackupStatus() {
+		try {
+			backupStatus = await backupAPI.getStatus();
+		} catch (e) {
+			console.error('Failed to load backup status:', e);
+		}
+	}
+
+	async function triggerBackup() {
+		if (!confirm('Are you sure you want to trigger a manual backup now?')) {
+			return;
+		}
+
+		try {
+			backupLoading = true;
+			backupMessage = '';
+			const result = await backupAPI.triggerManual();
+			backupMessage = result.message;
+
+			// Reload status after backup
+			await loadBackupStatus();
+		} catch (e) {
+			backupMessage = e instanceof Error ? e.message : 'Failed to trigger backup';
+		} finally {
+			backupLoading = false;
 		}
 	}
 </script>
@@ -186,6 +220,117 @@
 							{/each}
 						</tbody>
 					</table>
+				</div>
+			{/if}
+		</div>
+	</div>
+
+	<!-- Backup Section -->
+	<div class="card bg-base-100 shadow-xl mb-6">
+		<div class="card-body">
+			<h2 class="card-title text-2xl mb-4">Backup Management</h2>
+
+			{#if backupMessage}
+				<div class="alert {backupMessage.includes('success') ? 'alert-success' : 'alert-error'} mb-4">
+					<span>{backupMessage}</span>
+				</div>
+			{/if}
+
+			{#if backupStatus}
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+					<div class="stat bg-base-200 rounded-lg">
+						<div class="stat-title">Status</div>
+						<div class="stat-value text-lg">
+							{#if backupStatus.enabled}
+								<span class="badge badge-success badge-lg">Enabled</span>
+							{:else}
+								<span class="badge badge-error badge-lg">Disabled</span>
+							{/if}
+						</div>
+						<div class="stat-desc">Automatic backups {backupStatus.enabled ? 'active' : 'inactive'}</div>
+					</div>
+
+					<div class="stat bg-base-200 rounded-lg">
+						<div class="stat-title">Schedule</div>
+						<div class="stat-value text-lg font-mono">{backupStatus.schedule}</div>
+						<div class="stat-desc">Cron format (minute hour day month weekday)</div>
+					</div>
+
+					<div class="stat bg-base-200 rounded-lg">
+						<div class="stat-title">NAS Configuration</div>
+						<div class="stat-value text-lg">
+							{#if backupStatus.nasConfigured}
+								<span class="badge badge-success badge-lg">Configured</span>
+							{:else}
+								<span class="badge badge-warning badge-lg">Not Configured</span>
+							{/if}
+						</div>
+						<div class="stat-desc">
+							{#if backupStatus.nasConfigured}
+								Backups will transfer to NAS
+							{:else}
+								Set credentials in .env file
+							{/if}
+						</div>
+					</div>
+
+					<div class="stat bg-base-200 rounded-lg">
+						<div class="stat-title">Retention</div>
+						<div class="stat-value text-lg">{backupStatus.config.retentionDays} days</div>
+						<div class="stat-desc">Old backups automatically deleted</div>
+					</div>
+				</div>
+
+				<div class="divider"></div>
+
+				<div class="space-y-2">
+					<h3 class="font-semibold mb-2">Backup Configuration</h3>
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+						<div><span class="font-semibold">NAS Host:</span> {backupStatus.config.nasHost}</div>
+						<div><span class="font-semibold">NAS Share:</span> {backupStatus.config.nasShare}</div>
+						<div><span class="font-semibold">NAS Folder:</span> {backupStatus.config.nasFolder}</div>
+						<div><span class="font-semibold">Local Dir:</span> {backupStatus.config.localDir}</div>
+					</div>
+				</div>
+
+				<div class="card-actions justify-end mt-4">
+					<button
+						class="btn btn-primary"
+						onclick={triggerBackup}
+						disabled={!backupStatus.enabled || backupLoading}
+					>
+						{#if backupLoading}
+							<span class="loading loading-spinner"></span>
+							Running Backup...
+						{:else}
+							Trigger Manual Backup
+						{/if}
+					</button>
+				</div>
+
+				{#if !backupStatus.enabled}
+					<div class="alert alert-info mt-4">
+						<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+						</svg>
+						<span>To enable backups, set <code>BACKUP_ENABLED=true</code> in your .env file and restart the server.</span>
+					</div>
+				{/if}
+
+				{#if backupStatus.enabled && !backupStatus.nasConfigured}
+					<div class="alert alert-warning mt-4">
+						<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+						</svg>
+						<div>
+							<div class="font-bold">NAS credentials not configured</div>
+							<div class="text-sm">Backups will be stored locally only. Set <code>BACKUP_NAS_USERNAME</code> and <code>BACKUP_NAS_PASSWORD</code> in your .env file to enable NAS transfers.</div>
+						</div>
+					</div>
+				{/if}
+			{:else}
+				<div class="flex justify-center py-8">
+					<span class="loading loading-spinner loading-lg"></span>
 				</div>
 			{/if}
 		</div>

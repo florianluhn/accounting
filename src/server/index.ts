@@ -67,6 +67,7 @@ import journalEntriesRoutes from './routes/journal-entries.js';
 import attachmentsRoutes from './routes/attachments.js';
 import reportsRoutes from './routes/reports.js';
 import auditLogsRoutes from './routes/audit-logs.js';
+import backupRoutes from './routes/backup.js';
 
 await fastify.register(currenciesRoutes, { prefix: '/api/currencies' });
 await fastify.register(glAccountsRoutes, { prefix: '/api/gl-accounts' });
@@ -75,6 +76,7 @@ await fastify.register(journalEntriesRoutes, { prefix: '/api/journal-entries' })
 await fastify.register(attachmentsRoutes, { prefix: '/api/attachments' });
 await fastify.register(reportsRoutes, { prefix: '/api/reports' });
 await fastify.register(auditLogsRoutes, { prefix: '/api/audit-logs' });
+await fastify.register(backupRoutes, { prefix: '/api/backup' });
 
 // ========================================
 // Error Handler
@@ -128,6 +130,8 @@ fastify.setErrorHandler((error, request, reply) => {
 // ========================================
 // Start Server
 // ========================================
+import { initializeScheduler, shutdownScheduler } from './services/scheduler.js';
+
 async function start() {
 	try {
 		await fastify.listen({
@@ -145,6 +149,9 @@ async function start() {
 		console.log(`📁 Attachments: ${CONFIG.ATTACHMENTS_PATH}`);
 		console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 		console.log('');
+
+		// Initialize backup scheduler
+		initializeScheduler();
 	} catch (err) {
 		fastify.log.error(err);
 		process.exit(1);
@@ -156,6 +163,7 @@ const signals = ['SIGINT', 'SIGTERM'];
 signals.forEach((signal) => {
 	process.on(signal, async () => {
 		console.log(`\n${signal} received, shutting down gracefully...`);
+		shutdownScheduler();
 		await fastify.close();
 		process.exit(0);
 	});

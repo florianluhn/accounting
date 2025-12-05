@@ -22,6 +22,17 @@ export const CONFIG = {
 	MAX_FILE_SIZE_MB: parseInt(process.env.MAX_FILE_SIZE_MB || '10', 10),
 	MAX_STORAGE_GB: parseInt(process.env.MAX_STORAGE_GB || '40', 10),
 
+	// Backup Configuration
+	BACKUP_ENABLED: process.env.BACKUP_ENABLED === 'true',
+	BACKUP_CRON: process.env.BACKUP_CRON || '0 2 * * *',
+	BACKUP_NAS_HOST: process.env.BACKUP_NAS_HOST || '192.168.1.30',
+	BACKUP_NAS_SHARE: process.env.BACKUP_NAS_SHARE || 'backup',
+	BACKUP_NAS_FOLDER: process.env.BACKUP_NAS_FOLDER || 'accounting-backups',
+	BACKUP_NAS_USERNAME: process.env.BACKUP_NAS_USERNAME || '',
+	BACKUP_NAS_PASSWORD: process.env.BACKUP_NAS_PASSWORD || '',
+	BACKUP_RETENTION_DAYS: parseInt(process.env.BACKUP_RETENTION_DAYS || '30', 10),
+	BACKUP_LOCAL_DIR: process.env.BACKUP_LOCAL_DIR || './backups',
+
 	// Derived values
 	get MAX_FILE_SIZE_BYTES() {
 		return this.MAX_FILE_SIZE_MB * 1024 * 1024;

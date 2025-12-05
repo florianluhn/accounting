@@ -602,3 +602,39 @@ export const auditLogsAPI = {
 		window.open(url, '_blank');
 	}
 };
+
+// Backup API
+export interface BackupStatus {
+	enabled: boolean;
+	schedule: string;
+	nasConfigured: boolean;
+	lastBackup?: Date;
+	config: {
+		nasHost: string;
+		nasShare: string;
+		nasFolder: string;
+		retentionDays: number;
+		localDir: string;
+	};
+}
+
+export interface BackupResult {
+	success: boolean;
+	message: string;
+	timestamp: Date;
+	localPath?: string;
+	nasPath?: string;
+	size?: number;
+}
+
+export const backupAPI = {
+	async getStatus(): Promise<BackupStatus> {
+		return apiFetch('/api/backup/status');
+	},
+
+	async triggerManual(): Promise<BackupResult> {
+		return apiFetch('/api/backup/manual', {
+			method: 'POST'
+		});
+	}
+};
