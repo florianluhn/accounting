@@ -6,12 +6,14 @@
 		currenciesAPI,
 		attachmentsAPI,
 		type BalanceSheetReport,
+		type ProfitLossReport,
 		type JournalEntry,
 		type SubledgerAccount,
 		type Currency
 	} from '$lib/api';
 
 	let balanceSheet = $state<BalanceSheetReport | null>(null);
+	let profitLoss = $state<ProfitLossReport | null>(null);
 	let journalEntries = $state<JournalEntry[]>([]);
 	let subledgerAccounts = $state<SubledgerAccount[]>([]);
 	let currencies = $state<Currency[]>([]);
@@ -56,9 +58,10 @@
 				selectedCurrency = defaultCurrency.code;
 			}
 
-			// Load balance sheet, journal entries, and subledger accounts in parallel
+			// Load balance sheet, P&L, journal entries, and subledger accounts in parallel
 			await Promise.all([
 				loadBalanceSheet(),
+				loadProfitLoss(),
 				loadJournalEntries(),
 				loadSubledgerAccounts()
 			]);
@@ -82,6 +85,23 @@
 			});
 		} catch (e) {
 			console.error('Error loading balance sheet:', e);
+		}
+	}
+
+	async function loadProfitLoss() {
+		try {
+			// Get P&L for current month (start of month to today)
+			const now = new Date();
+			const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+			const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+
+			profitLoss = await reportsAPI.profitLoss({
+				startDate: startOfMonth,
+				endDate: endOfToday,
+				currencyCode: selectedCurrency
+			});
+		} catch (e) {
+			console.error('Error loading profit & loss:', e);
 		}
 	}
 
@@ -150,7 +170,16 @@
 	}
 
 	async function handleCurrencyChange() {
-		await loadBalanceSheet();
+		await Promise.all([
+			loadBalanceSheet(),
+			loadProfitLoss()
+		]);
+	}
+
+	// Get current month name
+	function getCurrentMonthName(): string {
+		const now = new Date();
+		return now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 	}
 
 	// Get local date in YYYY-MM-DD format (without timezone conversion)
@@ -349,6 +378,77 @@
 			{/if}
 		</div>
 	</div>
+
+	<!-- P&L Statement for Current Month -->
+	{#if !loading && profitLoss}
+		<div class="card bg-base-100 shadow-xl mb-6">
+			<div class="card-body">
+				<h2 class="card-title text-2xl mb-4">Profit & Loss Statement - {getCurrentMonthName()}</h2>
+
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+					<!-- Revenue Section -->
+					<div>
+						<h3 class="font-bold text-lg mb-3 flex items-center gap-2">
+							<span class="text-success">Revenue</span>
+						</h3>
+						{#if profitLoss.revenue.accounts.length > 0}
+							<div class="space-y-2">
+								{#each profitLoss.revenue.accounts as account}
+									<div class="flex justify-between items-center py-1 border-b border-base-300">
+										<span class="text-sm">{account.accountNumber} - {account.accountName}</span>
+										<span class="font-mono text-sm">{formatCurrency(account.balance)}</span>
+									</div>
+								{/each}
+								<div class="flex justify-between items-center pt-2 font-bold">
+									<span>Total Revenue</span>
+									<span class="text-success font-mono">{formatCurrency(profitLoss.revenue.total)}</span>
+								</div>
+							</div>
+						{:else}
+							<p class="text-base-content/60 text-sm">No revenue accounts with activity this month</p>
+						{/if}
+					</div>
+
+					<!-- Expenses Section -->
+					<div>
+						<h3 class="font-bold text-lg mb-3 flex items-center gap-2">
+							<span class="text-error">Expenses</span>
+						</h3>
+						{#if profitLoss.expenses.accounts.length > 0}
+							<div class="space-y-2">
+								{#each profitLoss.expenses.accounts as account}
+									<div class="flex justify-between items-center py-1 border-b border-base-300">
+										<span class="text-sm">{account.accountNumber} - {account.accountName}</span>
+										<span class="font-mono text-sm">{formatCurrency(account.balance)}</span>
+									</div>
+								{/each}
+								<div class="flex justify-between items-center pt-2 font-bold">
+									<span>Total Expenses</span>
+									<span class="text-error font-mono">{formatCurrency(profitLoss.expenses.total)}</span>
+								</div>
+							</div>
+						{:else}
+							<p class="text-base-content/60 text-sm">No expense accounts with activity this month</p>
+						{/if}
+					</div>
+				</div>
+
+				<!-- Net Income -->
+				<div class="divider"></div>
+				<div class="flex justify-between items-center">
+					<h3 class="font-bold text-xl">Net Income</h3>
+					<div class="text-right">
+						<div class="text-2xl font-bold font-mono {profitLoss.netIncome >= 0 ? 'text-success' : 'text-error'}">
+							{formatCurrency(profitLoss.netIncome)}
+						</div>
+						<div class="text-sm text-base-content/60">
+							{profitLoss.netIncome >= 0 ? 'Profit' : 'Loss'}
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	<!-- Quick Stats -->
 	{#if loading}

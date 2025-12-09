@@ -156,7 +156,7 @@ async function transferToNAS(localPath: string): Promise<string> {
 			throw error;
 		}
 	} else {
-		// Linux/macOS: Use mount and cp
+		// Linux/macOS: Use mount and rsync/cp
 		const mountPoint = '/mnt/nas_backup';
 
 		try {
@@ -169,17 +169,38 @@ async function transferToNAS(localPath: string): Promise<string> {
 			const uid = uidOutput.trim();
 			const gid = gidOutput.trim();
 
-			// Mount NAS share with proper permissions
-			const mountCmd = `sudo mount -t cifs "//${CONFIG.BACKUP_NAS_HOST}/${CONFIG.BACKUP_NAS_SHARE}" ${mountPoint} -o username=${CONFIG.BACKUP_NAS_USERNAME},password="${CONFIG.BACKUP_NAS_PASSWORD}",uid=${uid},gid=${gid},file_mode=0755,dir_mode=0755`;
+			// Mount NAS share with proper permissions and file ownership
+			const mountCmd = `sudo mount -t cifs "//${CONFIG.BACKUP_NAS_HOST}/${CONFIG.BACKUP_NAS_SHARE}" ${mountPoint} -o username=${CONFIG.BACKUP_NAS_USERNAME},password="${CONFIG.BACKUP_NAS_PASSWORD}",uid=${uid},gid=${gid},file_mode=0777,dir_mode=0777,forceuid,forcegid`;
 			await execAsync(mountCmd);
 
-			// Create destination folder (no sudo needed now due to uid/gid mount options)
+			// Verify mount worked
+			const { stdout: mountCheck } = await execAsync(`mount | grep ${mountPoint}`);
+			console.log(`✓ NAS mounted: ${mountCheck.trim()}`);
+
+			// Create destination folder with full path
 			const destFolder = `${mountPoint}/${CONFIG.BACKUP_NAS_FOLDER}`;
+			console.log(`Creating destination folder: ${destFolder}`);
 			await execAsync(`mkdir -p "${destFolder}"`);
 
-			// Copy backup (no sudo needed)
+			// Test write permissions
+			const testFile = `${destFolder}/.test_write_${Date.now()}`;
+			await execAsync(`touch "${testFile}"`);
+			await execAsync(`rm "${testFile}"`);
+			console.log(`✓ Write permissions verified`);
+
+			// Copy backup using rsync if available, otherwise cp
 			const destPath = `${destFolder}/${backupName}`;
-			await execAsync(`cp -r "${localPath}" "${destPath}"`);
+			console.log(`Copying backup to: ${destPath}`);
+
+			try {
+				// Try rsync first (better for large directories)
+				await execAsync(`rsync -a "${localPath}/" "${destPath}/"`);
+				console.log(`✓ Backup copied via rsync`);
+			} catch (rsyncError) {
+				// Fallback to cp if rsync not available
+				await execAsync(`cp -r "${localPath}" "${destPath}"`);
+				console.log(`✓ Backup copied via cp`);
+			}
 
 			// Unmount
 			await execAsync(`sudo umount ${mountPoint}`);
@@ -191,7 +212,11 @@ async function transferToNAS(localPath: string): Promise<string> {
 			try {
 				await execAsync(`sudo umount ${mountPoint}`);
 			} catch {}
-			throw error;
+
+			// Add more detailed error info
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			console.error(`NAS transfer error: ${errorMessage}`);
+			throw new Error(`Failed to transfer backup to NAS: ${errorMessage}`);
 		}
 	}
 }
