@@ -103,15 +103,6 @@ sqlite.run(`
 	END;
 `);
 
-// Update timestamp triggers for vendors
-sqlite.run(`
-	CREATE TRIGGER IF NOT EXISTS update_vendors_timestamp
-	AFTER UPDATE ON vendors
-	FOR EACH ROW
-	BEGIN
-		UPDATE vendors SET updated_at = unixepoch() WHERE id = NEW.id;
-	END;
-`);
 
 // ========================================
 // Utility Functions
@@ -304,6 +295,16 @@ function migrateVendors(): void {
 			`);
 
 			sqlite.run('CREATE INDEX IF NOT EXISTS idx_vendors_name ON vendors(name)');
+
+			// Create timestamp trigger for vendors
+			sqlite.run(`
+				CREATE TRIGGER IF NOT EXISTS update_vendors_timestamp
+				AFTER UPDATE ON vendors
+				FOR EACH ROW
+				BEGIN
+					UPDATE vendors SET updated_at = unixepoch() WHERE id = NEW.id;
+				END;
+			`);
 
 			console.log('✓ vendors table created successfully');
 		} else {
