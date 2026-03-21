@@ -112,6 +112,7 @@ export const journalEntries = sqliteTable(
 		description: text('description').notNull(),
 		category: text('category'), // Optional categorization
 		comment: text('comment'),
+		vendorId: integer('vendor_id').references(() => vendors.id, { onDelete: 'set null' }),
 		createdAt: integer('created_at', { mode: 'timestamp' })
 			.notNull()
 			.default(sql`(unixepoch())`),
@@ -124,7 +125,33 @@ export const journalEntries = sqliteTable(
 		debitIdx: index('idx_journal_entries_debit').on(table.debitAccountId),
 		creditIdx: index('idx_journal_entries_credit').on(table.creditAccountId),
 		categoryIdx: index('idx_journal_entries_category').on(table.category),
-		currencyIdx: index('idx_journal_entries_currency').on(table.currencyCode)
+		currencyIdx: index('idx_journal_entries_currency').on(table.currencyCode),
+		vendorIdx: index('idx_journal_entries_vendor').on(table.vendorId)
+	})
+);
+
+// ========================================
+// Vendors Table
+// ========================================
+export const vendors = sqliteTable(
+	'vendors',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		name: text('name').notNull(),
+		address: text('address'),
+		phone: text('phone'),
+		email: text('email'),
+		website: text('website'),
+		comments: text('comments'),
+		createdAt: integer('created_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer('updated_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`)
+	},
+	(table) => ({
+		nameIdx: index('idx_vendors_name').on(table.name)
 	})
 );
 
@@ -194,7 +221,7 @@ export const auditLogs = sqliteTable(
 		id: integer('id').primaryKey({ autoIncrement: true }),
 		operation: text('operation', { enum: ['CREATE', 'UPDATE', 'DELETE'] }).notNull(),
 		resourceType: text('resource_type', {
-			enum: ['currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment']
+			enum: ['currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment', 'vendor']
 		}).notNull(),
 		resourceId: text('resource_id').notNull(),
 		source: text('source', { enum: ['Web UI', 'CSV Import', 'API'] }).notNull().default('Web UI'),
@@ -234,6 +261,9 @@ export type NewAttachment = typeof attachments.$inferInsert;
 
 export type AccountBalance = typeof accountBalances.$inferSelect;
 export type NewAccountBalance = typeof accountBalances.$inferInsert;
+
+export type Vendor = typeof vendors.$inferSelect;
+export type NewVendor = typeof vendors.$inferInsert;
 
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type NewAuditLog = typeof auditLogs.$inferInsert;

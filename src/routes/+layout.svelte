@@ -10,6 +10,7 @@
 		{ href: '/', label: 'Dashboard', icon: '📊' },
 		{ href: '/accounts', label: 'Accounts', icon: '🏦' },
 		{ href: '/journals', label: 'Journals', icon: '📖' },
+		{ href: '/vendors', label: 'Vendors', icon: '🏢' },
 		{ href: '/reports', label: 'Reports', icon: '📈' },
 		{ href: '/audit', label: 'Audit Trail', icon: '🔍' },
 		{ href: '/settings', label: 'Settings', icon: '⚙️' }

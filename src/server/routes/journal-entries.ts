@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
-import { journalEntries, subledgerAccounts, currencies, glAccounts } from '../db/schema.js';
+import { journalEntries, subledgerAccounts, currencies, glAccounts, vendors } from '../db/schema.js';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
@@ -16,7 +16,8 @@ const createJournalEntrySchema = z.object({
 	creditAccountId: z.number().int().positive(),
 	description: z.string().min(1).max(500),
 	category: z.string().max(100).optional(),
-	comment: z.string().max(1000).optional()
+	comment: z.string().max(1000).optional(),
+	vendorId: z.number().int().positive().nullable().optional()
 }).refine((data) => data.debitAccountId !== data.creditAccountId, {
 	message: 'Debit and credit accounts must be different',
 	path: ['creditAccountId']
@@ -30,7 +31,8 @@ const updateJournalEntrySchema = z.object({
 	creditAccountId: z.number().int().positive().optional(),
 	description: z.string().min(1).max(500).optional(),
 	category: z.string().max(100).optional(),
-	comment: z.string().max(1000).optional()
+	comment: z.string().max(1000).optional(),
+	vendorId: z.number().int().positive().nullable().optional()
 });
 
 export default async function journalEntriesRoutes(fastify: FastifyInstance) {
@@ -43,6 +45,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			creditAccountId?: string;
 			category?: string;
 			currencyCode?: string;
+			vendorId?: string;
 		}
 	}>('/', async (request, reply) => {
 		let query = db.select().from(journalEntries).orderBy(desc(journalEntries.entryDate));
@@ -84,6 +87,13 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 
 		if (request.query.currencyCode) {
 			conditions.push(eq(journalEntries.currencyCode, request.query.currencyCode));
+		}
+
+		if (request.query.vendorId) {
+			const vendorId = parseInt(request.query.vendorId);
+			if (!isNaN(vendorId)) {
+				conditions.push(eq(journalEntries.vendorId, vendorId));
+			}
 		}
 
 		if (conditions.length > 0) {

@@ -210,6 +210,59 @@ export const subledgerAccountsAPI = {
 };
 
 // ========================================
+// Vendors API
+// ========================================
+export interface Vendor {
+	id: number;
+	name: string;
+	address?: string | null;
+	phone?: string | null;
+	email?: string | null;
+	website?: string | null;
+	comments?: string | null;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+export const vendorsAPI = {
+	async list(params?: { search?: string }): Promise<Vendor[]> {
+		const query = new URLSearchParams();
+		if (params?.search) query.set('search', params.search);
+
+		const queryString = query.toString();
+		return apiFetch(`/api/vendors${queryString ? `?${queryString}` : ''}`);
+	},
+
+	async get(id: number): Promise<Vendor> {
+		return apiFetch(`/api/vendors/${id}`);
+	},
+
+	async create(data: Omit<Vendor, 'id' | 'createdAt' | 'updatedAt'>): Promise<Vendor> {
+		return apiFetch('/api/vendors', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+
+	async update(id: number, data: Partial<Omit<Vendor, 'id' | 'createdAt' | 'updatedAt'>>): Promise<Vendor> {
+		return apiFetch(`/api/vendors/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify(data)
+		});
+	},
+
+	async delete(id: number): Promise<void> {
+		return apiFetch(`/api/vendors/${id}`, {
+			method: 'DELETE'
+		});
+	},
+
+	async getJournalEntries(id: number): Promise<JournalEntry[]> {
+		return apiFetch(`/api/vendors/${id}/journal-entries`);
+	}
+};
+
+// ========================================
 // Journal Entries API
 // ========================================
 export interface JournalEntry {
@@ -223,6 +276,7 @@ export interface JournalEntry {
 	description: string;
 	category?: string | null;
 	comment?: string | null;
+	vendorId?: number | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -528,7 +582,7 @@ export const reportsAPI = {
 export interface AuditLog {
 	id: number;
 	operation: 'CREATE' | 'UPDATE' | 'DELETE';
-	resourceType: 'currency' | 'gl_account' | 'subledger_account' | 'journal_entry' | 'attachment';
+	resourceType: 'currency' | 'gl_account' | 'subledger_account' | 'journal_entry' | 'attachment' | 'vendor';
 	resourceId: string;
 	source: 'Web UI' | 'CSV Import' | 'API';
 	batchId: string | null;

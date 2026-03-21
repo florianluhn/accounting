@@ -4,15 +4,18 @@
 		subledgerAccountsAPI,
 		currenciesAPI,
 		attachmentsAPI,
+		vendorsAPI,
 		type JournalEntry,
 		type SubledgerAccount,
 		type Currency,
-		type Attachment
+		type Attachment,
+		type Vendor
 	} from '$lib/api';
 
 	let entries = $state<JournalEntry[]>([]);
 	let subledgerAccounts = $state<SubledgerAccount[]>([]);
 	let currencies = $state<Currency[]>([]);
+	let vendors = $state<Vendor[]>([]);
 	let entryAttachments = $state<Map<number, Attachment[]>>(new Map());
 	let loading = $state(true);
 	let error = $state('');
@@ -31,7 +34,8 @@
 		creditAccountId: 0,
 		description: '',
 		category: '',
-		comment: ''
+		comment: '',
+		vendorId: 0
 	});
 	let selectedFiles = $state<File[]>([]);
 	let uploadingFiles = $state(false);
@@ -64,7 +68,8 @@
 		await Promise.all([
 			loadEntries(),
 			loadSubledgerAccounts(),
-			loadCurrencies()
+			loadCurrencies(),
+			loadVendors()
 		]);
 	}
 
@@ -129,6 +134,14 @@
 		}
 	}
 
+	async function loadVendors() {
+		try {
+			vendors = await vendorsAPI.list();
+		} catch (e) {
+			console.error('Error loading vendors:', e);
+		}
+	}
+
 	// Filter accounts based on search query (searches both account number and name)
 	function filterAccounts(search: string): SubledgerAccount[] {
 		if (!search.trim()) return subledgerAccounts;
@@ -181,7 +194,8 @@
 			creditAccountId: defaultCreditId,
 			description: '',
 			category: '',
-			comment: ''
+			comment: '',
+			vendorId: 0
 		};
 		editingEntry = null;
 		selectedFiles = [];
@@ -201,7 +215,8 @@
 			creditAccountId: entry.creditAccountId,
 			description: entry.description,
 			category: entry.category || '',
-			comment: entry.comment || ''
+			comment: entry.comment || '',
+			vendorId: entry.vendorId || 0
 		};
 		editingEntry = entry;
 		debitAccountSearch = getAccountDisplay(entry.debitAccountId);
@@ -242,7 +257,7 @@
 				return;
 			}
 
-			const data = {
+			const data: any = {
 				entryDate: new Date(formData.entryDate),
 				amount: parseFloat(formData.amount),
 				currencyCode: formData.currencyCode,
@@ -250,7 +265,8 @@
 				creditAccountId: formData.creditAccountId,
 				description: formData.description,
 				category: formData.category || undefined,
-				comment: formData.comment || undefined
+				comment: formData.comment || undefined,
+				vendorId: formData.vendorId || null
 			};
 
 			let entryId: number;
@@ -376,6 +392,12 @@
 	function getAccountName(id: number): string {
 		const account = subledgerAccounts.find(a => a.id === id);
 		return account ? `${account.accountNumber} - ${account.name}` : 'Unknown';
+	}
+
+	function getVendorName(vendorId: number | null | undefined): string {
+		if (!vendorId) return '';
+		const vendor = vendors.find(v => v.id === vendorId);
+		return vendor ? vendor.name : '';
 	}
 
 	function formatDate(date: Date): string {
@@ -600,6 +622,7 @@
 								<th>Credit Account</th>
 								<th>Amount</th>
 								<th>Category</th>
+								<th>Vendor</th>
 								<th>Actions</th>
 							</tr>
 						</thead>
@@ -667,6 +690,13 @@
 									<td>
 										{#if entry.category}
 											<span class="badge badge-outline">{entry.category}</span>
+										{/if}
+									</td>
+									<td>
+										{#if entry.vendorId}
+											<a href="/vendors/{entry.vendorId}" class="link link-hover text-sm">
+												{getVendorName(entry.vendorId)}
+											</a>
 										{/if}
 									</td>
 									<td>
@@ -843,6 +873,19 @@
 							bind:value={formData.category}
 							placeholder="e.g., Utilities, Salary, Sales"
 						/>
+					</div>
+
+					<!-- Vendor -->
+					<div class="form-control col-span-2">
+						<label class="label">
+							<span class="label-text">Vendor (Optional)</span>
+						</label>
+						<select class="select select-bordered" bind:value={formData.vendorId}>
+							<option value={0}>No Vendor</option>
+							{#each vendors as vendor}
+								<option value={vendor.id}>{vendor.name}</option>
+							{/each}
+						</select>
 					</div>
 
 					<!-- Comment -->

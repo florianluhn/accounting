@@ -4,7 +4,7 @@ import { auditLogs } from '../db/schema.js';
 
 // Types for audit operations
 export type AuditOperation = 'CREATE' | 'UPDATE' | 'DELETE';
-export type ResourceType = 'currency' | 'gl_account' | 'subledger_account' | 'journal_entry' | 'attachment';
+export type ResourceType = 'currency' | 'gl_account' | 'subledger_account' | 'journal_entry' | 'attachment' | 'vendor';
 export type AuditSource = 'Web UI' | 'CSV Import' | 'API';
 
 interface LogAuditParams {

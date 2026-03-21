@@ -103,6 +103,16 @@ sqlite.run(`
 	END;
 `);
 
+// Update timestamp triggers for vendors
+sqlite.run(`
+	CREATE TRIGGER IF NOT EXISTS update_vendors_timestamp
+	AFTER UPDATE ON vendors
+	FOR EACH ROW
+	BEGIN
+		UPDATE vendors SET updated_at = unixepoch() WHERE id = NEW.id;
+	END;
+`);
+
 // ========================================
 // Utility Functions
 // ========================================
@@ -266,6 +276,92 @@ function migrateAuditLogs(): void {
 	}
 }
 
+/**
+ * Run vendors table migration
+ */
+function migrateVendors(): void {
+	try {
+		// Check if vendors table exists
+		const tableCheck = sqlite.exec(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name='vendors'"
+		);
+
+		if (tableCheck.length === 0 || tableCheck[0].values.length === 0) {
+			console.log('Creating vendors table...');
+
+			sqlite.run(`
+				CREATE TABLE IF NOT EXISTS vendors (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					name TEXT NOT NULL,
+					address TEXT,
+					phone TEXT,
+					email TEXT,
+					website TEXT,
+					comments TEXT,
+					created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+					updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+				)
+			`);
+
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_vendors_name ON vendors(name)');
+
+			console.log('✓ vendors table created successfully');
+		} else {
+			console.log('✓ vendors table already exists');
+		}
+
+		// Add vendor_id column to journal_entries if it doesn't exist
+		const columns = sqlite.exec('PRAGMA table_info(journal_entries)');
+		const hasVendorId = columns.length > 0 &&
+			columns[0].values.some((col: any) => col[1] === 'vendor_id');
+
+		if (!hasVendorId) {
+			console.log('Adding vendor_id column to journal_entries...');
+			sqlite.run('ALTER TABLE journal_entries ADD COLUMN vendor_id INTEGER REFERENCES vendors(id) ON DELETE SET NULL');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_journal_entries_vendor ON journal_entries(vendor_id)');
+			console.log('✓ vendor_id column added to journal_entries');
+		}
+
+		// Update audit_logs CHECK constraint to include 'vendor'
+		const auditCheck = sqlite.exec(
+			"SELECT sql FROM sqlite_master WHERE type='table' AND name='audit_logs'"
+		);
+		if (auditCheck.length > 0 && auditCheck[0].values.length > 0) {
+			const createSql = auditCheck[0].values[0][0] as string;
+			if (!createSql.includes("'vendor'")) {
+				console.log('Updating audit_logs to support vendor resource type...');
+				sqlite.run(`
+					CREATE TABLE IF NOT EXISTS audit_logs_new (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						operation TEXT NOT NULL CHECK(operation IN ('CREATE', 'UPDATE', 'DELETE')),
+						resource_type TEXT NOT NULL CHECK(resource_type IN ('currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment', 'vendor')),
+						resource_id TEXT NOT NULL,
+						source TEXT NOT NULL DEFAULT 'Web UI' CHECK(source IN ('Web UI', 'CSV Import', 'API')),
+						batch_id TEXT,
+						batch_summary TEXT,
+						old_data TEXT,
+						new_data TEXT,
+						timestamp INTEGER NOT NULL DEFAULT (unixepoch()),
+						description TEXT
+					)
+				`);
+				sqlite.run('INSERT INTO audit_logs_new SELECT * FROM audit_logs');
+				sqlite.run('DROP TABLE audit_logs');
+				sqlite.run('ALTER TABLE audit_logs_new RENAME TO audit_logs');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type, resource_id)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_operation ON audit_logs(operation)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_source ON audit_logs(source)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_batch ON audit_logs(batch_id)');
+				console.log('✓ audit_logs updated to support vendor resource type');
+			}
+		}
+	} catch (error) {
+		console.error('Failed to migrate vendors:', error);
+		throw error;
+	}
+}
+
 // Run integrity check on startup
 if (!checkIntegrity()) {
 	console.error('❌ Database integrity check failed!');
@@ -276,6 +372,7 @@ if (!checkIntegrity()) {
 
 // Run migrations
 migrateAuditLogs();
+migrateVendors();
 
 export { sqlite };
 export default db;

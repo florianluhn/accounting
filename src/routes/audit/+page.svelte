@@ -163,6 +163,7 @@
 						<option value="subledger_account">Subledger Account</option>
 						<option value="currency">Currency</option>
 						<option value="attachment">Attachment</option>
+						<option value="vendor">Vendor</option>
 					</select>
 				</div>
 
