@@ -5,6 +5,8 @@
 	let loading = $state(true);
 	let error = $state('');
 	let searchQuery = $state('');
+	let uploadingCSV = $state(false);
+	let csvUploadResult = $state<{ success: number; failed: number; errors: string[]; message?: string } | null>(null);
 
 	// Modal state
 	let showModal = $state(false);
@@ -106,6 +108,41 @@
 		}
 	}
 
+	async function handleDownloadCSV() {
+		try {
+			error = '';
+			await vendorsAPI.downloadCSV();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to download CSV';
+		}
+	}
+
+	function handleCSVFileSelect(event: Event) {
+		const input = event.target as HTMLInputElement;
+		if (input.files && input.files[0]) {
+			uploadCSVFile(input.files[0]);
+		}
+	}
+
+	async function uploadCSVFile(file: File) {
+		try {
+			error = '';
+			uploadingCSV = true;
+			csvUploadResult = null;
+
+			const result = await vendorsAPI.uploadCSV(file);
+			csvUploadResult = result;
+
+			if (result.success > 0) {
+				await loadVendors();
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to upload CSV';
+		} finally {
+			uploadingCSV = false;
+		}
+	}
+
 	let filteredVendors = $derived(
 		searchQuery
 			? vendors.filter(v =>
@@ -143,10 +180,68 @@
 				bind:value={searchQuery}
 			/>
 		</div>
-		<button class="btn btn-primary" onclick={openModal}>
-			+ New Vendor
-		</button>
+		<div class="flex gap-2 flex-wrap">
+			<button
+				class="btn btn-outline"
+				onclick={handleDownloadCSV}
+				disabled={vendors.length === 0}
+				title="Download vendors as CSV"
+			>
+				<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+				</svg>
+				Download CSV
+			</button>
+			<label class="btn btn-outline" class:loading={uploadingCSV}>
+				<input
+					type="file"
+					accept=".csv"
+					class="hidden"
+					onchange={handleCSVFileSelect}
+					disabled={uploadingCSV}
+				/>
+				{#if uploadingCSV}
+					<span class="loading loading-spinner loading-sm"></span>
+					Uploading...
+				{:else}
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+					</svg>
+					Upload CSV
+				{/if}
+			</label>
+			<button class="btn btn-primary" onclick={openModal}>
+				+ New Vendor
+			</button>
+		</div>
 	</div>
+
+	<!-- CSV Upload Result -->
+	{#if csvUploadResult}
+		<div class="alert {csvUploadResult.failed === 0 ? 'alert-success' : csvUploadResult.success === 0 ? 'alert-error' : 'alert-warning'} mb-6">
+			<div>
+				<h3 class="font-bold">{csvUploadResult.success === 0 ? 'CSV Upload Failed' : 'CSV Upload Complete'}</h3>
+				<div class="text-sm">
+					{#if csvUploadResult.message}
+						<p class="font-medium">{csvUploadResult.message}</p>
+					{/if}
+					<p>Successfully imported: {csvUploadResult.success} vendors</p>
+					{#if csvUploadResult.failed > 0}
+						<p>Failed: {csvUploadResult.failed} entries</p>
+						<details class="mt-2">
+							<summary class="cursor-pointer font-medium">Show errors</summary>
+							<ul class="list-disc list-inside mt-1 space-y-1">
+								{#each csvUploadResult.errors as err}
+									<li class="text-xs">{err}</li>
+								{/each}
+							</ul>
+						</details>
+					{/if}
+				</div>
+			</div>
+			<button class="btn btn-sm btn-ghost" onclick={() => csvUploadResult = null}>Dismiss</button>
+		</div>
+	{/if}
 
 	<!-- Vendors List -->
 	<div class="card bg-base-100 shadow-xl">

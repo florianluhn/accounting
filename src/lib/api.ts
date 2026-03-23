@@ -259,6 +259,44 @@ export const vendorsAPI = {
 
 	async getJournalEntries(id: number): Promise<JournalEntry[]> {
 		return apiFetch(`/api/vendors/${id}/journal-entries`);
+	},
+
+	async downloadCSV(): Promise<void> {
+		const url = `${getApiBaseUrl()}/api/vendors/export/csv`;
+		const response = await fetch(url);
+		if (!response.ok) throw new Error('Failed to download CSV');
+
+		const blob = await response.blob();
+		const downloadUrl = window.URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = downloadUrl;
+		a.download = 'vendors.csv';
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		window.URL.revokeObjectURL(downloadUrl);
+	},
+
+	async uploadCSV(file: File): Promise<{
+		success: number;
+		failed: number;
+		errors: string[];
+		message?: string;
+	}> {
+		const formData = new FormData();
+		formData.append('file', file);
+
+		const response = await fetch(
+			`${getApiBaseUrl()}/api/vendors/import/csv`,
+			{ method: 'POST', body: formData }
+		);
+
+		if (response.status === 400) return response.json();
+		if (!response.ok) {
+			const error = await response.json().catch(() => ({ message: response.statusText }));
+			throw new Error(error.message || `HTTP ${response.status}`);
+		}
+		return response.json();
 	}
 };
 
@@ -630,6 +668,55 @@ export const timeEntriesAPI = {
 		return apiFetch(`/api/time-entries/${id}`, {
 			method: 'DELETE'
 		});
+	},
+
+	async downloadCSV(params?: {
+		startDate?: Date;
+		endDate?: Date;
+		who?: string;
+	}): Promise<void> {
+		const query = new URLSearchParams();
+		if (params?.startDate) query.set('startDate', params.startDate.toISOString());
+		if (params?.endDate) query.set('endDate', params.endDate.toISOString());
+		if (params?.who) query.set('who', params.who);
+
+		const queryString = query.toString();
+		const url = `${getApiBaseUrl()}/api/time-entries/export/csv${queryString ? `?${queryString}` : ''}`;
+
+		const response = await fetch(url);
+		if (!response.ok) throw new Error('Failed to download CSV');
+
+		const blob = await response.blob();
+		const downloadUrl = window.URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = downloadUrl;
+		a.download = 'time-entries.csv';
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		window.URL.revokeObjectURL(downloadUrl);
+	},
+
+	async uploadCSV(file: File): Promise<{
+		success: number;
+		failed: number;
+		errors: string[];
+		message?: string;
+	}> {
+		const formData = new FormData();
+		formData.append('file', file);
+
+		const response = await fetch(
+			`${getApiBaseUrl()}/api/time-entries/import/csv`,
+			{ method: 'POST', body: formData }
+		);
+
+		if (response.status === 400) return response.json();
+		if (!response.ok) {
+			const error = await response.json().catch(() => ({ message: response.statusText }));
+			throw new Error(error.message || `HTTP ${response.status}`);
+		}
+		return response.json();
 	}
 };
 
