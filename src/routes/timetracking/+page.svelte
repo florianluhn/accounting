@@ -21,16 +21,20 @@
 		who: ''
 	});
 
+	let initialized = $state(false);
+
 	$effect(() => {
-		loadEntries();
+		loadEntries().then(() => { initialized = true; });
 	});
 
 	// Reload when date filters change
 	$effect(() => {
+		// Track dependencies
 		startDate;
 		endDate;
 		filterWho;
-		if (!loading) {
+
+		if (initialized) {
 			loadEntries();
 		}
 	});
