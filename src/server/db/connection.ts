@@ -363,6 +363,90 @@ function migrateVendors(): void {
 	}
 }
 
+/**
+ * Run time_entries table migration
+ */
+function migrateTimeEntries(): void {
+	try {
+		const tableCheck = sqlite.exec(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name='time_entries'"
+		);
+
+		if (tableCheck.length === 0 || tableCheck[0].values.length === 0) {
+			console.log('Creating time_entries table...');
+
+			sqlite.run(`
+				CREATE TABLE IF NOT EXISTS time_entries (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					entry_date INTEGER NOT NULL,
+					hours INTEGER NOT NULL DEFAULT 0,
+					minutes INTEGER NOT NULL DEFAULT 0,
+					activity TEXT NOT NULL,
+					description TEXT,
+					who TEXT NOT NULL,
+					created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+					updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+				)
+			`);
+
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_time_entries_date ON time_entries(entry_date)');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_time_entries_who ON time_entries(who)');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_time_entries_activity ON time_entries(activity)');
+
+			sqlite.run(`
+				CREATE TRIGGER IF NOT EXISTS update_time_entries_timestamp
+				AFTER UPDATE ON time_entries
+				FOR EACH ROW
+				BEGIN
+					UPDATE time_entries SET updated_at = unixepoch() WHERE id = NEW.id;
+				END;
+			`);
+
+			console.log('✓ time_entries table created successfully');
+		} else {
+			console.log('✓ time_entries table already exists');
+		}
+
+		// Update audit_logs CHECK constraint to include 'time_entry'
+		const auditCheck = sqlite.exec(
+			"SELECT sql FROM sqlite_master WHERE type='table' AND name='audit_logs'"
+		);
+		if (auditCheck.length > 0 && auditCheck[0].values.length > 0) {
+			const createSql = auditCheck[0].values[0][0] as string;
+			if (!createSql.includes("'time_entry'")) {
+				console.log('Updating audit_logs to support time_entry resource type...');
+				sqlite.run(`
+					CREATE TABLE IF NOT EXISTS audit_logs_new (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						operation TEXT NOT NULL CHECK(operation IN ('CREATE', 'UPDATE', 'DELETE')),
+						resource_type TEXT NOT NULL CHECK(resource_type IN ('currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment', 'vendor', 'time_entry')),
+						resource_id TEXT NOT NULL,
+						source TEXT NOT NULL DEFAULT 'Web UI' CHECK(source IN ('Web UI', 'CSV Import', 'API')),
+						batch_id TEXT,
+						batch_summary TEXT,
+						old_data TEXT,
+						new_data TEXT,
+						timestamp INTEGER NOT NULL DEFAULT (unixepoch()),
+						description TEXT
+					)
+				`);
+				sqlite.run('INSERT INTO audit_logs_new SELECT * FROM audit_logs');
+				sqlite.run('DROP TABLE audit_logs');
+				sqlite.run('ALTER TABLE audit_logs_new RENAME TO audit_logs');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type, resource_id)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_operation ON audit_logs(operation)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_source ON audit_logs(source)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_batch ON audit_logs(batch_id)');
+				console.log('✓ audit_logs updated to support time_entry resource type');
+			}
+		}
+	} catch (error) {
+		console.error('Failed to migrate time_entries:', error);
+		throw error;
+	}
+}
+
 // Run integrity check on startup
 if (!checkIntegrity()) {
 	console.error('❌ Database integrity check failed!');
@@ -374,6 +458,7 @@ if (!checkIntegrity()) {
 // Run migrations
 migrateAuditLogs();
 migrateVendors();
+migrateTimeEntries();
 
 export { sqlite };
 export default db;

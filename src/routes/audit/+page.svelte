@@ -164,6 +164,7 @@
 						<option value="currency">Currency</option>
 						<option value="attachment">Attachment</option>
 						<option value="vendor">Vendor</option>
+						<option value="time_entry">Time Entry</option>
 					</select>
 				</div>
 

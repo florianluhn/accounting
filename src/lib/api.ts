@@ -577,12 +577,69 @@ export const reportsAPI = {
 };
 
 // ========================================
+// Time Entries API
+// ========================================
+export interface TimeEntry {
+	id: number;
+	entryDate: Date;
+	hours: number;
+	minutes: number;
+	activity: string;
+	description?: string | null;
+	who: string;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+export const timeEntriesAPI = {
+	async list(params?: {
+		startDate?: Date;
+		endDate?: Date;
+		who?: string;
+		activity?: string;
+	}): Promise<TimeEntry[]> {
+		const query = new URLSearchParams();
+		if (params?.startDate) query.set('startDate', params.startDate.toISOString());
+		if (params?.endDate) query.set('endDate', params.endDate.toISOString());
+		if (params?.who) query.set('who', params.who);
+		if (params?.activity) query.set('activity', params.activity);
+
+		const queryString = query.toString();
+		return apiFetch(`/api/time-entries${queryString ? `?${queryString}` : ''}`);
+	},
+
+	async get(id: number): Promise<TimeEntry> {
+		return apiFetch(`/api/time-entries/${id}`);
+	},
+
+	async create(data: Omit<TimeEntry, 'id' | 'createdAt' | 'updatedAt'>): Promise<TimeEntry> {
+		return apiFetch('/api/time-entries', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+
+	async update(id: number, data: Partial<Omit<TimeEntry, 'id' | 'createdAt' | 'updatedAt'>>): Promise<TimeEntry> {
+		return apiFetch(`/api/time-entries/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify(data)
+		});
+	},
+
+	async delete(id: number): Promise<void> {
+		return apiFetch(`/api/time-entries/${id}`, {
+			method: 'DELETE'
+		});
+	}
+};
+
+// ========================================
 // Audit Logs API
 // ========================================
 export interface AuditLog {
 	id: number;
 	operation: 'CREATE' | 'UPDATE' | 'DELETE';
-	resourceType: 'currency' | 'gl_account' | 'subledger_account' | 'journal_entry' | 'attachment' | 'vendor';
+	resourceType: 'currency' | 'gl_account' | 'subledger_account' | 'journal_entry' | 'attachment' | 'vendor' | 'time_entry';
 	resourceId: string;
 	source: 'Web UI' | 'CSV Import' | 'API';
 	batchId: string | null;

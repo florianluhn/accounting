@@ -213,6 +213,33 @@ export const accountBalances = sqliteTable(
 );
 
 // ========================================
+// Time Entries Table
+// ========================================
+export const timeEntries = sqliteTable(
+	'time_entries',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		entryDate: integer('entry_date', { mode: 'timestamp' }).notNull(),
+		hours: integer('hours').notNull().default(0),
+		minutes: integer('minutes').notNull().default(0),
+		activity: text('activity').notNull(),
+		description: text('description'),
+		who: text('who').notNull(),
+		createdAt: integer('created_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer('updated_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`)
+	},
+	(table) => ({
+		dateIdx: index('idx_time_entries_date').on(table.entryDate),
+		whoIdx: index('idx_time_entries_who').on(table.who),
+		activityIdx: index('idx_time_entries_activity').on(table.activity)
+	})
+);
+
+// ========================================
 // Audit Logs Table
 // ========================================
 export const auditLogs = sqliteTable(
@@ -221,7 +248,7 @@ export const auditLogs = sqliteTable(
 		id: integer('id').primaryKey({ autoIncrement: true }),
 		operation: text('operation', { enum: ['CREATE', 'UPDATE', 'DELETE'] }).notNull(),
 		resourceType: text('resource_type', {
-			enum: ['currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment', 'vendor']
+			enum: ['currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment', 'vendor', 'time_entry']
 		}).notNull(),
 		resourceId: text('resource_id').notNull(),
 		source: text('source', { enum: ['Web UI', 'CSV Import', 'API'] }).notNull().default('Web UI'),
@@ -264,6 +291,9 @@ export type NewAccountBalance = typeof accountBalances.$inferInsert;
 
 export type Vendor = typeof vendors.$inferSelect;
 export type NewVendor = typeof vendors.$inferInsert;
+
+export type TimeEntry = typeof timeEntries.$inferSelect;
+export type NewTimeEntry = typeof timeEntries.$inferInsert;
 
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type NewAuditLog = typeof auditLogs.$inferInsert;
