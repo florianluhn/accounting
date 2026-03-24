@@ -73,131 +73,6 @@ export default async function timeEntriesRoutes(fastify: FastifyInstance) {
 		return entries;
 	});
 
-	// GET /api/time-entries/:id - Get single time entry
-	fastify.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
-		const id = parseInt(request.params.id);
-
-		if (isNaN(id)) {
-			return reply.status(400).send({
-				error: 'Bad Request',
-				message: 'Invalid time entry ID'
-			});
-		}
-
-		const entry = await db.select().from(timeEntries).where(eq(timeEntries.id, id)).limit(1);
-
-		if (entry.length === 0) {
-			return reply.status(404).send({
-				error: 'Not Found',
-				message: `Time entry ${id} not found`
-			});
-		}
-
-		return entry[0];
-	});
-
-	// POST /api/time-entries - Create new time entry
-	fastify.post<{ Body: z.infer<typeof createTimeEntrySchema> }>(
-		'/',
-		async (request, reply) => {
-			const validatedData = createTimeEntrySchema.parse(request.body);
-
-			const newEntry = await db.insert(timeEntries).values(validatedData).returning();
-
-			await logAudit({
-				operation: 'CREATE',
-				resourceType: 'time_entry',
-				resourceId: newEntry[0].id,
-				source: 'Web UI',
-				newData: newEntry[0]
-			});
-
-			await saveDatabase();
-
-			return reply.status(201).send(newEntry[0]);
-		}
-	);
-
-	// PUT /api/time-entries/:id - Update time entry
-	fastify.put<{
-		Params: { id: string };
-		Body: z.infer<typeof updateTimeEntrySchema>;
-	}>('/:id', async (request, reply) => {
-		const id = parseInt(request.params.id);
-
-		if (isNaN(id)) {
-			return reply.status(400).send({
-				error: 'Bad Request',
-				message: 'Invalid time entry ID'
-			});
-		}
-
-		const validatedData = updateTimeEntrySchema.parse(request.body);
-
-		const existing = await db.select().from(timeEntries).where(eq(timeEntries.id, id)).limit(1);
-
-		if (existing.length === 0) {
-			return reply.status(404).send({
-				error: 'Not Found',
-				message: `Time entry ${id} not found`
-			});
-		}
-
-		const updated = await db
-			.update(timeEntries)
-			.set(validatedData)
-			.where(eq(timeEntries.id, id))
-			.returning();
-
-		await logAudit({
-			operation: 'UPDATE',
-			resourceType: 'time_entry',
-			resourceId: id,
-			source: 'Web UI',
-			oldData: existing[0],
-			newData: updated[0]
-		});
-
-		await saveDatabase();
-
-		return updated[0];
-	});
-
-	// DELETE /api/time-entries/:id - Delete time entry
-	fastify.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {
-		const id = parseInt(request.params.id);
-
-		if (isNaN(id)) {
-			return reply.status(400).send({
-				error: 'Bad Request',
-				message: 'Invalid time entry ID'
-			});
-		}
-
-		const existing = await db.select().from(timeEntries).where(eq(timeEntries.id, id)).limit(1);
-
-		if (existing.length === 0) {
-			return reply.status(404).send({
-				error: 'Not Found',
-				message: `Time entry ${id} not found`
-			});
-		}
-
-		await db.delete(timeEntries).where(eq(timeEntries.id, id));
-
-		await logAudit({
-			operation: 'DELETE',
-			resourceType: 'time_entry',
-			resourceId: id,
-			source: 'Web UI',
-			oldData: existing[0]
-		});
-
-		await saveDatabase();
-
-		return reply.status(204).send();
-	});
-
 	// GET /api/time-entries/export/csv - Export time entries as CSV
 	fastify.get<{
 		Querystring: {
@@ -369,5 +244,130 @@ export default async function timeEntriesRoutes(fastify: FastifyInstance) {
 		await saveDatabase();
 
 		return reply.status(200).send(results);
+	});
+
+	// GET /api/time-entries/:id - Get single time entry
+	fastify.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
+		const id = parseInt(request.params.id);
+
+		if (isNaN(id)) {
+			return reply.status(400).send({
+				error: 'Bad Request',
+				message: 'Invalid time entry ID'
+			});
+		}
+
+		const entry = await db.select().from(timeEntries).where(eq(timeEntries.id, id)).limit(1);
+
+		if (entry.length === 0) {
+			return reply.status(404).send({
+				error: 'Not Found',
+				message: `Time entry ${id} not found`
+			});
+		}
+
+		return entry[0];
+	});
+
+	// POST /api/time-entries - Create new time entry
+	fastify.post<{ Body: z.infer<typeof createTimeEntrySchema> }>(
+		'/',
+		async (request, reply) => {
+			const validatedData = createTimeEntrySchema.parse(request.body);
+
+			const newEntry = await db.insert(timeEntries).values(validatedData).returning();
+
+			await logAudit({
+				operation: 'CREATE',
+				resourceType: 'time_entry',
+				resourceId: newEntry[0].id,
+				source: 'Web UI',
+				newData: newEntry[0]
+			});
+
+			await saveDatabase();
+
+			return reply.status(201).send(newEntry[0]);
+		}
+	);
+
+	// PUT /api/time-entries/:id - Update time entry
+	fastify.put<{
+		Params: { id: string };
+		Body: z.infer<typeof updateTimeEntrySchema>;
+	}>('/:id', async (request, reply) => {
+		const id = parseInt(request.params.id);
+
+		if (isNaN(id)) {
+			return reply.status(400).send({
+				error: 'Bad Request',
+				message: 'Invalid time entry ID'
+			});
+		}
+
+		const validatedData = updateTimeEntrySchema.parse(request.body);
+
+		const existing = await db.select().from(timeEntries).where(eq(timeEntries.id, id)).limit(1);
+
+		if (existing.length === 0) {
+			return reply.status(404).send({
+				error: 'Not Found',
+				message: `Time entry ${id} not found`
+			});
+		}
+
+		const updated = await db
+			.update(timeEntries)
+			.set(validatedData)
+			.where(eq(timeEntries.id, id))
+			.returning();
+
+		await logAudit({
+			operation: 'UPDATE',
+			resourceType: 'time_entry',
+			resourceId: id,
+			source: 'Web UI',
+			oldData: existing[0],
+			newData: updated[0]
+		});
+
+		await saveDatabase();
+
+		return updated[0];
+	});
+
+	// DELETE /api/time-entries/:id - Delete time entry
+	fastify.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {
+		const id = parseInt(request.params.id);
+
+		if (isNaN(id)) {
+			return reply.status(400).send({
+				error: 'Bad Request',
+				message: 'Invalid time entry ID'
+			});
+		}
+
+		const existing = await db.select().from(timeEntries).where(eq(timeEntries.id, id)).limit(1);
+
+		if (existing.length === 0) {
+			return reply.status(404).send({
+				error: 'Not Found',
+				message: `Time entry ${id} not found`
+			});
+		}
+
+		await db.delete(timeEntries).where(eq(timeEntries.id, id));
+
+		await logAudit({
+			operation: 'DELETE',
+			resourceType: 'time_entry',
+			resourceId: id,
+			source: 'Web UI',
+			oldData: existing[0]
+		});
+
+		await saveDatabase();
+
+		return reply.status(204).send();
 	});
 }
