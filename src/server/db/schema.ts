@@ -156,6 +156,38 @@ export const vendors = sqliteTable(
 );
 
 // ========================================
+// Customers Table
+// ========================================
+export const customers = sqliteTable(
+	'customers',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		firstName: text('first_name').notNull(),
+		lastName: text('last_name').notNull(),
+		email: text('email'),
+		phone: text('phone'),
+		country: text('country'),
+		state: text('state'),
+		zipCode: text('zip_code'),
+		city: text('city'),
+		contactMethod: text('contact_method'),
+		comment: text('comment'),
+		createdAt: integer('created_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer('updated_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`)
+	},
+	(table) => ({
+		lastNameIdx: index('idx_customers_last_name').on(table.lastName)
+	})
+);
+
+export type Customer = typeof customers.$inferSelect;
+export type NewCustomer = typeof customers.$inferInsert;
+
+// ========================================
 // Attachments Table
 // ========================================
 export const attachments = sqliteTable(
@@ -248,7 +280,7 @@ export const auditLogs = sqliteTable(
 		id: integer('id').primaryKey({ autoIncrement: true }),
 		operation: text('operation', { enum: ['CREATE', 'UPDATE', 'DELETE'] }).notNull(),
 		resourceType: text('resource_type', {
-			enum: ['currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment', 'vendor', 'time_entry']
+			enum: ['currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment', 'vendor', 'customer', 'time_entry']
 		}).notNull(),
 		resourceId: text('resource_id').notNull(),
 		source: text('source', { enum: ['Web UI', 'CSV Import', 'API'] }).notNull().default('Web UI'),

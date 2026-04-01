@@ -67,6 +67,7 @@ import journalEntriesRoutes from './routes/journal-entries.js';
 import attachmentsRoutes from './routes/attachments.js';
 import reportsRoutes from './routes/reports.js';
 import vendorsRoutes from './routes/vendors.js';
+import customersRoutes from './routes/customers.js';
 import timeEntriesRoutes from './routes/time-entries.js';
 import auditLogsRoutes from './routes/audit-logs.js';
 import backupRoutes from './routes/backup.js';
@@ -78,6 +79,7 @@ await fastify.register(journalEntriesRoutes, { prefix: '/api/journal-entries' })
 await fastify.register(attachmentsRoutes, { prefix: '/api/attachments' });
 await fastify.register(reportsRoutes, { prefix: '/api/reports' });
 await fastify.register(vendorsRoutes, { prefix: '/api/vendors' });
+await fastify.register(customersRoutes, { prefix: '/api/customers' });
 await fastify.register(timeEntriesRoutes, { prefix: '/api/time-entries' });
 await fastify.register(auditLogsRoutes, { prefix: '/api/audit-logs' });
 await fastify.register(backupRoutes, { prefix: '/api/backup' });

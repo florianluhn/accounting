@@ -301,6 +301,97 @@ export const vendorsAPI = {
 };
 
 // ========================================
+// Customers API
+// ========================================
+export interface Customer {
+	id: number;
+	firstName: string;
+	lastName: string;
+	email?: string | null;
+	phone?: string | null;
+	country?: string | null;
+	state?: string | null;
+	zipCode?: string | null;
+	city?: string | null;
+	contactMethod?: string | null;
+	comment?: string | null;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+export const customersAPI = {
+	async list(params?: { search?: string }): Promise<Customer[]> {
+		const query = new URLSearchParams();
+		if (params?.search) query.set('search', params.search);
+
+		const queryString = query.toString();
+		return apiFetch(`/api/customers${queryString ? `?${queryString}` : ''}`);
+	},
+
+	async get(id: number): Promise<Customer> {
+		return apiFetch(`/api/customers/${id}`);
+	},
+
+	async create(data: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>): Promise<Customer> {
+		return apiFetch('/api/customers', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+
+	async update(id: number, data: Partial<Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>>): Promise<Customer> {
+		return apiFetch(`/api/customers/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify(data)
+		});
+	},
+
+	async delete(id: number): Promise<void> {
+		return apiFetch(`/api/customers/${id}`, {
+			method: 'DELETE'
+		});
+	},
+
+	async downloadCSV(): Promise<void> {
+		const url = `${getApiBaseUrl()}/api/customers/export/csv`;
+		const response = await fetch(url);
+		if (!response.ok) throw new Error('Failed to download CSV');
+
+		const blob = await response.blob();
+		const downloadUrl = window.URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = downloadUrl;
+		a.download = 'customers.csv';
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		window.URL.revokeObjectURL(downloadUrl);
+	},
+
+	async uploadCSV(file: File): Promise<{
+		success: number;
+		failed: number;
+		errors: string[];
+		message?: string;
+	}> {
+		const formData = new FormData();
+		formData.append('file', file);
+
+		const response = await fetch(
+			`${getApiBaseUrl()}/api/customers/import/csv`,
+			{ method: 'POST', body: formData }
+		);
+
+		if (response.status === 400) return response.json();
+		if (!response.ok) {
+			const error = await response.json().catch(() => ({ message: response.statusText }));
+			throw new Error(error.message || `HTTP ${response.status}`);
+		}
+		return response.json();
+	}
+};
+
+// ========================================
 // Journal Entries API
 // ========================================
 export interface JournalEntry {
