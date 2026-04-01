@@ -447,6 +447,92 @@ function migrateTimeEntries(): void {
 	}
 }
 
+/**
+ * Run customers table migration
+ */
+function migrateCustomers(): void {
+	try {
+		const tableCheck = sqlite.exec(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name='customers'"
+		);
+
+		if (tableCheck.length === 0 || tableCheck[0].values.length === 0) {
+			console.log('Creating customers table...');
+
+			sqlite.run(`
+				CREATE TABLE IF NOT EXISTS customers (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					first_name TEXT NOT NULL,
+					last_name TEXT NOT NULL,
+					email TEXT,
+					phone TEXT,
+					country TEXT,
+					state TEXT,
+					zip_code TEXT,
+					city TEXT,
+					contact_method TEXT,
+					comment TEXT,
+					created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+					updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+				)
+			`);
+
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_customers_last_name ON customers(last_name)');
+
+			sqlite.run(`
+				CREATE TRIGGER IF NOT EXISTS update_customers_timestamp
+				AFTER UPDATE ON customers
+				FOR EACH ROW
+				BEGIN
+					UPDATE customers SET updated_at = unixepoch() WHERE id = NEW.id;
+				END;
+			`);
+
+			console.log('✓ customers table created successfully');
+		} else {
+			console.log('✓ customers table already exists');
+		}
+
+		// Update audit_logs CHECK constraint to include 'customer'
+		const auditCheck = sqlite.exec(
+			"SELECT sql FROM sqlite_master WHERE type='table' AND name='audit_logs'"
+		);
+		if (auditCheck.length > 0 && auditCheck[0].values.length > 0) {
+			const createSql = auditCheck[0].values[0][0] as string;
+			if (!createSql.includes("'customer'")) {
+				console.log('Updating audit_logs to support customer resource type...');
+				sqlite.run(`
+					CREATE TABLE IF NOT EXISTS audit_logs_new (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						operation TEXT NOT NULL CHECK(operation IN ('CREATE', 'UPDATE', 'DELETE')),
+						resource_type TEXT NOT NULL CHECK(resource_type IN ('currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment', 'vendor', 'customer', 'time_entry')),
+						resource_id TEXT NOT NULL,
+						source TEXT NOT NULL DEFAULT 'Web UI' CHECK(source IN ('Web UI', 'CSV Import', 'API')),
+						batch_id TEXT,
+						batch_summary TEXT,
+						old_data TEXT,
+						new_data TEXT,
+						timestamp INTEGER NOT NULL DEFAULT (unixepoch()),
+						description TEXT
+					)
+				`);
+				sqlite.run('INSERT INTO audit_logs_new SELECT * FROM audit_logs');
+				sqlite.run('DROP TABLE audit_logs');
+				sqlite.run('ALTER TABLE audit_logs_new RENAME TO audit_logs');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type, resource_id)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_operation ON audit_logs(operation)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_source ON audit_logs(source)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_batch ON audit_logs(batch_id)');
+				console.log('✓ audit_logs updated to support customer resource type');
+			}
+		}
+	} catch (error) {
+		console.error('Failed to migrate customers:', error);
+		throw error;
+	}
+}
+
 // Run integrity check on startup
 if (!checkIntegrity()) {
 	console.error('❌ Database integrity check failed!');
@@ -459,6 +545,7 @@ if (!checkIntegrity()) {
 migrateAuditLogs();
 migrateVendors();
 migrateTimeEntries();
+migrateCustomers();
 
 export { sqlite };
 export default db;
