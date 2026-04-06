@@ -25,7 +25,7 @@
 	let allocatingForItem = $state<InventoryItem | null>(null);
 	let itemAllocations = $state<MaterialAllocation[]>([]);
 	let rawMaterialItems = $state<RawMaterialItem[]>([]);
-	let allocForm = $state({ rawMaterialItemId: 0, quantityUsed: 0, notes: '' });
+	let allocForm = $state({ rawMaterialItemId: 0, quantityUsed: 0, notes: '', allocationDate: '' });
 	let allocLoading = $state(false);
 
 	// Usage modal (shown on a raw material item)
@@ -160,7 +160,7 @@
 
 	async function openAllocModal(item: InventoryItem) {
 		allocatingForItem = item;
-		allocForm = { rawMaterialItemId: 0, quantityUsed: 0, notes: '' };
+		allocForm = { rawMaterialItemId: 0, quantityUsed: 0, notes: '', allocationDate: new Date().toISOString().slice(0, 10) };
 		allocLoading = true;
 		showAllocModal = true;
 		try {
@@ -170,6 +170,9 @@
 			]);
 			itemAllocations = allocData.asFinishedGood;
 			rawMaterialItems = rawItems;
+			// Default date to today
+			const today = new Date().toISOString().slice(0, 10);
+			allocForm = { rawMaterialItemId: 0, quantityUsed: 0, notes: '', allocationDate: today };
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load allocations';
 		} finally {
@@ -187,7 +190,8 @@
 				rawMaterialItemId: allocForm.rawMaterialItemId,
 				finishedGoodItemId: allocatingForItem.id,
 				quantityUsed: allocForm.quantityUsed,
-				notes: allocForm.notes || undefined
+				notes: allocForm.notes || undefined,
+				allocationDate: allocForm.allocationDate || undefined
 			});
 			// Refresh allocations and item list (remaining values changed)
 			const [allocData, refreshedItems, refreshedCat] = await Promise.all([
@@ -198,7 +202,7 @@
 			itemAllocations = allocData.asFinishedGood;
 			items = refreshedItems;
 			category = refreshedCat;
-			allocForm = { rawMaterialItemId: 0, quantityUsed: 0, notes: '' };
+			allocForm = { rawMaterialItemId: 0, quantityUsed: 0, notes: '', allocationDate: new Date().toISOString().slice(0, 10) };
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to add allocation';
 		}
@@ -407,7 +411,7 @@
 						<table class="table table-zebra">
 							<thead>
 								<tr>
-									<th>Name</th>
+									<th>ID</th>
 									{#each allFields as f}
 										<th>{f.label}{#if f.unit} <span class="text-xs font-normal opacity-60">({f.unit})</span>{/if}</th>
 									{/each}
@@ -421,7 +425,14 @@
 							<tbody>
 								{#each items as item}
 									<tr class="{isRawMaterial && (item.remainingQuantity ?? 0) <= 0 ? 'opacity-50' : ''}">
-										<td class="font-medium">{item.name}</td>
+										<td class="font-medium">
+								{item.name}
+								{#if !isRawMaterial && item.saleEntryId}
+									<span class="badge {item.saleEntryType === 'own_use' ? 'badge-warning' : 'badge-success'} badge-xs ml-1">
+										{item.saleEntryType === 'own_use' ? 'Own Use' : 'Sold'}
+									</span>
+								{/if}
+							</td>
 										{#each allFields as f}
 											<td class="{f.type === 'computed' ? 'text-secondary font-mono text-sm' : 'font-mono text-sm'}">
 												{formatValue(f, item.fieldValues[f.key])}
@@ -485,7 +496,7 @@
 			<form onsubmit={(e) => { e.preventDefault(); handleItemSubmit(); }}>
 				<div class="grid grid-cols-2 gap-4">
 					<div class="form-control col-span-2">
-						<label class="label"><span class="label-text">Item Name / Description</span></label>
+						<label class="label"><span class="label-text">ID / Description</span></label>
 						<input type="text" class="input input-bordered" bind:value={itemName} required placeholder="e.g. Walnut Board #1 – 4/4 × 8 × 96" />
 					</div>
 					{#each inputFields as f}
@@ -546,6 +557,7 @@
 						<thead>
 							<tr>
 								<th>Raw Material</th>
+								<th>Date</th>
 								<th class="text-right">Qty Used</th>
 								<th>Notes</th>
 								<th></th>
@@ -555,6 +567,7 @@
 							{#each itemAllocations as alloc}
 								<tr>
 									<td class="font-medium">{alloc.rawMaterialName}</td>
+									<td class="text-sm text-base-content/60">{alloc.allocationDate || '—'}</td>
 									<td class="text-right font-mono">{alloc.quantityUsed}</td>
 									<td class="text-sm text-base-content/60">{alloc.notes || '—'}</td>
 									<td>
@@ -597,6 +610,10 @@
 						<input type="number" step="any" min="0.0001" class="input input-bordered input-sm font-mono" bind:value={allocForm.quantityUsed} />
 					</div>
 					<div class="form-control">
+						<label class="label py-0"><span class="label-text text-sm">Date</span></label>
+						<input type="date" class="input input-bordered input-sm" bind:value={allocForm.allocationDate} />
+					</div>
+					<div class="form-control col-span-2">
 						<label class="label py-0"><span class="label-text text-sm">Notes (Optional)</span></label>
 						<input type="text" class="input input-bordered input-sm" bind:value={allocForm.notes} placeholder="e.g. cut from middle section" />
 					</div>

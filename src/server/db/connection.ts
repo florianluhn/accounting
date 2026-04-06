@@ -695,10 +695,40 @@ function migrateConsumption(): void {
 			sqlite.run('CREATE INDEX IF NOT EXISTS idx_allocations_finished_good ON material_allocations(finished_good_item_id)');
 			console.log('✓ material_allocations table created');
 		} else {
+			// Table exists — add allocation_date if missing
+			const allocCols = sqlite.exec('PRAGMA table_info(material_allocations)');
+			if (allocCols.length > 0) {
+				const cols = allocCols[0].values.map((c: any) => c[1]);
+				if (!cols.includes('allocation_date')) {
+					sqlite.run('ALTER TABLE material_allocations ADD COLUMN allocation_date TEXT');
+					console.log('✓ Added allocation_date to material_allocations');
+				}
+			}
 			console.log('✓ material_allocations table already exists');
 		}
 	} catch (error) {
 		console.error('Failed to migrate consumption tracking:', error);
+		throw error;
+	}
+}
+
+function migrateJournalEntryItemLink(): void {
+	try {
+		const cols = sqlite.exec('PRAGMA table_info(journal_entries)');
+		if (cols.length > 0) {
+			const colNames = cols[0].values.map((c: any) => c[1]);
+			if (!colNames.includes('inventory_item_id')) {
+				sqlite.run('ALTER TABLE journal_entries ADD COLUMN inventory_item_id INTEGER');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_journal_entries_inventory_item ON journal_entries(inventory_item_id)');
+				console.log('✓ Added inventory_item_id to journal_entries');
+			}
+			if (!colNames.includes('inventory_link_type')) {
+				sqlite.run("ALTER TABLE journal_entries ADD COLUMN inventory_link_type TEXT");
+				console.log('✓ Added inventory_link_type to journal_entries');
+			}
+		}
+	} catch (error) {
+		console.error('Failed to migrate journal entry item link:', error);
 		throw error;
 	}
 }
@@ -718,6 +748,7 @@ migrateTimeEntries();
 migrateCustomers();
 migrateInventory();
 migrateConsumption();
+migrateJournalEntryItemLink();
 
 export { sqlite };
 export default db;

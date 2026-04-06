@@ -113,6 +113,8 @@ export const journalEntries = sqliteTable(
 		category: text('category'), // Optional categorization
 		comment: text('comment'),
 		vendorId: integer('vendor_id').references(() => vendors.id, { onDelete: 'set null' }),
+		inventoryItemId: integer('inventory_item_id'), // optional link to a finished good item
+		inventoryLinkType: text('inventory_link_type'), // 'sale' | 'own_use'
 		createdAt: integer('created_at', { mode: 'timestamp' })
 			.notNull()
 			.default(sql`(unixepoch())`),
@@ -126,7 +128,8 @@ export const journalEntries = sqliteTable(
 		creditIdx: index('idx_journal_entries_credit').on(table.creditAccountId),
 		categoryIdx: index('idx_journal_entries_category').on(table.category),
 		currencyIdx: index('idx_journal_entries_currency').on(table.currencyCode),
-		vendorIdx: index('idx_journal_entries_vendor').on(table.vendorId)
+		vendorIdx: index('idx_journal_entries_vendor').on(table.vendorId),
+		inventoryItemIdx: index('idx_journal_entries_inventory_item').on(table.inventoryItemId)
 	})
 );
 
@@ -354,6 +357,7 @@ export const materialAllocations = sqliteTable(
 		// How much of the raw material was used (in the raw material category's quantityField unit)
 		quantityUsed: real('quantity_used').notNull(),
 		notes: text('notes'),
+		allocationDate: text('allocation_date'), // ISO date string e.g. '2026-04-05'
 		createdAt: integer('created_at', { mode: 'timestamp' })
 			.notNull()
 			.default(sql`(unixepoch())`)

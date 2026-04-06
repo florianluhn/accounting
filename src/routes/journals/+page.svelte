@@ -5,17 +5,20 @@
 		currenciesAPI,
 		attachmentsAPI,
 		vendorsAPI,
+		inventoryAPI,
 		type JournalEntry,
 		type SubledgerAccount,
 		type Currency,
 		type Attachment,
-		type Vendor
+		type Vendor,
+		type InventoryItem
 	} from '$lib/api';
 
 	let entries = $state<JournalEntry[]>([]);
 	let subledgerAccounts = $state<SubledgerAccount[]>([]);
 	let currencies = $state<Currency[]>([]);
 	let vendors = $state<Vendor[]>([]);
+	let finishedGoodItems = $state<(InventoryItem & { categoryName: string })[]>([]);
 	let entryAttachments = $state<Map<number, Attachment[]>>(new Map());
 	let loading = $state(true);
 	let error = $state('');
@@ -35,7 +38,9 @@
 		description: '',
 		category: '',
 		comment: '',
-		vendorId: 0
+		vendorId: 0,
+		inventoryItemId: 0,
+		inventoryLinkType: 'sale' as 'sale' | 'own_use'
 	});
 	let selectedFiles = $state<File[]>([]);
 	let uploadingFiles = $state(false);
@@ -69,8 +74,25 @@
 			loadEntries(),
 			loadSubledgerAccounts(),
 			loadCurrencies(),
-			loadVendors()
+			loadVendors(),
+			loadFinishedGoodItems()
 		]);
+	}
+
+	async function loadFinishedGoodItems() {
+		try {
+			const categories = await inventoryAPI.listCategories();
+			const fgCategories = categories.filter(c => c.categoryType === 'finished_good');
+			const itemsPerCat = await Promise.all(
+				fgCategories.map(async c => {
+					const items = await inventoryAPI.listItems(c.id);
+					return items.map(i => ({ ...i, categoryName: c.name }));
+				})
+			);
+			finishedGoodItems = itemsPerCat.flat();
+		} catch (e) {
+			// non-critical — don't block the page
+		}
 	}
 
 	async function loadEntries() {
@@ -195,7 +217,9 @@
 			description: '',
 			category: '',
 			comment: '',
-			vendorId: 0
+			vendorId: 0,
+			inventoryItemId: 0,
+			inventoryLinkType: 'sale' as 'sale' | 'own_use'
 		};
 		editingEntry = null;
 		selectedFiles = [];
@@ -216,7 +240,9 @@
 			description: entry.description,
 			category: entry.category || '',
 			comment: entry.comment || '',
-			vendorId: entry.vendorId || 0
+			vendorId: entry.vendorId || 0,
+			inventoryItemId: entry.inventoryItemId || 0,
+			inventoryLinkType: (entry.inventoryLinkType as 'sale' | 'own_use') || 'sale'
 		};
 		editingEntry = entry;
 		debitAccountSearch = getAccountDisplay(entry.debitAccountId);
@@ -266,7 +292,9 @@
 				description: formData.description,
 				category: formData.category || undefined,
 				comment: formData.comment || undefined,
-				vendorId: formData.vendorId || null
+				vendorId: formData.vendorId || null,
+				inventoryItemId: formData.inventoryItemId || null,
+				inventoryLinkType: formData.inventoryItemId ? formData.inventoryLinkType : undefined
 			};
 
 			let entryId: number;
@@ -698,6 +726,11 @@
 												{getVendorName(entry.vendorId)}
 											</a>
 										{/if}
+										{#if entry.inventoryItemId}
+											<a href="/inventory" class="badge {entry.inventoryLinkType === 'own_use' ? 'badge-warning' : 'badge-success'} badge-sm mt-1 block w-fit">
+												{entry.inventoryLinkType === 'own_use' ? 'Own Use' : 'Sold'}: {entry.inventoryItemName || '#' + entry.inventoryItemId}
+											</a>
+										{/if}
 									</td>
 									<td>
 										<div class="flex gap-2">
@@ -887,6 +920,37 @@
 							{/each}
 						</select>
 					</div>
+
+					<!-- Finished Good Item link -->
+					{#if finishedGoodItems.length > 0}
+						<div class="form-control col-span-2">
+							<label class="label">
+								<span class="label-text">Finished Good Item (Optional)</span>
+								<span class="label-text-alt text-xs text-base-content/50">Link this entry to an item</span>
+							</label>
+							<select class="select select-bordered" bind:value={formData.inventoryItemId}>
+								<option value={0}>No item linked</option>
+								{#each finishedGoodItems as item}
+									<option value={item.id}>{item.categoryName} — {item.name}{item.saleEntryId ? ' ✓ Sold' : ''}</option>
+								{/each}
+							</select>
+						</div>
+						{#if formData.inventoryItemId}
+							<div class="form-control col-span-2">
+								<label class="label"><span class="label-text">Disposition Type</span></label>
+								<div class="flex gap-6">
+									<label class="flex items-center gap-2 cursor-pointer">
+										<input type="radio" class="radio radio-sm" bind:group={formData.inventoryLinkType} value="sale" />
+										<span class="text-sm">Sale <span class="text-base-content/50">(Revenue entry)</span></span>
+									</label>
+									<label class="flex items-center gap-2 cursor-pointer">
+										<input type="radio" class="radio radio-sm" bind:group={formData.inventoryLinkType} value="own_use" />
+										<span class="text-sm">Own Use <span class="text-base-content/50">(Owner's draw / personal use)</span></span>
+									</label>
+								</div>
+							</div>
+						{/if}
+					{/if}
 
 					<!-- Comment -->
 					<div class="form-control col-span-2">

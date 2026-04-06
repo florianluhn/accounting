@@ -5,7 +5,8 @@ import {
 	inventoryCategories,
 	inventoryItems,
 	materialAllocations,
-	subledgerAccounts
+	subledgerAccounts,
+	journalEntries
 } from '../db/schema.js';
 import { eq, desc, sql } from 'drizzle-orm';
 import { logAudit } from '../services/audit.js';
@@ -46,7 +47,8 @@ const createAllocationSchema = z.object({
 	rawMaterialItemId: z.number().int().positive(),
 	finishedGoodItemId: z.number().int().positive(),
 	quantityUsed: z.number().positive(),
-	notes: z.string().max(500).optional()
+	notes: z.string().max(500).optional(),
+	allocationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
 });
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -236,7 +238,7 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 
 		const rows = items.map(item => {
 			const resolved = resolveFields(fieldDefs, JSON.parse(item.fieldValues as string));
-			const row: Record<string, string | number> = { Name: item.name };
+			const row: Record<string, string | number> = { ID: item.name };
 			for (const f of fieldDefs) row[f.label] = resolved[f.key] ?? '';
 			row['Total Value'] = item.totalValue;
 			return row;
@@ -244,7 +246,7 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 
 		const csv = csvStringify(rows, {
 			header: true,
-			columns: ['Name', ...fieldDefs.map(f => f.label), 'Total Value']
+			columns: ['ID', ...fieldDefs.map(f => f.label), 'Total Value']
 		});
 
 		reply.header('Content-Type', 'text/csv');
@@ -285,7 +287,7 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 
 		for (let i = 0; i < records.length; i++) {
 			const rec = records[i];
-			const name = rec['Name']?.trim();
+			const name = (rec['ID'] || rec['Name'])?.trim(); // accept both 'ID' and legacy 'Name'
 			if (!name) { skipped++; continue; }
 
 			const fieldValues: Record<string, string | number> = {};
@@ -331,7 +333,19 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 		if (isNaN(categoryId)) return reply.status(400).send({ error: 'Bad Request', message: 'Invalid category ID' });
 
 		const items = await db
-			.select()
+			.select({
+				id: inventoryItems.id,
+				categoryId: inventoryItems.categoryId,
+				name: inventoryItems.name,
+				fieldValues: inventoryItems.fieldValues,
+				totalValue: inventoryItems.totalValue,
+				remainingQuantity: inventoryItems.remainingQuantity,
+				remainingValue: inventoryItems.remainingValue,
+				createdAt: inventoryItems.createdAt,
+				updatedAt: inventoryItems.updatedAt,
+				saleEntryId: sql<number | null>`(SELECT id FROM journal_entries WHERE inventory_item_id = ${inventoryItems.id} ORDER BY created_at DESC LIMIT 1)`,
+				saleEntryType: sql<string | null>`(SELECT inventory_link_type FROM journal_entries WHERE inventory_item_id = ${inventoryItems.id} ORDER BY created_at DESC LIMIT 1)`
+			})
 			.from(inventoryItems)
 			.where(eq(inventoryItems.categoryId, categoryId))
 			.orderBy(desc(inventoryItems.createdAt));
@@ -528,7 +542,8 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 			rawMaterialItemId: data.rawMaterialItemId,
 			finishedGoodItemId: data.finishedGoodItemId,
 			quantityUsed: data.quantityUsed,
-			notes: data.notes
+			notes: data.notes,
+			allocationDate: data.allocationDate
 		}).returning();
 
 		await recalculateRemaining(data.rawMaterialItemId);

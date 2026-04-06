@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
-import { journalEntries, subledgerAccounts, currencies, glAccounts, vendors } from '../db/schema.js';
+import { journalEntries, subledgerAccounts, currencies, glAccounts, vendors, inventoryItems } from '../db/schema.js';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
@@ -17,7 +17,9 @@ const createJournalEntrySchema = z.object({
 	description: z.string().min(1).max(500),
 	category: z.string().max(100).optional(),
 	comment: z.string().max(1000).optional(),
-	vendorId: z.number().int().positive().nullable().optional()
+	vendorId: z.number().int().positive().nullable().optional(),
+	inventoryItemId: z.number().int().positive().nullable().optional(),
+	inventoryLinkType: z.enum(['sale', 'own_use']).optional()
 }).refine((data) => data.debitAccountId !== data.creditAccountId, {
 	message: 'Debit and credit accounts must be different',
 	path: ['creditAccountId']
@@ -32,7 +34,9 @@ const updateJournalEntrySchema = z.object({
 	description: z.string().min(1).max(500).optional(),
 	category: z.string().max(100).optional(),
 	comment: z.string().max(1000).optional(),
-	vendorId: z.number().int().positive().nullable().optional()
+	vendorId: z.number().int().positive().nullable().optional(),
+	inventoryItemId: z.number().int().positive().nullable().optional(),
+	inventoryLinkType: z.enum(['sale', 'own_use']).optional()
 });
 
 export default async function journalEntriesRoutes(fastify: FastifyInstance) {
@@ -46,9 +50,29 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			category?: string;
 			currencyCode?: string;
 			vendorId?: string;
+		inventoryItemId?: string;
 		}
 	}>('/', async (request, reply) => {
-		let query = db.select().from(journalEntries).orderBy(desc(journalEntries.entryDate));
+		let query = db.select({
+			id: journalEntries.id,
+			entryDate: journalEntries.entryDate,
+			amount: journalEntries.amount,
+			currencyCode: journalEntries.currencyCode,
+			amountInUSD: journalEntries.amountInUSD,
+			debitAccountId: journalEntries.debitAccountId,
+			creditAccountId: journalEntries.creditAccountId,
+			description: journalEntries.description,
+			category: journalEntries.category,
+			comment: journalEntries.comment,
+			vendorId: journalEntries.vendorId,
+			inventoryItemId: journalEntries.inventoryItemId,
+			inventoryLinkType: journalEntries.inventoryLinkType,
+			inventoryItemName: inventoryItems.name,
+			createdAt: journalEntries.createdAt,
+			updatedAt: journalEntries.updatedAt
+		}).from(journalEntries)
+		 .leftJoin(inventoryItems, eq(journalEntries.inventoryItemId, inventoryItems.id))
+		 .orderBy(desc(journalEntries.entryDate));
 
 		// Apply filters
 		const conditions: any[] = [];
@@ -93,6 +117,13 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			const vendorId = parseInt(request.query.vendorId);
 			if (!isNaN(vendorId)) {
 				conditions.push(eq(journalEntries.vendorId, vendorId));
+			}
+		}
+
+		if (request.query.inventoryItemId) {
+			const inventoryItemId = parseInt(request.query.inventoryItemId);
+			if (!isNaN(inventoryItemId)) {
+				conditions.push(eq(journalEntries.inventoryItemId, inventoryItemId));
 			}
 		}
 
@@ -187,7 +218,9 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 				.insert(journalEntries)
 				.values({
 					...validatedData,
-					amountInUSD
+					amountInUSD,
+					inventoryItemId: validatedData.inventoryItemId ?? null,
+					inventoryLinkType: validatedData.inventoryItemId ? (validatedData.inventoryLinkType ?? 'sale') : null
 				})
 				.returning();
 

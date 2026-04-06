@@ -406,6 +406,9 @@ export interface JournalEntry {
 	category?: string | null;
 	comment?: string | null;
 	vendorId?: number | null;
+	inventoryItemId?: number | null;
+	inventoryLinkType?: 'sale' | 'own_use' | null;
+	inventoryItemName?: string | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -418,6 +421,7 @@ export const journalEntriesAPI = {
 		creditAccountId?: number;
 		category?: string;
 		currencyCode?: string;
+		inventoryItemId?: number;
 	}): Promise<JournalEntry[]> {
 		const query = new URLSearchParams();
 		if (params?.startDate) query.set('startDate', params.startDate.toISOString());
@@ -426,6 +430,7 @@ export const journalEntriesAPI = {
 		if (params?.creditAccountId) query.set('creditAccountId', String(params.creditAccountId));
 		if (params?.category) query.set('category', params.category);
 		if (params?.currencyCode) query.set('currencyCode', params.currencyCode);
+		if (params?.inventoryItemId) query.set('inventoryItemId', String(params.inventoryItemId));
 
 		const queryString = query.toString();
 		return apiFetch(`/api/journal-entries${queryString ? `?${queryString}` : ''}`);
@@ -965,6 +970,8 @@ export interface InventoryItem {
 	totalValue: number;
 	remainingQuantity?: number | null;
 	remainingValue?: number | null;
+	saleEntryId?: number | null;
+	saleEntryType?: 'sale' | 'own_use' | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -975,6 +982,7 @@ export interface MaterialAllocation {
 	finishedGoodItemId: number;
 	quantityUsed: number;
 	notes?: string | null;
+	allocationDate?: string | null;
 	createdAt: Date;
 	// Joined fields
 	finishedGoodName?: string;
@@ -1031,7 +1039,7 @@ export const inventoryAPI = {
 		return apiFetch('/api/inventory/raw-material-items');
 	},
 
-	async createAllocation(data: { rawMaterialItemId: number; finishedGoodItemId: number; quantityUsed: number; notes?: string }): Promise<MaterialAllocation> {
+	async createAllocation(data: { rawMaterialItemId: number; finishedGoodItemId: number; quantityUsed: number; notes?: string; allocationDate?: string }): Promise<MaterialAllocation> {
 		return apiFetch('/api/inventory/allocations', { method: 'POST', body: JSON.stringify(data) });
 	},
 
