@@ -268,6 +268,38 @@
 		const remaining = item.remainingQuantity ?? total;
 		return total > 0 ? (remaining / total) * 100 : 0;
 	}
+
+	// ── CSV import/export ─────────────────────────────────────────────────────
+
+	let csvResult = $state<{ imported: number; skipped: number; errors: string[] } | null>(null);
+	let csvLoading = $state(false);
+
+	async function handleDownloadCSV() {
+		if (!category) return;
+		try {
+			await inventoryAPI.downloadCSV(category.id, category.name);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Download failed';
+		}
+	}
+
+	async function handleUploadCSV(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file || !category) return;
+		csvLoading = true;
+		csvResult = null;
+		try {
+			csvResult = await inventoryAPI.uploadCSV(category.id, file);
+			items = await inventoryAPI.listItems(category.id);
+			category = await inventoryAPI.getCategory(category.id);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Upload failed';
+		} finally {
+			csvLoading = false;
+			input.value = '';
+		}
+	}
 </script>
 
 <div class="max-w-7xl mx-auto">
@@ -297,11 +329,25 @@
 					<p class="text-base-content/60">{category.description}</p>
 				{/if}
 			</div>
-			<button class="btn btn-primary" onclick={openCreate}>+ Add Item</button>
+			<div class="flex gap-2 flex-wrap">
+				<button class="btn btn-ghost btn-sm" onclick={handleDownloadCSV}>↓ Export CSV</button>
+				<label class="btn btn-ghost btn-sm {csvLoading ? 'loading' : ''}">
+					↑ Import CSV
+					<input type="file" accept=".csv" class="hidden" onchange={handleUploadCSV} disabled={csvLoading} />
+				</label>
+				<button class="btn btn-primary" onclick={openCreate}>+ Add Item</button>
+			</div>
 		</div>
 
 		{#if error}
 			<div class="alert alert-error mb-6"><span>{error}</span></div>
+		{/if}
+
+		{#if csvResult}
+			<div class="alert {csvResult.errors.length > 0 ? 'alert-warning' : 'alert-success'} mb-6">
+				<span>Imported {csvResult.imported} item{csvResult.imported !== 1 ? 's' : ''}{csvResult.skipped > 0 ? `, skipped ${csvResult.skipped}` : ''}.{csvResult.errors.length > 0 ? ' Errors: ' + csvResult.errors.join('; ') : ''}</span>
+				<button class="btn btn-xs btn-ghost ml-auto" onclick={() => csvResult = null}>✕</button>
+			</div>
 		{/if}
 
 		<!-- Stats row -->

@@ -1037,5 +1037,29 @@ export const inventoryAPI = {
 
 	async deleteAllocation(id: number): Promise<void> {
 		return apiFetch(`/api/inventory/allocations/${id}`, { method: 'DELETE' });
+	},
+
+	async downloadCSV(categoryId: number, categoryName: string): Promise<void> {
+		const url = `${getApiBaseUrl()}/api/inventory/categories/${categoryId}/export/csv`;
+		const response = await fetch(url);
+		if (!response.ok) throw new Error('Failed to download CSV');
+		const blob = await response.blob();
+		const link = document.createElement('a');
+		link.href = URL.createObjectURL(blob);
+		link.download = `${categoryName.replace(/[^a-z0-9]/gi, '_')}-inventory.csv`;
+		link.click();
+		URL.revokeObjectURL(link.href);
+	},
+
+	async uploadCSV(categoryId: number, file: File): Promise<{ imported: number; skipped: number; errors: string[] }> {
+		const formData = new FormData();
+		formData.append('file', file);
+		const url = `${getApiBaseUrl()}/api/inventory/categories/${categoryId}/import/csv`;
+		const response = await fetch(url, { method: 'POST', body: formData });
+		if (!response.ok) {
+			const err = await response.json().catch(() => ({ message: response.statusText }));
+			throw new Error(err.message || 'Upload failed');
+		}
+		return response.json();
 	}
 };

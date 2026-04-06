@@ -10,6 +10,8 @@ import {
 import { eq, desc, sql } from 'drizzle-orm';
 import { logAudit } from '../services/audit.js';
 import { computeTotalValue, resolveFields, type FieldDefinition } from '../services/formula.js';
+import { parse as csvParse } from 'csv-parse/sync';
+import { stringify as csvStringify } from 'csv-stringify/sync';
 
 // ─── Validation schemas ────────────────────────────────────────────────────
 
@@ -218,6 +220,110 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 	});
 
 	// ── Items ────────────────────────────────────────────────────────────────
+
+	// GET /api/inventory/categories/:id/export/csv
+	fastify.get<{ Params: { id: string } }>('/categories/:id/export/csv', async (request, reply) => {
+		const id = parseInt(request.params.id);
+		if (isNaN(id)) return reply.status(400).send({ error: 'Bad Request', message: 'Invalid category ID' });
+
+		const [category] = await db.select().from(inventoryCategories).where(eq(inventoryCategories.id, id)).limit(1);
+		if (!category) return reply.status(404).send({ error: 'Not Found', message: `Category ${id} not found` });
+
+		const fieldDefs: FieldDefinition[] = JSON.parse(category.fieldDefinitions as string);
+		const items = await db.select().from(inventoryItems)
+			.where(eq(inventoryItems.categoryId, id))
+			.orderBy(inventoryItems.name);
+
+		const rows = items.map(item => {
+			const resolved = resolveFields(fieldDefs, JSON.parse(item.fieldValues as string));
+			const row: Record<string, string | number> = { Name: item.name };
+			for (const f of fieldDefs) row[f.label] = resolved[f.key] ?? '';
+			row['Total Value'] = item.totalValue;
+			return row;
+		});
+
+		const csv = csvStringify(rows, {
+			header: true,
+			columns: ['Name', ...fieldDefs.map(f => f.label), 'Total Value']
+		});
+
+		reply.header('Content-Type', 'text/csv');
+		reply.header('Content-Disposition', `attachment; filename="${category.name.replace(/[^a-z0-9]/gi, '_')}-inventory.csv"`);
+		return reply.send(csv);
+	});
+
+	// POST /api/inventory/categories/:id/import/csv
+	fastify.post<{ Params: { id: string } }>('/categories/:id/import/csv', async (request, reply) => {
+		const id = parseInt(request.params.id);
+		if (isNaN(id)) return reply.status(400).send({ error: 'Bad Request', message: 'Invalid category ID' });
+
+		const [category] = await db.select().from(inventoryCategories).where(eq(inventoryCategories.id, id)).limit(1);
+		if (!category) return reply.status(404).send({ error: 'Not Found', message: `Category ${id} not found` });
+
+		const data = await request.file();
+		if (!data) return reply.status(400).send({ error: 'Bad Request', message: 'No file uploaded' });
+
+		const buffer = await data.toBuffer();
+		const csvContent = buffer.toString('utf-8');
+
+		let records: Record<string, string>[];
+		try {
+			records = csvParse(csvContent, { columns: true, skip_empty_lines: true, trim: true });
+		} catch {
+			return reply.status(400).send({ error: 'Bad Request', message: 'Invalid CSV format' });
+		}
+
+		const fieldDefs: FieldDefinition[] = JSON.parse(category.fieldDefinitions as string);
+		const valueFormula = category.valueFormula as string;
+		const isRawMaterial = category.categoryType === 'raw_material';
+		// Only non-computed fields can be imported (computed are derived from formula)
+		const importableFields = fieldDefs.filter(f => f.type !== 'computed');
+
+		let imported = 0;
+		let skipped = 0;
+		const errors: string[] = [];
+
+		for (let i = 0; i < records.length; i++) {
+			const rec = records[i];
+			const name = rec['Name']?.trim();
+			if (!name) { skipped++; continue; }
+
+			const fieldValues: Record<string, string | number> = {};
+			for (const f of importableFields) {
+				const raw = rec[f.label]?.trim() ?? '';
+				if (f.type === 'number') {
+					const num = parseFloat(raw);
+					fieldValues[f.key] = isNaN(num) ? 0 : num;
+				} else {
+					fieldValues[f.key] = raw;
+				}
+			}
+
+			try {
+				const resolved = resolveFields(fieldDefs, fieldValues);
+				const totalValue = computeTotalValue(valueFormula, fieldDefs, fieldValues);
+				const totalQuantity = isRawMaterial && category.quantityField
+					? Number(resolved[category.quantityField as string] ?? 0)
+					: null;
+
+				await db.insert(inventoryItems).values({
+					categoryId: id,
+					name,
+					fieldValues: JSON.stringify(resolved),
+					totalValue,
+					remainingQuantity: totalQuantity,
+					remainingValue: isRawMaterial ? totalValue : null
+				});
+				imported++;
+			} catch (e) {
+				errors.push(`Row ${i + 2}: ${e instanceof Error ? e.message : 'Unknown error'}`);
+				skipped++;
+			}
+		}
+
+		await saveDatabase();
+		return { imported, skipped, errors };
+	});
 
 	// GET /api/inventory/categories/:id/items
 	fastify.get<{ Params: { id: string } }>('/categories/:id/items', async (request, reply) => {
