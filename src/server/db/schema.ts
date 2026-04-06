@@ -272,6 +272,106 @@ export const timeEntries = sqliteTable(
 );
 
 // ========================================
+// Inventory Categories Table
+// ========================================
+export const inventoryCategories = sqliteTable(
+	'inventory_categories',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		name: text('name').notNull(),
+		description: text('description'),
+		assetAccountId: integer('asset_account_id')
+			.notNull()
+			.references(() => subledgerAccounts.id, { onDelete: 'restrict' }),
+		// 'raw_material' | 'finished_good' | 'other'
+		categoryType: text('category_type').notNull().default('other'),
+		// For raw_material categories: which field key holds the quantity unit (e.g. 'board_feet')
+		// Used to compute remainingQuantity after consumption allocations
+		quantityField: text('quantity_field'),
+		// JSON array of FieldDefinition objects
+		fieldDefinitions: text('field_definitions').notNull().default('[]'),
+		// Formula using field keys to compute monetary value per item (e.g. "board_feet * price_per_bf")
+		valueFormula: text('value_formula').notNull().default('0'),
+		createdAt: integer('created_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer('updated_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`)
+	},
+	(table) => ({
+		nameIdx: index('idx_inventory_categories_name').on(table.name),
+		accountIdx: index('idx_inventory_categories_account').on(table.assetAccountId)
+	})
+);
+
+// ========================================
+// Inventory Items Table
+// ========================================
+export const inventoryItems = sqliteTable(
+	'inventory_items',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		categoryId: integer('category_id')
+			.notNull()
+			.references(() => inventoryCategories.id, { onDelete: 'cascade' }),
+		name: text('name').notNull(),
+		// JSON object: { fieldKey: value }
+		fieldValues: text('field_values').notNull().default('{}'),
+		// Stored monetary value computed from category's valueFormula — used for balance sheet SUM()
+		totalValue: real('total_value').notNull().default(0),
+		// Raw material only: how much quantity remains after consumption allocations
+		remainingQuantity: real('remaining_quantity'),
+		// Raw material only: monetary value of remaining quantity (used for balance sheet)
+		remainingValue: real('remaining_value'),
+		createdAt: integer('created_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer('updated_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`)
+	},
+	(table) => ({
+		categoryIdx: index('idx_inventory_items_category').on(table.categoryId)
+	})
+);
+
+// ========================================
+// Material Allocations Table
+// ========================================
+export const materialAllocations = sqliteTable(
+	'material_allocations',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		// The raw material item being consumed (e.g. a walnut board)
+		rawMaterialItemId: integer('raw_material_item_id')
+			.notNull()
+			.references(() => inventoryItems.id, { onDelete: 'cascade' }),
+		// The finished good item this material went into (e.g. a cutting board)
+		finishedGoodItemId: integer('finished_good_item_id')
+			.notNull()
+			.references(() => inventoryItems.id, { onDelete: 'cascade' }),
+		// How much of the raw material was used (in the raw material category's quantityField unit)
+		quantityUsed: real('quantity_used').notNull(),
+		notes: text('notes'),
+		createdAt: integer('created_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`)
+	},
+	(table) => ({
+		rawMaterialIdx: index('idx_allocations_raw_material').on(table.rawMaterialItemId),
+		finishedGoodIdx: index('idx_allocations_finished_good').on(table.finishedGoodItemId)
+	})
+);
+
+export type InventoryCategory = typeof inventoryCategories.$inferSelect;
+export type NewInventoryCategory = typeof inventoryCategories.$inferInsert;
+export type InventoryItem = typeof inventoryItems.$inferSelect;
+export type NewInventoryItem = typeof inventoryItems.$inferInsert;
+export type MaterialAllocation = typeof materialAllocations.$inferSelect;
+export type NewMaterialAllocation = typeof materialAllocations.$inferInsert;
+
+// ========================================
 // Audit Logs Table
 // ========================================
 export const auditLogs = sqliteTable(
@@ -280,7 +380,7 @@ export const auditLogs = sqliteTable(
 		id: integer('id').primaryKey({ autoIncrement: true }),
 		operation: text('operation', { enum: ['CREATE', 'UPDATE', 'DELETE'] }).notNull(),
 		resourceType: text('resource_type', {
-			enum: ['currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment', 'vendor', 'customer', 'time_entry']
+			enum: ['currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment', 'vendor', 'customer', 'time_entry', 'inventory_category', 'inventory_item']
 		}).notNull(),
 		resourceId: text('resource_id').notNull(),
 		source: text('source', { enum: ['Web UI', 'CSV Import', 'API'] }).notNull().default('Web UI'),

@@ -533,6 +533,176 @@ function migrateCustomers(): void {
 	}
 }
 
+/**
+ * Run inventory tables migration
+ */
+function migrateInventory(): void {
+	try {
+		// inventory_categories
+		const catCheck = sqlite.exec(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_categories'"
+		);
+		if (catCheck.length === 0 || catCheck[0].values.length === 0) {
+			console.log('Creating inventory_categories table...');
+			sqlite.run(`
+				CREATE TABLE IF NOT EXISTS inventory_categories (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					name TEXT NOT NULL,
+					description TEXT,
+					asset_account_id INTEGER NOT NULL REFERENCES subledger_accounts(id) ON DELETE RESTRICT,
+					field_definitions TEXT NOT NULL DEFAULT '[]',
+					value_formula TEXT NOT NULL DEFAULT '0',
+					created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+					updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+				)
+			`);
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_inventory_categories_name ON inventory_categories(name)');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_inventory_categories_account ON inventory_categories(asset_account_id)');
+			sqlite.run(`
+				CREATE TRIGGER IF NOT EXISTS update_inventory_categories_timestamp
+				AFTER UPDATE ON inventory_categories
+				FOR EACH ROW
+				BEGIN
+					UPDATE inventory_categories SET updated_at = unixepoch() WHERE id = NEW.id;
+				END;
+			`);
+			console.log('✓ inventory_categories table created');
+		} else {
+			console.log('✓ inventory_categories table already exists');
+		}
+
+		// inventory_items
+		const itemCheck = sqlite.exec(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_items'"
+		);
+		if (itemCheck.length === 0 || itemCheck[0].values.length === 0) {
+			console.log('Creating inventory_items table...');
+			sqlite.run(`
+				CREATE TABLE IF NOT EXISTS inventory_items (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					category_id INTEGER NOT NULL REFERENCES inventory_categories(id) ON DELETE CASCADE,
+					name TEXT NOT NULL,
+					field_values TEXT NOT NULL DEFAULT '{}',
+					total_value REAL NOT NULL DEFAULT 0,
+					created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+					updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+				)
+			`);
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_inventory_items_category ON inventory_items(category_id)');
+			sqlite.run(`
+				CREATE TRIGGER IF NOT EXISTS update_inventory_items_timestamp
+				AFTER UPDATE ON inventory_items
+				FOR EACH ROW
+				BEGIN
+					UPDATE inventory_items SET updated_at = unixepoch() WHERE id = NEW.id;
+				END;
+			`);
+			console.log('✓ inventory_items table created');
+		} else {
+			console.log('✓ inventory_items table already exists');
+		}
+
+		// Update audit_logs CHECK constraint to include inventory types
+		const auditCheck = sqlite.exec(
+			"SELECT sql FROM sqlite_master WHERE type='table' AND name='audit_logs'"
+		);
+		if (auditCheck.length > 0 && auditCheck[0].values.length > 0) {
+			const createSql = auditCheck[0].values[0][0] as string;
+			if (!createSql.includes("'inventory_category'")) {
+				console.log('Updating audit_logs to support inventory resource types...');
+				sqlite.run(`
+					CREATE TABLE IF NOT EXISTS audit_logs_new (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						operation TEXT NOT NULL CHECK(operation IN ('CREATE', 'UPDATE', 'DELETE')),
+						resource_type TEXT NOT NULL CHECK(resource_type IN ('currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment', 'vendor', 'customer', 'time_entry', 'inventory_category', 'inventory_item')),
+						resource_id TEXT NOT NULL,
+						source TEXT NOT NULL DEFAULT 'Web UI' CHECK(source IN ('Web UI', 'CSV Import', 'API')),
+						batch_id TEXT,
+						batch_summary TEXT,
+						old_data TEXT,
+						new_data TEXT,
+						timestamp INTEGER NOT NULL DEFAULT (unixepoch()),
+						description TEXT
+					)
+				`);
+				sqlite.run('INSERT INTO audit_logs_new SELECT * FROM audit_logs');
+				sqlite.run('DROP TABLE audit_logs');
+				sqlite.run('ALTER TABLE audit_logs_new RENAME TO audit_logs');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type, resource_id)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_operation ON audit_logs(operation)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_source ON audit_logs(source)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_batch ON audit_logs(batch_id)');
+				console.log('✓ audit_logs updated to support inventory resource types');
+			}
+		}
+	} catch (error) {
+		console.error('Failed to migrate inventory:', error);
+		throw error;
+	}
+}
+
+/**
+ * Add consumption tracking: categoryType, quantityField, remaining columns, material_allocations table
+ */
+function migrateConsumption(): void {
+	try {
+		// Add category_type to inventory_categories
+		const catCols = sqlite.exec('PRAGMA table_info(inventory_categories)');
+		if (catCols.length > 0) {
+			const cols = catCols[0].values.map((c: any) => c[1]);
+			if (!cols.includes('category_type')) {
+				sqlite.run("ALTER TABLE inventory_categories ADD COLUMN category_type TEXT NOT NULL DEFAULT 'other'");
+				console.log('✓ Added category_type to inventory_categories');
+			}
+			if (!cols.includes('quantity_field')) {
+				sqlite.run('ALTER TABLE inventory_categories ADD COLUMN quantity_field TEXT');
+				console.log('✓ Added quantity_field to inventory_categories');
+			}
+		}
+
+		// Add remaining columns to inventory_items
+		const itemCols = sqlite.exec('PRAGMA table_info(inventory_items)');
+		if (itemCols.length > 0) {
+			const cols = itemCols[0].values.map((c: any) => c[1]);
+			if (!cols.includes('remaining_quantity')) {
+				sqlite.run('ALTER TABLE inventory_items ADD COLUMN remaining_quantity REAL');
+				console.log('✓ Added remaining_quantity to inventory_items');
+			}
+			if (!cols.includes('remaining_value')) {
+				sqlite.run('ALTER TABLE inventory_items ADD COLUMN remaining_value REAL');
+				console.log('✓ Added remaining_value to inventory_items');
+			}
+		}
+
+		// Create material_allocations table
+		const allocCheck = sqlite.exec(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name='material_allocations'"
+		);
+		if (allocCheck.length === 0 || allocCheck[0].values.length === 0) {
+			console.log('Creating material_allocations table...');
+			sqlite.run(`
+				CREATE TABLE IF NOT EXISTS material_allocations (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					raw_material_item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+					finished_good_item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+					quantity_used REAL NOT NULL,
+					notes TEXT,
+					created_at INTEGER NOT NULL DEFAULT (unixepoch())
+				)
+			`);
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_allocations_raw_material ON material_allocations(raw_material_item_id)');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_allocations_finished_good ON material_allocations(finished_good_item_id)');
+			console.log('✓ material_allocations table created');
+		} else {
+			console.log('✓ material_allocations table already exists');
+		}
+	} catch (error) {
+		console.error('Failed to migrate consumption tracking:', error);
+		throw error;
+	}
+}
+
 // Run integrity check on startup
 if (!checkIntegrity()) {
 	console.error('❌ Database integrity check failed!');
@@ -546,6 +716,8 @@ migrateAuditLogs();
 migrateVendors();
 migrateTimeEntries();
 migrateCustomers();
+migrateInventory();
+migrateConsumption();
 
 export { sqlite };
 export default db;

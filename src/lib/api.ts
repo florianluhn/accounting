@@ -927,3 +927,115 @@ export const backupAPI = {
 		});
 	}
 };
+
+// ========================================
+// Inventory API
+// ========================================
+
+export interface FieldDefinition {
+	key: string;
+	label: string;
+	type: 'text' | 'number' | 'computed';
+	unit?: string;
+	formula?: string;
+}
+
+export interface InventoryCategory {
+	id: number;
+	name: string;
+	description?: string | null;
+	assetAccountId: number;
+	categoryType: 'raw_material' | 'finished_good' | 'other';
+	quantityField?: string | null;
+	fieldDefinitions: FieldDefinition[];
+	valueFormula: string;
+	itemCount?: number;
+	totalValue?: number;
+	accountNumber?: string;
+	accountName?: string;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+export interface InventoryItem {
+	id: number;
+	categoryId: number;
+	name: string;
+	fieldValues: Record<string, string | number>;
+	totalValue: number;
+	remainingQuantity?: number | null;
+	remainingValue?: number | null;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+export interface MaterialAllocation {
+	id: number;
+	rawMaterialItemId: number;
+	finishedGoodItemId: number;
+	quantityUsed: number;
+	notes?: string | null;
+	createdAt: Date;
+	// Joined fields
+	finishedGoodName?: string;
+	rawMaterialName?: string;
+}
+
+export interface RawMaterialItem extends InventoryItem {
+	categoryName: string;
+	quantityField: string | null;
+}
+
+export const inventoryAPI = {
+	async listCategories(): Promise<InventoryCategory[]> {
+		return apiFetch('/api/inventory/categories');
+	},
+
+	async getCategory(id: number): Promise<InventoryCategory> {
+		return apiFetch(`/api/inventory/categories/${id}`);
+	},
+
+	async createCategory(data: Omit<InventoryCategory, 'id' | 'itemCount' | 'totalValue' | 'accountNumber' | 'accountName' | 'createdAt' | 'updatedAt'>): Promise<InventoryCategory> {
+		return apiFetch('/api/inventory/categories', { method: 'POST', body: JSON.stringify(data) });
+	},
+
+	async updateCategory(id: number, data: Partial<Omit<InventoryCategory, 'id' | 'itemCount' | 'totalValue' | 'accountNumber' | 'accountName' | 'createdAt' | 'updatedAt'>>): Promise<InventoryCategory> {
+		return apiFetch(`/api/inventory/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+	},
+
+	async deleteCategory(id: number): Promise<void> {
+		return apiFetch(`/api/inventory/categories/${id}`, { method: 'DELETE' });
+	},
+
+	async listItems(categoryId: number): Promise<InventoryItem[]> {
+		return apiFetch(`/api/inventory/categories/${categoryId}/items`);
+	},
+
+	async createItem(categoryId: number, data: { name: string; fieldValues: Record<string, string | number> }): Promise<InventoryItem> {
+		return apiFetch(`/api/inventory/categories/${categoryId}/items`, { method: 'POST', body: JSON.stringify(data) });
+	},
+
+	async updateItem(id: number, data: { name?: string; fieldValues?: Record<string, string | number> }): Promise<InventoryItem> {
+		return apiFetch(`/api/inventory/items/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+	},
+
+	async deleteItem(id: number): Promise<void> {
+		return apiFetch(`/api/inventory/items/${id}`, { method: 'DELETE' });
+	},
+
+	async getItemAllocations(itemId: number): Promise<{ asRawMaterial: MaterialAllocation[]; asFinishedGood: MaterialAllocation[] }> {
+		return apiFetch(`/api/inventory/items/${itemId}/allocations`);
+	},
+
+	async listRawMaterialItems(): Promise<RawMaterialItem[]> {
+		return apiFetch('/api/inventory/raw-material-items');
+	},
+
+	async createAllocation(data: { rawMaterialItemId: number; finishedGoodItemId: number; quantityUsed: number; notes?: string }): Promise<MaterialAllocation> {
+		return apiFetch('/api/inventory/allocations', { method: 'POST', body: JSON.stringify(data) });
+	},
+
+	async deleteAllocation(id: number): Promise<void> {
+		return apiFetch(`/api/inventory/allocations/${id}`, { method: 'DELETE' });
+	}
+};

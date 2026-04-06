@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db from '../db/connection.js';
-import { journalEntries, subledgerAccounts, glAccounts, currencies } from '../db/schema.js';
+import { journalEntries, subledgerAccounts, glAccounts, currencies, inventoryCategories, inventoryItems, materialAllocations } from '../db/schema.js';
 import { eq, and, lte, gte, sql, desc } from 'drizzle-orm';
 
 // Validation schemas
@@ -137,6 +137,20 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				.filter((b) => b.glAccountType === 'Equity')
 				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true }));
 
+			// Inventory totals by subledger account (stored total_value, no date filter — inventory is a stock, not a flow)
+			const inventoryTotals = await db
+				.select({
+					assetAccountId: inventoryCategories.assetAccountId,
+					categoryId: inventoryCategories.id,
+					categoryName: inventoryCategories.name,
+					categoryType: inventoryCategories.categoryType,
+					// Raw materials: use remaining_value (consumed stock is gone); others: use total_value
+					totalValue: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryCategories.categoryType} = 'raw_material' THEN COALESCE(${inventoryItems.remainingValue}, ${inventoryItems.totalValue}) ELSE ${inventoryItems.totalValue} END), 0)`
+				})
+				.from(inventoryCategories)
+				.leftJoin(inventoryItems, eq(inventoryItems.categoryId, inventoryCategories.id))
+				.groupBy(inventoryCategories.id);
+
 			// Calculate totals
 			const totalAssets = assets.reduce((sum, a) => sum + a.balance, 0);
 			const totalLiabilities = liabilities.reduce((sum, a) => sum + a.balance, 0);
@@ -150,12 +164,24 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			const totalExpenses = expenses.reduce((sum, a) => sum + a.balance, 0);
 			const retainedEarnings = totalRevenue - totalExpenses;
 
+			const totalInventoryValue = inventoryTotals.reduce((sum, r) => sum + Number(r.totalValue), 0);
+			const grandTotalAssets = totalAssets + totalInventoryValue;
+
 			return {
 				asOfDate: endDate || new Date(),
 				currencyCode,
 				assets: {
 					accounts: assets,
 					total: totalAssets
+				},
+				inventory: {
+					categories: inventoryTotals.map(r => ({
+						categoryId: r.categoryId,
+						categoryName: r.categoryName,
+						assetAccountId: r.assetAccountId,
+						totalValue: Number(r.totalValue)
+					})),
+					total: totalInventoryValue
 				},
 				liabilities: {
 					accounts: liabilities,
@@ -167,7 +193,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 					total: totalEquity + retainedEarnings
 				},
 				totalLiabilitiesAndEquity: totalLiabilities + totalEquity + retainedEarnings,
-				balanced: Math.abs(totalAssets - (totalLiabilities + totalEquity + retainedEarnings)) < 0.01
+				balanced: Math.abs(grandTotalAssets - (totalLiabilities + totalEquity + retainedEarnings)) < 0.01
 			};
 		}
 	);
