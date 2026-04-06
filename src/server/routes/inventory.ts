@@ -28,7 +28,7 @@ const createCategorySchema = z.object({
 	categoryType: z.enum(['raw_material', 'finished_good', 'other']).default('other'),
 	quantityField: z.string().max(50).optional(),
 	fieldDefinitions: z.array(fieldDefinitionSchema),
-	valueFormula: z.string().max(500)
+	valueFormula: z.string().max(500).optional().default('')
 });
 
 const updateCategorySchema = createCategorySchema.partial();

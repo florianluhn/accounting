@@ -125,7 +125,6 @@
 			error = '';
 			if (formData.assetAccountId === 0) { error = 'Please select an asset account'; return; }
 			if (formData.fieldDefinitions.length === 0) { error = 'Add at least one field'; return; }
-			if (!formData.valueFormula.trim()) { error = 'Value formula is required'; return; }
 
 			const payload = {
 				name: formData.name,
@@ -397,7 +396,7 @@
 
 				<div class="form-control mb-6">
 					<label class="label">
-						<span class="label-text">Value Formula <span class="text-base-content/50 text-xs">(computes $ value per item for balance sheet)</span></span>
+						<span class="label-text">Value Formula <span class="text-base-content/50 text-xs">(optional — computes $ value per item for balance sheet)</span></span>
 						{#if availableKeys.length > 0}
 							<span class="label-text-alt text-xs text-base-content/50">Keys: {availableKeys.join(', ')}</span>
 						{/if}
