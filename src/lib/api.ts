@@ -612,6 +612,10 @@ export interface BalanceSheetReport {
 		accounts: AccountBalance[];
 		total: number;
 	};
+	inventory: {
+		categories: { categoryId: number; categoryName: string; assetAccountId: number; totalValue: number }[];
+		total: number;
+	};
 	liabilities: {
 		accounts: AccountBalance[];
 		total: number;

@@ -238,10 +238,29 @@
 									</tbody>
 								</table>
 							{/if}
+
+							{#if balanceSheet.inventory && balanceSheet.inventory.categories.length > 0}
+								<h4 class="font-semibold mt-4 mb-2">Inventory</h4>
+								<table class="table">
+									<tbody>
+										{#each balanceSheet.inventory.categories as cat}
+											<tr>
+												<td class="text-sm">{cat.categoryName}</td>
+												<td class="text-right font-mono">{formatCurrency(cat.totalValue)}</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+								<div class="flex justify-between font-semibold text-sm mt-1 px-4">
+									<span>Total Inventory</span>
+									<span class="font-mono">{formatCurrency(balanceSheet.inventory.total)}</span>
+								</div>
+							{/if}
+
 							<div class="divider"></div>
 							<div class="flex justify-between font-bold text-lg">
 								<span>Total Assets</span>
-								<span class="font-mono">{formatCurrency(balanceSheet.assets.total)}</span>
+								<span class="font-mono">{formatCurrency(balanceSheet.assets.total + (balanceSheet.inventory?.total ?? 0))}</span>
 							</div>
 						</div>
 
