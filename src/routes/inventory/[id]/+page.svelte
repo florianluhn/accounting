@@ -363,7 +363,7 @@
 			<div class="stat bg-base-100 shadow rounded-box">
 				<div class="stat-title">{isRawMaterial ? 'Remaining Value' : 'Total Value'}</div>
 				<div class="stat-value text-primary text-2xl">{formatCurrency(totalValue)}</div>
-				<div class="stat-desc">On balance sheet</div>
+				<div class="stat-desc">Across all items</div>
 			</div>
 		</div>
 

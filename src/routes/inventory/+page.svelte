@@ -230,7 +230,7 @@
 						</tbody>
 						<tfoot>
 							<tr>
-								<td colspan="4" class="font-bold">Total Inventory Value</td>
+								<td colspan="3" class="font-bold">Total Inventory Value</td>
 								<td class="text-right font-mono font-bold text-primary">
 									{formatCurrency(categories.reduce((s, c) => s + (c.totalValue ?? 0), 0))}
 								</td>

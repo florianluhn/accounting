@@ -95,10 +95,12 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				valueFormula: inventoryCategories.valueFormula,
 				createdAt: inventoryCategories.createdAt,
 				updatedAt: inventoryCategories.updatedAt,
-				itemCount: sql<number>`(SELECT COUNT(*) FROM inventory_items WHERE category_id = ${inventoryCategories.id})`,
-				totalValue: sql<number>`(SELECT COALESCE(SUM(CASE WHEN ${inventoryCategories.categoryType} = 'raw_material' THEN COALESCE(remaining_value, total_value) ELSE total_value END), 0) FROM inventory_items WHERE category_id = ${inventoryCategories.id})`
+				itemCount: sql<number>`COALESCE(COUNT(${inventoryItems.id}), 0)`,
+				totalValue: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryCategories.categoryType} = 'raw_material' THEN COALESCE(${inventoryItems.remainingValue}, ${inventoryItems.totalValue}) ELSE ${inventoryItems.totalValue} END), 0)`
 			})
 			.from(inventoryCategories)
+			.leftJoin(inventoryItems, eq(inventoryItems.categoryId, inventoryCategories.id))
+			.groupBy(inventoryCategories.id)
 			.orderBy(inventoryCategories.name);
 
 		return categories.map(c => ({
@@ -123,10 +125,12 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				valueFormula: inventoryCategories.valueFormula,
 				createdAt: inventoryCategories.createdAt,
 				updatedAt: inventoryCategories.updatedAt,
-				itemCount: sql<number>`(SELECT COUNT(*) FROM inventory_items WHERE category_id = ${inventoryCategories.id})`,
-				totalValue: sql<number>`(SELECT COALESCE(SUM(CASE WHEN ${inventoryCategories.categoryType} = 'raw_material' THEN COALESCE(remaining_value, total_value) ELSE total_value END), 0) FROM inventory_items WHERE category_id = ${inventoryCategories.id})`
+				itemCount: sql<number>`COALESCE(COUNT(${inventoryItems.id}), 0)`,
+				totalValue: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryCategories.categoryType} = 'raw_material' THEN COALESCE(${inventoryItems.remainingValue}, ${inventoryItems.totalValue}) ELSE ${inventoryItems.totalValue} END), 0)`
 			})
 			.from(inventoryCategories)
+			.leftJoin(inventoryItems, eq(inventoryItems.categoryId, inventoryCategories.id))
+			.groupBy(inventoryCategories.id)
 			.where(eq(inventoryCategories.id, id))
 			.limit(1);
 
