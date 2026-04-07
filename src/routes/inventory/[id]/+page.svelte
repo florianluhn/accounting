@@ -355,12 +355,7 @@
 		{/if}
 
 		<!-- Stats row -->
-		<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-			<div class="stat bg-base-100 shadow rounded-box">
-				<div class="stat-title">Asset Account</div>
-				<div class="stat-value text-lg">{category.accountNumber}</div>
-				<div class="stat-desc">{category.accountName}</div>
-			</div>
+		<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
 			<div class="stat bg-base-100 shadow rounded-box">
 				<div class="stat-title">Items</div>
 				<div class="stat-value">{items.length}</div>

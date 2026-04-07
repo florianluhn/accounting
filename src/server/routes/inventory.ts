@@ -5,7 +5,6 @@ import {
 	inventoryCategories,
 	inventoryItems,
 	materialAllocations,
-	subledgerAccounts,
 	journalEntries
 } from '../db/schema.js';
 import { eq, desc, sql } from 'drizzle-orm';
@@ -27,7 +26,6 @@ const fieldDefinitionSchema = z.object({
 const createCategorySchema = z.object({
 	name: z.string().min(1).max(200),
 	description: z.string().max(1000).optional(),
-	assetAccountId: z.number().int().positive(),
 	categoryType: z.enum(['raw_material', 'finished_good', 'other']).default('other'),
 	quantityField: z.string().max(50).optional(),
 	fieldDefinitions: z.array(fieldDefinitionSchema),
@@ -91,7 +89,6 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				id: inventoryCategories.id,
 				name: inventoryCategories.name,
 				description: inventoryCategories.description,
-				assetAccountId: inventoryCategories.assetAccountId,
 				categoryType: inventoryCategories.categoryType,
 				quantityField: inventoryCategories.quantityField,
 				fieldDefinitions: inventoryCategories.fieldDefinitions,
@@ -99,12 +96,9 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				createdAt: inventoryCategories.createdAt,
 				updatedAt: inventoryCategories.updatedAt,
 				itemCount: sql<number>`(SELECT COUNT(*) FROM inventory_items WHERE category_id = ${inventoryCategories.id})`,
-				totalValue: sql<number>`(SELECT COALESCE(SUM(CASE WHEN ${inventoryCategories.categoryType} = 'raw_material' THEN COALESCE(remaining_value, total_value) ELSE total_value END), 0) FROM inventory_items WHERE category_id = ${inventoryCategories.id})`,
-				accountNumber: subledgerAccounts.accountNumber,
-				accountName: subledgerAccounts.name
+				totalValue: sql<number>`(SELECT COALESCE(SUM(CASE WHEN ${inventoryCategories.categoryType} = 'raw_material' THEN COALESCE(remaining_value, total_value) ELSE total_value END), 0) FROM inventory_items WHERE category_id = ${inventoryCategories.id})`
 			})
 			.from(inventoryCategories)
-			.innerJoin(subledgerAccounts, eq(inventoryCategories.assetAccountId, subledgerAccounts.id))
 			.orderBy(inventoryCategories.name);
 
 		return categories.map(c => ({
@@ -123,7 +117,6 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				id: inventoryCategories.id,
 				name: inventoryCategories.name,
 				description: inventoryCategories.description,
-				assetAccountId: inventoryCategories.assetAccountId,
 				categoryType: inventoryCategories.categoryType,
 				quantityField: inventoryCategories.quantityField,
 				fieldDefinitions: inventoryCategories.fieldDefinitions,
@@ -131,12 +124,9 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				createdAt: inventoryCategories.createdAt,
 				updatedAt: inventoryCategories.updatedAt,
 				itemCount: sql<number>`(SELECT COUNT(*) FROM inventory_items WHERE category_id = ${inventoryCategories.id})`,
-				totalValue: sql<number>`(SELECT COALESCE(SUM(CASE WHEN ${inventoryCategories.categoryType} = 'raw_material' THEN COALESCE(remaining_value, total_value) ELSE total_value END), 0) FROM inventory_items WHERE category_id = ${inventoryCategories.id})`,
-				accountNumber: subledgerAccounts.accountNumber,
-				accountName: subledgerAccounts.name
+				totalValue: sql<number>`(SELECT COALESCE(SUM(CASE WHEN ${inventoryCategories.categoryType} = 'raw_material' THEN COALESCE(remaining_value, total_value) ELSE total_value END), 0) FROM inventory_items WHERE category_id = ${inventoryCategories.id})`
 			})
 			.from(inventoryCategories)
-			.innerJoin(subledgerAccounts, eq(inventoryCategories.assetAccountId, subledgerAccounts.id))
 			.where(eq(inventoryCategories.id, id))
 			.limit(1);
 
@@ -152,7 +142,6 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 		const inserted = await db.insert(inventoryCategories).values({
 			name: data.name,
 			description: data.description,
-			assetAccountId: data.assetAccountId,
 			categoryType: data.categoryType,
 			quantityField: data.quantityField,
 			fieldDefinitions: JSON.stringify(data.fieldDefinitions),
@@ -566,21 +555,4 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 		return reply.status(204).send();
 	});
 
-	// GET /api/inventory/totals-by-account — used by balance sheet
-	fastify.get('/totals-by-account', async (request, reply) => {
-		const rows = await db
-			.select({
-				assetAccountId: inventoryCategories.assetAccountId,
-				categoryId: inventoryCategories.id,
-				categoryName: inventoryCategories.name,
-				categoryType: inventoryCategories.categoryType,
-				// Raw materials: sum remaining_value; finished goods & other: sum total_value
-				totalValue: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryCategories.categoryType} = 'raw_material' THEN COALESCE(${inventoryItems.remainingValue}, ${inventoryItems.totalValue}) ELSE ${inventoryItems.totalValue} END), 0)`
-			})
-			.from(inventoryCategories)
-			.leftJoin(inventoryItems, eq(inventoryItems.categoryId, inventoryCategories.id))
-			.groupBy(inventoryCategories.id);
-
-		return rows;
-	});
 }

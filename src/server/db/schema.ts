@@ -283,9 +283,7 @@ export const inventoryCategories = sqliteTable(
 		id: integer('id').primaryKey({ autoIncrement: true }),
 		name: text('name').notNull(),
 		description: text('description'),
-		assetAccountId: integer('asset_account_id')
-			.notNull()
-			.references(() => subledgerAccounts.id, { onDelete: 'restrict' }),
+		assetAccountId: integer('asset_account_id'), // retained for data compatibility, no longer used
 		// 'raw_material' | 'finished_good' | 'other'
 		categoryType: text('category_type').notNull().default('other'),
 		// For raw_material categories: which field key holds the quantity unit (e.g. 'board_feet')

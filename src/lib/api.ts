@@ -612,10 +612,6 @@ export interface BalanceSheetReport {
 		accounts: AccountBalance[];
 		total: number;
 	};
-	inventory: {
-		categories: { categoryId: number; categoryName: string; assetAccountId: number; totalValue: number }[];
-		total: number;
-	};
 	liabilities: {
 		accounts: AccountBalance[];
 		total: number;
@@ -953,15 +949,12 @@ export interface InventoryCategory {
 	id: number;
 	name: string;
 	description?: string | null;
-	assetAccountId: number;
 	categoryType: 'raw_material' | 'finished_good' | 'other';
 	quantityField?: string | null;
 	fieldDefinitions: FieldDefinition[];
 	valueFormula: string;
 	itemCount?: number;
 	totalValue?: number;
-	accountNumber?: string;
-	accountName?: string;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -1007,11 +1000,11 @@ export const inventoryAPI = {
 		return apiFetch(`/api/inventory/categories/${id}`);
 	},
 
-	async createCategory(data: Omit<InventoryCategory, 'id' | 'itemCount' | 'totalValue' | 'accountNumber' | 'accountName' | 'createdAt' | 'updatedAt'>): Promise<InventoryCategory> {
+	async createCategory(data: Omit<InventoryCategory, 'id' | 'itemCount' | 'totalValue' | 'createdAt' | 'updatedAt'>): Promise<InventoryCategory> {
 		return apiFetch('/api/inventory/categories', { method: 'POST', body: JSON.stringify(data) });
 	},
 
-	async updateCategory(id: number, data: Partial<Omit<InventoryCategory, 'id' | 'itemCount' | 'totalValue' | 'accountNumber' | 'accountName' | 'createdAt' | 'updatedAt'>>): Promise<InventoryCategory> {
+	async updateCategory(id: number, data: Partial<Omit<InventoryCategory, 'id' | 'itemCount' | 'totalValue' | 'createdAt' | 'updatedAt'>>): Promise<InventoryCategory> {
 		return apiFetch(`/api/inventory/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 	},
 

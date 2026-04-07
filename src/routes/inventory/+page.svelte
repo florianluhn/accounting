@@ -1,8 +1,7 @@
 <script lang="ts">
-	import { inventoryAPI, subledgerAccountsAPI, type InventoryCategory, type FieldDefinition, type SubledgerAccount } from '$lib/api';
+	import { inventoryAPI, type InventoryCategory, type FieldDefinition } from '$lib/api';
 
 	let categories = $state<InventoryCategory[]>([]);
-	let accounts = $state<SubledgerAccount[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 
@@ -18,7 +17,6 @@
 	const emptyForm = () => ({
 		name: '',
 		description: '',
-		assetAccountId: 0,
 		categoryType: 'other' as 'raw_material' | 'finished_good' | 'other',
 		quantityField: '',
 		fieldDefinitions: [] as FieldDefinition[],
@@ -37,19 +35,13 @@
 		try {
 			loading = true;
 			error = '';
-			[categories, accounts] = await Promise.all([
-				inventoryAPI.listCategories(),
-				subledgerAccountsAPI.list()
-			]);
+			categories = await inventoryAPI.listCategories();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load inventory';
 		} finally {
 			loading = false;
 		}
 	}
-
-	// ── Asset accounts filter (only Asset-type GL accounts) ─────────────────
-	let assetAccounts = $derived(accounts.filter(a => a.isActive));
 
 	// ── Modal helpers ────────────────────────────────────────────────────────
 
@@ -65,7 +57,6 @@
 		formData = {
 			name: cat.name,
 			description: cat.description || '',
-			assetAccountId: cat.assetAccountId,
 			categoryType: (cat.categoryType as any) || 'other',
 			quantityField: cat.quantityField || '',
 			fieldDefinitions: cat.fieldDefinitions.map(f => ({ ...f })),
@@ -123,13 +114,11 @@
 	async function handleSubmit() {
 		try {
 			error = '';
-			if (formData.assetAccountId === 0) { error = 'Please select an asset account'; return; }
 			if (formData.fieldDefinitions.length === 0) { error = 'Add at least one field'; return; }
 
 			const payload = {
 				name: formData.name,
 				description: formData.description || undefined,
-				assetAccountId: formData.assetAccountId,
 				categoryType: formData.categoryType,
 				quantityField: formData.categoryType === 'raw_material' ? (formData.quantityField || undefined) : undefined,
 				fieldDefinitions: formData.fieldDefinitions,
@@ -200,7 +189,6 @@
 						<thead>
 							<tr>
 								<th>Category</th>
-								<th>Asset Account</th>
 								<th>Fields</th>
 								<th class="text-right">Items</th>
 								<th class="text-right">Total Value</th>
@@ -221,7 +209,6 @@
 											{/if}
 										</div>
 									</td>
-									<td class="text-sm">{cat.accountName || cat.assetAccountId}</td>
 									<td>
 										<div class="flex flex-wrap gap-1">
 											{#each cat.fieldDefinitions as f}
@@ -275,21 +262,12 @@
 						<label class="label"><span class="label-text">Description (Optional)</span></label>
 						<input type="text" class="input input-bordered" bind:value={formData.description} placeholder="Short description" />
 					</div>
-					<div class="form-control">
+					<div class="form-control col-span-2">
 						<label class="label"><span class="label-text">Category Type</span></label>
 						<select class="select select-bordered" bind:value={formData.categoryType}>
 							<option value="raw_material">Raw Material</option>
 							<option value="finished_good">Finished Good</option>
 							<option value="other">Other</option>
-						</select>
-					</div>
-					<div class="form-control">
-						<label class="label"><span class="label-text">Asset Account (Balance Sheet)</span></label>
-						<select class="select select-bordered" bind:value={formData.assetAccountId} required>
-							<option value={0} disabled>Select an account…</option>
-							{#each assetAccounts as acc}
-								<option value={acc.id}>{acc.accountNumber} – {acc.name}</option>
-							{/each}
 						</select>
 					</div>
 					{#if formData.categoryType === 'raw_material'}
@@ -408,7 +386,7 @@
 						placeholder="e.g. board_feet * price_per_bf"
 					/>
 					<label class="label">
-						<span class="label-text-alt text-xs text-base-content/50">This value is stored per item and summed for the balance sheet under the selected asset account.</span>
+						<span class="label-text-alt text-xs text-base-content/50">This value is stored per item and used for tracking purposes.</span>
 					</label>
 				</div>
 
