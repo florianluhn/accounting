@@ -253,6 +253,29 @@
 	let allFields = $derived(category?.fieldDefinitions ?? []);
 	let totalValue = $derived(category?.totalValue ?? 0);
 
+	// ── Stats derivations ─────────────────────────────────────────────────────
+
+	// Raw material: total quantity across all items (quantityField sum)
+	let rmTotalQty = $derived(
+		category?.quantityField
+			? items.reduce((s, i) => s + Number(i.fieldValues[category!.quantityField!] ?? 0), 0)
+			: null
+	);
+	let rmRemainingQty = $derived(
+		category?.quantityField
+			? items.reduce((s, i) => s + (i.remainingQuantity ?? 0), 0)
+			: null
+	);
+	let rmRemainingValue = $derived(items.reduce((s, i) => s + (i.remainingValue ?? i.totalValue), 0));
+
+	// Finished good: partition by dispositionType
+	let fgInStock    = $derived(items.filter(i => i.quantity === 1 && !i.dispositionType));
+	let fgSold       = $derived(items.filter(i => i.dispositionType === 'sale'));
+	let fgOwnUse     = $derived(items.filter(i => i.dispositionType === 'own_use'));
+	let fgInStockVal = $derived(fgInStock.reduce((s, i) => s + i.totalValue, 0));
+	let fgSoldVal    = $derived(fgSold.reduce((s, i) => s + i.totalValue, 0));
+	let fgOwnUseVal  = $derived(fgOwnUse.reduce((s, i) => s + i.totalValue, 0));
+
 	let filteredItems = $derived(() => {
 		let result = items;
 		if (hideUnavailable) {
@@ -429,17 +452,51 @@
 		{/if}
 
 		<!-- Stats row -->
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-			<div class="stat bg-base-100 shadow rounded-box">
-				<div class="stat-title">Items</div>
-				<div class="stat-value">{items.length}</div>
+		{#if isRawMaterial}
+			<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+				<div class="stat bg-base-100 shadow rounded-box">
+					<div class="stat-title">Total Items</div>
+					<div class="stat-value">{items.length}</div>
+				</div>
+				{#if rmTotalQty !== null}
+					<div class="stat bg-base-100 shadow rounded-box">
+						<div class="stat-title">Total {category.quantityField}</div>
+						<div class="stat-value text-2xl">{rmTotalQty.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
+					</div>
+					<div class="stat bg-base-100 shadow rounded-box">
+						<div class="stat-title">Remaining {category.quantityField}</div>
+						<div class="stat-value text-2xl text-warning">{(rmRemainingQty ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
+					</div>
+				{/if}
+				<div class="stat bg-base-100 shadow rounded-box">
+					<div class="stat-title">Remaining Value</div>
+					<div class="stat-value text-primary text-2xl">{formatCurrency(rmRemainingValue)}</div>
+				</div>
 			</div>
-			<div class="stat bg-base-100 shadow rounded-box">
-				<div class="stat-title">{isRawMaterial ? 'Remaining Value' : 'Total Value'}</div>
-				<div class="stat-value text-primary text-2xl">{formatCurrency(totalValue)}</div>
-				<div class="stat-desc">Across all items</div>
+		{:else}
+			<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+				<div class="stat bg-base-100 shadow rounded-box">
+					<div class="stat-title">Available</div>
+					<div class="stat-value text-success">{fgInStock.length}</div>
+					<div class="stat-desc">{formatCurrency(fgInStockVal)}</div>
+				</div>
+				<div class="stat bg-base-100 shadow rounded-box">
+					<div class="stat-title">Sold</div>
+					<div class="stat-value text-info">{fgSold.length}</div>
+					<div class="stat-desc">{formatCurrency(fgSoldVal)}</div>
+				</div>
+				<div class="stat bg-base-100 shadow rounded-box">
+					<div class="stat-title">Own Consumption</div>
+					<div class="stat-value text-warning">{fgOwnUse.length}</div>
+					<div class="stat-desc">{formatCurrency(fgOwnUseVal)}</div>
+				</div>
+				<div class="stat bg-base-100 shadow rounded-box">
+					<div class="stat-title">Total Items / Value</div>
+					<div class="stat-value text-2xl">{items.length}</div>
+					<div class="stat-desc text-primary font-semibold">{formatCurrency(totalValue)}</div>
+				</div>
 			</div>
-		</div>
+		{/if}
 
 		<!-- Field reference -->
 		<div class="card bg-base-100 shadow-xl mb-6">
