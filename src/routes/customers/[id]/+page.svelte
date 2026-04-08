@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { customersAPI, type Customer } from '$lib/api';
+	import { customersAPI, type Customer, type CustomerPurchase } from '$lib/api';
 
 	let customer = $state<Customer | null>(null);
+	let purchases = $state<CustomerPurchase[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 
@@ -32,13 +33,25 @@
 		try {
 			loading = true;
 			error = '';
-			customer = await customersAPI.get(id);
+			[customer, purchases] = await Promise.all([
+				customersAPI.get(id),
+				customersAPI.getPurchases(id)
+			]);
 		} catch (e) {
 			console.error('Error loading customer:', e);
 			error = e instanceof Error ? e.message : 'Failed to load customer';
 		} finally {
 			loading = false;
 		}
+	}
+
+	function formatDate(d: Date | string): string {
+		const date = new Date(d);
+		return date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+	}
+
+	function formatCurrency(amount: number, code: string = 'USD'): string {
+		return new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).format(amount);
 	}
 
 	function openEditModal() {
@@ -117,6 +130,20 @@
 			</button>
 		</div>
 
+		<!-- Stats row -->
+		{#if purchases.length > 0}
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+				<div class="stat bg-base-100 shadow rounded-box">
+					<div class="stat-title">Transactions</div>
+					<div class="stat-value">{purchases.length}</div>
+				</div>
+				<div class="stat bg-base-100 shadow rounded-box">
+					<div class="stat-title">Total Revenue</div>
+					<div class="stat-value text-primary text-2xl">{formatCurrency(purchases.reduce((s, p) => s + p.amount, 0))}</div>
+				</div>
+			</div>
+		{/if}
+
 		<!-- Customer Details Card -->
 		<div class="card bg-base-100 shadow-xl mb-8">
 			<div class="card-body">
@@ -176,6 +203,55 @@
 				</div>
 			</div>
 		</div>
+
+		<!-- Purchases -->
+		{#if purchases.length > 0}
+			<div class="card bg-base-100 shadow-xl mb-8">
+				<div class="card-body">
+					<h2 class="card-title mb-4">Purchases <span class="badge badge-neutral">{purchases.length}</span></h2>
+					<div class="overflow-x-auto">
+						<table class="table table-zebra">
+							<thead>
+								<tr>
+									<th>Date</th>
+									<th>Description</th>
+									<th>Item</th>
+									<th>Type</th>
+									<th class="text-right">Amount</th>
+									<th>Journal</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each purchases as p}
+									<tr>
+										<td>{formatDate(p.entryDate)}</td>
+										<td>{p.description}</td>
+										<td>
+											{#if p.inventoryItemId && p.inventoryItemName}
+												<span class="font-medium">{p.inventoryItemName}</span>
+											{:else}
+												<span class="text-base-content/40">—</span>
+											{/if}
+										</td>
+										<td>
+											{#if p.inventoryLinkType}
+												<span class="badge badge-sm {p.inventoryLinkType === 'sale' ? 'badge-success' : 'badge-warning'}">
+													{p.inventoryLinkType === 'sale' ? 'Sale' : 'Own Use'}
+												</span>
+											{/if}
+										</td>
+										<td class="text-right font-mono font-bold">{formatCurrency(p.amount, p.currencyCode)}</td>
+										<td>
+											<a href="/journals" class="link link-hover text-xs">#{p.journalEntryId}</a>
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		{/if}
 	{/if}
 </div>
 

@@ -273,6 +273,31 @@
 		return total > 0 ? (remaining / total) * 100 : 0;
 	}
 
+	// ── Item detail modal ────────────────────────────────────────────────────
+
+	let showDetailModal = $state(false);
+	let detailItem = $state<InventoryItem | null>(null);
+
+	function openDetailModal(item: InventoryItem) {
+		detailItem = item;
+		showDetailModal = true;
+	}
+
+	function closeDetailModal() { showDetailModal = false; detailItem = null; }
+
+	async function handleToggleQuantity(item: InventoryItem) {
+		if (!category) return;
+		try {
+			const newQty = item.quantity === 1 ? 0 : 1;
+			await inventoryAPI.updateItem(item.id, { quantity: newQty });
+			items = await inventoryAPI.listItems(category.id);
+			// Update detail modal if open for same item
+			if (detailItem?.id === item.id) detailItem = items.find(i => i.id === item.id) ?? null;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to update quantity';
+		}
+	}
+
 	// ── CSV import/export ─────────────────────────────────────────────────────
 
 	let csvResult = $state<{ imported: number; skipped: number; errors: string[] } | null>(null);
@@ -412,6 +437,8 @@
 									{/each}
 									{#if isRawMaterial}
 										<th>Remaining</th>
+									{:else}
+										<th>Qty</th>
 									{/if}
 									<th class="text-right">{isRawMaterial ? 'Remaining Value' : 'Value'}</th>
 									<th>Actions</th>
@@ -419,15 +446,18 @@
 							</thead>
 							<tbody>
 								{#each items as item}
-									<tr class="{isRawMaterial && (item.remainingQuantity ?? 0) <= 0 ? 'opacity-50' : ''}">
+									<tr class="{isRawMaterial && (item.remainingQuantity ?? 0) <= 0 ? 'opacity-50' : ''} {!isRawMaterial && item.quantity === 0 ? 'opacity-60' : ''}">
 										<td class="font-medium">
-								{item.name}
-								{#if !isRawMaterial && item.saleEntryId}
-									<span class="badge {item.saleEntryType === 'own_use' ? 'badge-warning' : 'badge-success'} badge-xs ml-1">
-										{item.saleEntryType === 'own_use' ? 'Own Use' : 'Sold'}
-									</span>
-								{/if}
-							</td>
+											<button class="link link-hover text-left" onclick={() => openDetailModal(item)}>{item.name}</button>
+											{#if !isRawMaterial && item.saleEntryId}
+												<span class="badge {item.saleEntryType === 'own_use' ? 'badge-warning' : 'badge-success'} badge-xs ml-1">
+													{item.saleEntryType === 'own_use' ? 'Own Use' : 'Sold'}
+												</span>
+											{/if}
+											{#if !isRawMaterial && item.customerName}
+												<div class="text-xs text-base-content/50">{item.customerName}</div>
+											{/if}
+										</td>
 										{#each allFields as f}
 											<td class="{f.type === 'computed' ? 'text-secondary font-mono text-sm' : 'font-mono text-sm'}">
 												{formatValue(f, item.fieldValues[f.key])}
@@ -449,6 +479,16 @@
 												{:else}
 													<span class="text-xs text-base-content/40">no qty field</span>
 												{/if}
+											</td>
+										{:else}
+											<td>
+												<button
+													class="btn btn-xs {item.quantity === 1 ? 'btn-success' : 'btn-outline'}"
+													onclick={() => handleToggleQuantity(item)}
+													title={item.quantity === 1 ? 'In stock — click to mark as out' : 'Out of stock — click to mark as in stock'}
+												>
+													{item.quantity === 1 ? 'In Stock' : 'Out'}
+												</button>
 											</td>
 										{/if}
 										<td class="text-right font-mono font-bold">
@@ -482,6 +522,82 @@
 		</div>
 	{/if}
 </div>
+
+<!-- Item Detail Modal -->
+{#if showDetailModal && detailItem && category}
+	<div class="modal modal-open" onclick={(e) => { if (e.target === e.currentTarget) closeDetailModal(); }}>
+		<div class="modal-box max-w-xl">
+			<div class="flex justify-between items-start mb-4">
+				<h3 class="font-bold text-lg">{detailItem.name}</h3>
+				<span class="badge badge-lg {detailItem.quantity === 1 ? 'badge-success' : 'badge-ghost'}">
+					{detailItem.quantity === 1 ? 'In Stock' : 'Out of Stock'}
+				</span>
+			</div>
+
+			<!-- Fields -->
+			<div class="grid grid-cols-2 gap-2 mb-4">
+				{#each category.fieldDefinitions as f}
+					<div class="{f.type === 'computed' ? 'col-span-2 bg-base-200 rounded p-2' : ''}">
+						<div class="text-xs text-base-content/50">{f.label}{#if f.unit} ({f.unit}){/if}</div>
+						<div class="font-mono text-sm {f.type === 'computed' ? 'text-secondary font-semibold' : ''}">
+							{formatValue(f, detailItem.fieldValues[f.key])}
+						</div>
+					</div>
+				{/each}
+			</div>
+
+			<div class="divider my-2"></div>
+
+			<!-- Value + Quantity -->
+			<div class="flex items-center justify-between mb-4">
+				<div>
+					<div class="text-xs text-base-content/50">Value</div>
+					<div class="font-mono font-bold text-primary">{formatCurrency(detailItem.totalValue)}</div>
+				</div>
+				<div class="text-right">
+					<div class="text-xs text-base-content/50 mb-1">Stock Quantity</div>
+					<button
+						class="btn btn-sm {detailItem.quantity === 1 ? 'btn-success' : 'btn-outline'}"
+						onclick={() => handleToggleQuantity(detailItem!)}
+					>
+						{detailItem.quantity === 1 ? '1 — In Stock' : '0 — Out of Stock'}
+					</button>
+				</div>
+			</div>
+
+			<!-- Linked transaction -->
+			{#if detailItem.saleEntryId}
+				<div class="bg-base-200 rounded-box p-3 mb-3">
+					<div class="text-xs text-base-content/50 mb-1">Linked Transaction</div>
+					<div class="flex items-center justify-between">
+						<span class="badge {detailItem.saleEntryType === 'own_use' ? 'badge-warning' : 'badge-success'}">
+							{detailItem.saleEntryType === 'own_use' ? 'Own Use' : 'Sale'}
+						</span>
+						<a href="/journals?highlightEntry={detailItem.saleEntryId}" class="link link-primary text-sm">
+							View Journal Entry #{detailItem.saleEntryId}
+						</a>
+					</div>
+					{#if detailItem.customerName}
+						<div class="mt-2 text-sm">
+							<span class="text-base-content/50">Customer: </span>
+							<a href="/customers/{detailItem.customerId}" class="link link-hover font-medium">
+								{detailItem.customerName}
+							</a>
+						</div>
+					{/if}
+				</div>
+			{:else}
+				<div class="text-sm text-base-content/40 mb-3">No linked sale transaction.</div>
+			{/if}
+
+			<div class="modal-action">
+				<button class="btn btn-ghost btn-sm" onclick={() => { closeDetailModal(); openEdit(detailItem!); }}>Edit Item</button>
+				<button class="btn" onclick={closeDetailModal}>Close</button>
+			</div>
+		</div>
+		<div class="modal-backdrop" onclick={closeDetailModal}></div>
+	</div>
+{/if}
 
 <!-- Item Create/Edit Modal -->
 {#if showItemModal && category}

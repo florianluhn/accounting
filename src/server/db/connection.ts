@@ -726,9 +726,30 @@ function migrateJournalEntryItemLink(): void {
 				sqlite.run("ALTER TABLE journal_entries ADD COLUMN inventory_link_type TEXT");
 				console.log('✓ Added inventory_link_type to journal_entries');
 			}
+			if (!colNames.includes('customer_id')) {
+				sqlite.run('ALTER TABLE journal_entries ADD COLUMN customer_id INTEGER');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_journal_entries_customer ON journal_entries(customer_id)');
+				console.log('✓ Added customer_id to journal_entries');
+			}
 		}
 	} catch (error) {
 		console.error('Failed to migrate journal entry item link:', error);
+		throw error;
+	}
+}
+
+function migrateInventoryItemQuantity(): void {
+	try {
+		const cols = sqlite.exec('PRAGMA table_info(inventory_items)');
+		if (cols.length > 0) {
+			const colNames = cols[0].values.map((c: any) => c[1]);
+			if (!colNames.includes('quantity')) {
+				sqlite.run('ALTER TABLE inventory_items ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1');
+				console.log('✓ Added quantity to inventory_items');
+			}
+		}
+	} catch (error) {
+		console.error('Failed to migrate inventory item quantity:', error);
 		throw error;
 	}
 }
@@ -749,6 +770,7 @@ migrateCustomers();
 migrateInventory();
 migrateConsumption();
 migrateJournalEntryItemLink();
+migrateInventoryItemQuantity();
 
 export { sqlite };
 export default db;

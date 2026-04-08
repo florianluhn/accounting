@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
-import { journalEntries, subledgerAccounts, currencies, glAccounts, vendors, inventoryItems } from '../db/schema.js';
+import { journalEntries, subledgerAccounts, currencies, glAccounts, vendors, inventoryItems, customers } from '../db/schema.js';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
@@ -18,6 +18,7 @@ const createJournalEntrySchema = z.object({
 	category: z.string().max(100).optional(),
 	comment: z.string().max(1000).optional(),
 	vendorId: z.number().int().positive().nullable().optional(),
+	customerId: z.number().int().positive().nullable().optional(),
 	inventoryItemId: z.number().int().positive().nullable().optional(),
 	inventoryLinkType: z.enum(['sale', 'own_use']).optional()
 }).refine((data) => data.debitAccountId !== data.creditAccountId, {
@@ -35,6 +36,7 @@ const updateJournalEntrySchema = z.object({
 	category: z.string().max(100).optional(),
 	comment: z.string().max(1000).optional(),
 	vendorId: z.number().int().positive().nullable().optional(),
+	customerId: z.number().int().positive().nullable().optional(),
 	inventoryItemId: z.number().int().positive().nullable().optional(),
 	inventoryLinkType: z.enum(['sale', 'own_use']).optional()
 });
@@ -50,7 +52,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			category?: string;
 			currencyCode?: string;
 			vendorId?: string;
-		inventoryItemId?: string;
+			customerId?: string;
+			inventoryItemId?: string;
 		}
 	}>('/', async (request, reply) => {
 		let query = db.select({
@@ -65,6 +68,9 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			category: journalEntries.category,
 			comment: journalEntries.comment,
 			vendorId: journalEntries.vendorId,
+			customerId: journalEntries.customerId,
+			customerName: customers.firstName,
+			customerLastName: customers.lastName,
 			inventoryItemId: journalEntries.inventoryItemId,
 			inventoryLinkType: journalEntries.inventoryLinkType,
 			inventoryItemName: inventoryItems.name,
@@ -72,6 +78,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			updatedAt: journalEntries.updatedAt
 		}).from(journalEntries)
 		 .leftJoin(inventoryItems, eq(journalEntries.inventoryItemId, inventoryItems.id))
+		 .leftJoin(customers, eq(journalEntries.customerId, customers.id))
 		 .orderBy(desc(journalEntries.entryDate));
 
 		// Apply filters
@@ -117,6 +124,13 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			const vendorId = parseInt(request.query.vendorId);
 			if (!isNaN(vendorId)) {
 				conditions.push(eq(journalEntries.vendorId, vendorId));
+			}
+		}
+
+		if (request.query.customerId) {
+			const customerId = parseInt(request.query.customerId);
+			if (!isNaN(customerId)) {
+				conditions.push(eq(journalEntries.customerId, customerId));
 			}
 		}
 
@@ -219,6 +233,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 				.values({
 					...validatedData,
 					amountInUSD,
+					customerId: validatedData.customerId ?? null,
 					inventoryItemId: validatedData.inventoryItemId ?? null,
 					inventoryLinkType: validatedData.inventoryItemId ? (validatedData.inventoryLinkType ?? 'sale') : null
 				})

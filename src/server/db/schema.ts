@@ -113,6 +113,7 @@ export const journalEntries = sqliteTable(
 		category: text('category'), // Optional categorization
 		comment: text('comment'),
 		vendorId: integer('vendor_id').references(() => vendors.id, { onDelete: 'set null' }),
+		customerId: integer('customer_id').references(() => customers.id, { onDelete: 'set null' }),
 		inventoryItemId: integer('inventory_item_id'), // optional link to a finished good item
 		inventoryLinkType: text('inventory_link_type'), // 'sale' | 'own_use'
 		createdAt: integer('created_at', { mode: 'timestamp' })
@@ -129,6 +130,7 @@ export const journalEntries = sqliteTable(
 		categoryIdx: index('idx_journal_entries_category').on(table.category),
 		currencyIdx: index('idx_journal_entries_currency').on(table.currencyCode),
 		vendorIdx: index('idx_journal_entries_vendor').on(table.vendorId),
+		customerIdx: index('idx_journal_entries_customer').on(table.customerId),
 		inventoryItemIdx: index('idx_journal_entries_inventory_item').on(table.inventoryItemId)
 	})
 );
@@ -321,6 +323,8 @@ export const inventoryItems = sqliteTable(
 		fieldValues: text('field_values').notNull().default('{}'),
 		// Stored monetary value computed from category's valueFormula — used for balance sheet SUM()
 		totalValue: real('total_value').notNull().default(0),
+		// For finished goods: 1 = in stock, 0 = sold/consumed. User-managed.
+		quantity: integer('quantity').notNull().default(1),
 		// Raw material only: how much quantity remains after consumption allocations
 		remainingQuantity: real('remaining_quantity'),
 		// Raw material only: monetary value of remaining quantity (used for balance sheet)

@@ -5,12 +5,14 @@
 		currenciesAPI,
 		attachmentsAPI,
 		vendorsAPI,
+		customersAPI,
 		inventoryAPI,
 		type JournalEntry,
 		type SubledgerAccount,
 		type Currency,
 		type Attachment,
 		type Vendor,
+		type Customer,
 		type InventoryItem
 	} from '$lib/api';
 
@@ -18,6 +20,7 @@
 	let subledgerAccounts = $state<SubledgerAccount[]>([]);
 	let currencies = $state<Currency[]>([]);
 	let vendors = $state<Vendor[]>([]);
+	let customers = $state<Customer[]>([]);
 	let finishedGoodItems = $state<(InventoryItem & { categoryName: string })[]>([]);
 	let entryAttachments = $state<Map<number, Attachment[]>>(new Map());
 	let loading = $state(true);
@@ -39,6 +42,7 @@
 		category: '',
 		comment: '',
 		vendorId: 0,
+		customerId: 0,
 		inventoryItemId: 0,
 		inventoryLinkType: 'sale' as 'sale' | 'own_use'
 	});
@@ -75,8 +79,18 @@
 			loadSubledgerAccounts(),
 			loadCurrencies(),
 			loadVendors(),
+			loadCustomers(),
 			loadFinishedGoodItems()
 		]);
+	}
+
+	async function loadCustomers() {
+		try {
+			customers = await customersAPI.list();
+			customers.sort((a, b) => a.lastName.localeCompare(b.lastName));
+		} catch (e) {
+			// non-critical
+		}
 	}
 
 	async function loadFinishedGoodItems() {
@@ -218,6 +232,7 @@
 			category: '',
 			comment: '',
 			vendorId: 0,
+			customerId: 0,
 			inventoryItemId: 0,
 			inventoryLinkType: 'sale' as 'sale' | 'own_use'
 		};
@@ -241,6 +256,7 @@
 			category: entry.category || '',
 			comment: entry.comment || '',
 			vendorId: entry.vendorId || 0,
+			customerId: entry.customerId || 0,
 			inventoryItemId: entry.inventoryItemId || 0,
 			inventoryLinkType: (entry.inventoryLinkType as 'sale' | 'own_use') || 'sale'
 		};
@@ -293,6 +309,7 @@
 				category: formData.category || undefined,
 				comment: formData.comment || undefined,
 				vendorId: formData.vendorId || null,
+				customerId: formData.customerId || null,
 				inventoryItemId: formData.inventoryItemId || null,
 				inventoryLinkType: formData.inventoryItemId ? formData.inventoryLinkType : undefined
 			};
@@ -650,7 +667,7 @@
 								<th>Credit Account</th>
 								<th>Amount</th>
 								<th>Category</th>
-								<th>Vendor</th>
+								<th>Vendor / Customer</th>
 								<th>Actions</th>
 							</tr>
 						</thead>
@@ -726,10 +743,15 @@
 												{getVendorName(entry.vendorId)}
 											</a>
 										{/if}
-										{#if entry.inventoryItemId}
-											<a href="/inventory" class="badge {entry.inventoryLinkType === 'own_use' ? 'badge-warning' : 'badge-success'} badge-sm mt-1 block w-fit">
-												{entry.inventoryLinkType === 'own_use' ? 'Own Use' : 'Sold'}: {entry.inventoryItemName || '#' + entry.inventoryItemId}
+										{#if entry.customerId}
+											<a href="/customers/{entry.customerId}" class="link link-hover text-sm block">
+												{entry.customerName} {entry.customerLastName}
 											</a>
+										{/if}
+										{#if entry.inventoryItemId}
+											<span class="badge {entry.inventoryLinkType === 'own_use' ? 'badge-warning' : 'badge-success'} badge-sm mt-1 block w-fit">
+												{entry.inventoryLinkType === 'own_use' ? 'Own Use' : 'Sold'}: {entry.inventoryItemName || '#' + entry.inventoryItemId}
+											</span>
 										{/if}
 									</td>
 									<td>
@@ -909,7 +931,7 @@
 					</div>
 
 					<!-- Vendor -->
-					<div class="form-control col-span-2">
+					<div class="form-control">
 						<label class="label">
 							<span class="label-text">Vendor (Optional)</span>
 						</label>
@@ -917,6 +939,19 @@
 							<option value={0}>No Vendor</option>
 							{#each vendors as vendor}
 								<option value={vendor.id}>{vendor.name}</option>
+							{/each}
+						</select>
+					</div>
+
+					<!-- Customer -->
+					<div class="form-control">
+						<label class="label">
+							<span class="label-text">Customer (Optional)</span>
+						</label>
+						<select class="select select-bordered" bind:value={formData.customerId}>
+							<option value={0}>No Customer</option>
+							{#each customers as customer}
+								<option value={customer.id}>{customer.lastName}, {customer.firstName}</option>
 							{/each}
 						</select>
 					</div>

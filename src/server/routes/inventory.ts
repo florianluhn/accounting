@@ -36,10 +36,15 @@ const updateCategorySchema = createCategorySchema.partial();
 
 const createItemSchema = z.object({
 	name: z.string().min(1).max(200),
-	fieldValues: z.record(z.union([z.string(), z.number()]))
+	fieldValues: z.record(z.union([z.string(), z.number()])),
+	quantity: z.number().int().min(0).max(1).optional().default(1)
 });
 
-const updateItemSchema = createItemSchema.partial();
+const updateItemSchema = z.object({
+	name: z.string().min(1).max(200).optional(),
+	fieldValues: z.record(z.union([z.string(), z.number()])).optional(),
+	quantity: z.number().int().min(0).max(1).optional()
+});
 
 const createAllocationSchema = z.object({
 	rawMaterialItemId: z.number().int().positive(),
@@ -332,12 +337,15 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				name: inventoryItems.name,
 				fieldValues: inventoryItems.fieldValues,
 				totalValue: inventoryItems.totalValue,
+				quantity: inventoryItems.quantity,
 				remainingQuantity: inventoryItems.remainingQuantity,
 				remainingValue: inventoryItems.remainingValue,
 				createdAt: inventoryItems.createdAt,
 				updatedAt: inventoryItems.updatedAt,
 				saleEntryId: sql<number | null>`(SELECT id FROM journal_entries WHERE inventory_item_id = ${inventoryItems.id} ORDER BY created_at DESC LIMIT 1)`,
-				saleEntryType: sql<string | null>`(SELECT inventory_link_type FROM journal_entries WHERE inventory_item_id = ${inventoryItems.id} ORDER BY created_at DESC LIMIT 1)`
+				saleEntryType: sql<string | null>`(SELECT inventory_link_type FROM journal_entries WHERE inventory_item_id = ${inventoryItems.id} ORDER BY created_at DESC LIMIT 1)`,
+				customerId: sql<number | null>`(SELECT customer_id FROM journal_entries WHERE inventory_item_id = ${inventoryItems.id} ORDER BY created_at DESC LIMIT 1)`,
+				customerName: sql<string | null>`(SELECT c.first_name || ' ' || c.last_name FROM journal_entries je LEFT JOIN customers c ON je.customer_id = c.id WHERE je.inventory_item_id = ${inventoryItems.id} ORDER BY je.created_at DESC LIMIT 1)`
 			})
 			.from(inventoryItems)
 			.where(eq(inventoryItems.categoryId, categoryId))
@@ -385,6 +393,7 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				name: data.name,
 				fieldValues: JSON.stringify(resolved),
 				totalValue,
+				quantity: data.quantity ?? 1,
 				remainingQuantity: totalQuantity,
 				remainingValue: isRawMaterial ? totalValue : null
 			}).returning();
@@ -417,7 +426,8 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 			await db.update(inventoryItems).set({
 				name: data.name ?? existing.name,
 				fieldValues: JSON.stringify(resolved),
-				totalValue
+				totalValue,
+				...(data.quantity !== undefined ? { quantity: data.quantity } : {})
 			}).where(eq(inventoryItems.id, id));
 
 			// Recompute remaining for raw materials (totalValue changed)

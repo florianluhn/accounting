@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
-import { customers } from '../db/schema.js';
+import { customers, journalEntries, inventoryItems, subledgerAccounts } from '../db/schema.js';
 import { eq, like, or, desc } from 'drizzle-orm';
 import { logAudit, generateBatchId } from '../services/audit.js';
 import { parse } from 'csv-parse/sync';
@@ -188,6 +188,31 @@ export default async function customersRoutes(fastify: FastifyInstance) {
 		await saveDatabase();
 
 		return reply.status(200).send(results);
+	});
+
+	// GET /api/customers/:id/purchases - Get journal entries linked to inventory items for a customer
+	fastify.get<{ Params: { id: string } }>('/:id/purchases', async (request, reply) => {
+		const id = parseInt(request.params.id);
+		if (isNaN(id)) return reply.status(400).send({ error: 'Bad Request', message: 'Invalid customer ID' });
+
+		const purchases = await db
+			.select({
+				journalEntryId: journalEntries.id,
+				entryDate: journalEntries.entryDate,
+				amount: journalEntries.amount,
+				currencyCode: journalEntries.currencyCode,
+				description: journalEntries.description,
+				inventoryLinkType: journalEntries.inventoryLinkType,
+				inventoryItemId: inventoryItems.id,
+				inventoryItemName: inventoryItems.name,
+				inventoryItemValue: inventoryItems.totalValue
+			})
+			.from(journalEntries)
+			.leftJoin(inventoryItems, eq(journalEntries.inventoryItemId, inventoryItems.id))
+			.where(eq(journalEntries.customerId, id))
+			.orderBy(desc(journalEntries.entryDate));
+
+		return purchases;
 	});
 
 	// GET /api/customers/:id - Get single customer

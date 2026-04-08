@@ -352,6 +352,10 @@ export const customersAPI = {
 		});
 	},
 
+	async getPurchases(id: number): Promise<CustomerPurchase[]> {
+		return apiFetch(`/api/customers/${id}/purchases`);
+	},
+
 	async downloadCSV(): Promise<void> {
 		const url = `${getApiBaseUrl()}/api/customers/export/csv`;
 		const response = await fetch(url);
@@ -406,6 +410,9 @@ export interface JournalEntry {
 	category?: string | null;
 	comment?: string | null;
 	vendorId?: number | null;
+	customerId?: number | null;
+	customerName?: string | null;
+	customerLastName?: string | null;
 	inventoryItemId?: number | null;
 	inventoryLinkType?: 'sale' | 'own_use' | null;
 	inventoryItemName?: string | null;
@@ -421,6 +428,7 @@ export const journalEntriesAPI = {
 		creditAccountId?: number;
 		category?: string;
 		currencyCode?: string;
+		customerId?: number;
 		inventoryItemId?: number;
 	}): Promise<JournalEntry[]> {
 		const query = new URLSearchParams();
@@ -430,6 +438,7 @@ export const journalEntriesAPI = {
 		if (params?.creditAccountId) query.set('creditAccountId', String(params.creditAccountId));
 		if (params?.category) query.set('category', params.category);
 		if (params?.currencyCode) query.set('currencyCode', params.currencyCode);
+		if (params?.customerId) query.set('customerId', String(params.customerId));
 		if (params?.inventoryItemId) query.set('inventoryItemId', String(params.inventoryItemId));
 
 		const queryString = query.toString();
@@ -965,12 +974,27 @@ export interface InventoryItem {
 	name: string;
 	fieldValues: Record<string, string | number>;
 	totalValue: number;
+	quantity: number;
 	remainingQuantity?: number | null;
 	remainingValue?: number | null;
 	saleEntryId?: number | null;
 	saleEntryType?: 'sale' | 'own_use' | null;
+	customerId?: number | null;
+	customerName?: string | null;
 	createdAt: Date;
 	updatedAt: Date;
+}
+
+export interface CustomerPurchase {
+	journalEntryId: number;
+	entryDate: Date;
+	amount: number;
+	currencyCode: string;
+	description: string;
+	inventoryLinkType?: 'sale' | 'own_use' | null;
+	inventoryItemId?: number | null;
+	inventoryItemName?: string | null;
+	inventoryItemValue?: number | null;
 }
 
 export interface MaterialAllocation {
@@ -1020,7 +1044,7 @@ export const inventoryAPI = {
 		return apiFetch(`/api/inventory/categories/${categoryId}/items`, { method: 'POST', body: JSON.stringify(data) });
 	},
 
-	async updateItem(id: number, data: { name?: string; fieldValues?: Record<string, string | number> }): Promise<InventoryItem> {
+	async updateItem(id: number, data: { name?: string; fieldValues?: Record<string, string | number>; quantity?: number }): Promise<InventoryItem> {
 		return apiFetch(`/api/inventory/items/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 	},
 
