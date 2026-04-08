@@ -747,6 +747,10 @@ function migrateInventoryItemQuantity(): void {
 				sqlite.run('ALTER TABLE inventory_items ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1');
 				console.log('✓ Added quantity to inventory_items');
 			}
+			if (!colNames.includes('disposition_type')) {
+				sqlite.run('ALTER TABLE inventory_items ADD COLUMN disposition_type TEXT');
+				console.log('✓ Added disposition_type to inventory_items');
+			}
 		}
 	} catch (error) {
 		console.error('Failed to migrate inventory item quantity:', error);

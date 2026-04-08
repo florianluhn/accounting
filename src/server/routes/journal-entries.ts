@@ -227,6 +227,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			// Calculate amount in USD (round to 2 decimal places)
 			const amountInUSD = Math.round(validatedData.amount * currency[0].exchangeRate * 100) / 100;
 
+			const linkType = validatedData.inventoryItemId ? (validatedData.inventoryLinkType ?? 'sale') : null;
+
 			// Insert new journal entry
 			const newEntry = await db
 				.insert(journalEntries)
@@ -235,9 +237,16 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 					amountInUSD,
 					customerId: validatedData.customerId ?? null,
 					inventoryItemId: validatedData.inventoryItemId ?? null,
-					inventoryLinkType: validatedData.inventoryItemId ? (validatedData.inventoryLinkType ?? 'sale') : null
+					inventoryLinkType: linkType
 				})
 				.returning();
+
+			// Sync dispositionType on linked inventory item
+			if (validatedData.inventoryItemId && linkType) {
+				await db.update(inventoryItems)
+					.set({ dispositionType: linkType, quantity: 0 })
+					.where(eq(inventoryItems.id, validatedData.inventoryItemId));
+			}
 
 			// Log audit entry
 			await logAudit({

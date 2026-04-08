@@ -241,12 +241,38 @@
 
 	function closeUsageModal() { showUsageModal = false; usageForItem = null; }
 
+	// ── Filters ──────────────────────────────────────────────────────────────
+
+	let hideUnavailable = $state(false); // hides qty=0 (FG) or remainingQty=0 (RM)
+	let dispositionFilter = $state<'all' | 'in_stock' | 'sale' | 'own_use'>('all');
+
 	// ── Derived helpers ───────────────────────────────────────────────────────
 
 	let isRawMaterial = $derived(category?.categoryType === 'raw_material');
 	let inputFields = $derived(category?.fieldDefinitions.filter(f => f.type !== 'computed') ?? []);
 	let allFields = $derived(category?.fieldDefinitions ?? []);
 	let totalValue = $derived(category?.totalValue ?? 0);
+
+	let filteredItems = $derived(() => {
+		let result = items;
+		if (hideUnavailable) {
+			if (isRawMaterial) {
+				result = result.filter(i => (i.remainingQuantity ?? 0) > 0);
+			} else {
+				result = result.filter(i => i.quantity === 1);
+			}
+		}
+		if (!isRawMaterial && dispositionFilter !== 'all') {
+			if (dispositionFilter === 'in_stock') {
+				result = result.filter(i => i.quantity === 1 && !i.dispositionType);
+			} else if (dispositionFilter === 'sale') {
+				result = result.filter(i => i.dispositionType === 'sale');
+			} else if (dispositionFilter === 'own_use') {
+				result = result.filter(i => i.dispositionType === 'own_use');
+			}
+		}
+		return result;
+	});
 
 	// Selected raw material item info for alloc form
 	let selectedRawItem = $derived(
@@ -291,10 +317,33 @@
 			const newQty = item.quantity === 1 ? 0 : 1;
 			await inventoryAPI.updateItem(item.id, { quantity: newQty });
 			items = await inventoryAPI.listItems(category.id);
-			// Update detail modal if open for same item
 			if (detailItem?.id === item.id) detailItem = items.find(i => i.id === item.id) ?? null;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to update quantity';
+		}
+	}
+
+	// Own consumption modal
+	let showOwnUseModal = $state(false);
+	let ownUseItem = $state<InventoryItem | null>(null);
+
+	function openOwnUseModal(item: InventoryItem) {
+		ownUseItem = item;
+		showOwnUseModal = true;
+	}
+
+	function closeOwnUseModal() { showOwnUseModal = false; ownUseItem = null; }
+
+	async function handleOwnUse() {
+		if (!ownUseItem || !category) return;
+		try {
+			error = '';
+			await inventoryAPI.markOwnUse(ownUseItem.id);
+			items = await inventoryAPI.listItems(category.id);
+			if (detailItem?.id === ownUseItem.id) detailItem = items.find(i => i.id === ownUseItem!.id) ?? null;
+			closeOwnUseModal();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to mark own consumption';
 		}
 	}
 
@@ -415,9 +464,25 @@
 		<!-- Items table -->
 		<div class="card bg-base-100 shadow-xl">
 			<div class="card-body">
-				<h2 class="card-title mb-4">
-					Items <span class="badge badge-neutral">{items.length}</span>
-				</h2>
+				<div class="flex flex-wrap justify-between items-center gap-3 mb-4">
+					<h2 class="card-title">
+						Items <span class="badge badge-neutral">{filteredItems().length}/{items.length}</span>
+					</h2>
+					<div class="flex flex-wrap gap-2 items-center">
+						<label class="flex items-center gap-2 text-sm cursor-pointer">
+							<input type="checkbox" class="checkbox checkbox-sm" bind:checked={hideUnavailable} />
+							{isRawMaterial ? 'Hide depleted' : 'Hide out of stock'}
+						</label>
+						{#if !isRawMaterial}
+							<select class="select select-bordered select-sm" bind:value={dispositionFilter}>
+								<option value="all">All items</option>
+								<option value="in_stock">In stock only</option>
+								<option value="sale">Sold</option>
+								<option value="own_use">Own consumption</option>
+							</select>
+						{/if}
+					</div>
+				</div>
 
 				{#if items.length === 0}
 					<div class="alert alert-info">
@@ -426,6 +491,8 @@
 						</svg>
 						<span>No items yet. Add your first item to this category.</span>
 					</div>
+				{:else if filteredItems().length === 0}
+					<div class="alert alert-info"><span>No items match the current filter.</span></div>
 				{:else}
 					<div class="overflow-x-auto">
 						<table class="table table-zebra">
@@ -437,21 +504,19 @@
 									{/each}
 									{#if isRawMaterial}
 										<th>Remaining</th>
-									{:else}
-										<th>Qty</th>
 									{/if}
 									<th class="text-right">{isRawMaterial ? 'Remaining Value' : 'Value'}</th>
 									<th>Actions</th>
 								</tr>
 							</thead>
 							<tbody>
-								{#each items as item}
+								{#each filteredItems() as item}
 									<tr class="{isRawMaterial && (item.remainingQuantity ?? 0) <= 0 ? 'opacity-50' : ''} {!isRawMaterial && item.quantity === 0 ? 'opacity-60' : ''}">
 										<td class="font-medium">
 											<button class="link link-hover text-left" onclick={() => openDetailModal(item)}>{item.name}</button>
-											{#if !isRawMaterial && item.saleEntryId}
-												<span class="badge {item.saleEntryType === 'own_use' ? 'badge-warning' : 'badge-success'} badge-xs ml-1">
-													{item.saleEntryType === 'own_use' ? 'Own Use' : 'Sold'}
+											{#if !isRawMaterial && item.dispositionType}
+												<span class="badge {item.dispositionType === 'own_use' ? 'badge-warning' : 'badge-success'} badge-xs ml-1">
+													{item.dispositionType === 'own_use' ? 'Own Use' : 'Sold'}
 												</span>
 											{/if}
 											{#if !isRawMaterial && item.customerName}
@@ -480,16 +545,6 @@
 													<span class="text-xs text-base-content/40">no qty field</span>
 												{/if}
 											</td>
-										{:else}
-											<td>
-												<button
-													class="btn btn-xs {item.quantity === 1 ? 'btn-success' : 'btn-outline'}"
-													onclick={() => handleToggleQuantity(item)}
-													title={item.quantity === 1 ? 'In stock — click to mark as out' : 'Out of stock — click to mark as in stock'}
-												>
-													{item.quantity === 1 ? 'In Stock' : 'Out'}
-												</button>
-											</td>
 										{/if}
 										<td class="text-right font-mono font-bold">
 											{formatCurrency(isRawMaterial ? (item.remainingValue ?? item.totalValue) : item.totalValue)}
@@ -501,6 +556,9 @@
 													<button class="btn btn-xs btn-ghost" onclick={() => openUsageModal(item)}>Usage</button>
 												{:else}
 													<button class="btn btn-xs btn-ghost btn-info" onclick={() => openAllocModal(item)}>Materials</button>
+													{#if item.quantity === 1 && !item.dispositionType}
+														<button class="btn btn-xs btn-ghost text-warning" onclick={() => openOwnUseModal(item)}>Own Use</button>
+													{/if}
 												{/if}
 												<button class="btn btn-xs btn-ghost text-error" onclick={() => handleDeleteItem(item.id)}>Delete</button>
 											</div>
@@ -510,8 +568,8 @@
 							</tbody>
 							<tfoot>
 								<tr>
-									<td colspan={1 + allFields.length + (isRawMaterial ? 1 : 0)} class="font-bold">Total</td>
-									<td class="text-right font-mono font-bold text-primary">{formatCurrency(totalValue)}</td>
+									<td colspan={1 + allFields.length + (isRawMaterial ? 1 : 0)} class="font-bold">Total (filtered)</td>
+									<td class="text-right font-mono font-bold text-primary">{formatCurrency(filteredItems().reduce((s, i) => s + (isRawMaterial ? (i.remainingValue ?? i.totalValue) : i.totalValue), 0))}</td>
 									<td></td>
 								</tr>
 							</tfoot>
@@ -529,9 +587,17 @@
 		<div class="modal-box max-w-xl">
 			<div class="flex justify-between items-start mb-4">
 				<h3 class="font-bold text-lg">{detailItem.name}</h3>
-				<span class="badge badge-lg {detailItem.quantity === 1 ? 'badge-success' : 'badge-ghost'}">
-					{detailItem.quantity === 1 ? 'In Stock' : 'Out of Stock'}
-				</span>
+				<div class="flex gap-1">
+					{#if detailItem.dispositionType}
+						<span class="badge badge-lg {detailItem.dispositionType === 'own_use' ? 'badge-warning' : 'badge-success'}">
+							{detailItem.dispositionType === 'own_use' ? 'Own Use' : 'Sold'}
+						</span>
+					{:else}
+						<span class="badge badge-lg {detailItem.quantity === 1 ? 'badge-success' : 'badge-ghost'}">
+							{detailItem.quantity === 1 ? 'In Stock' : 'Out of Stock'}
+						</span>
+					{/if}
+				</div>
 			</div>
 
 			<!-- Fields -->
@@ -554,26 +620,34 @@
 					<div class="text-xs text-base-content/50">Value</div>
 					<div class="font-mono font-bold text-primary">{formatCurrency(detailItem.totalValue)}</div>
 				</div>
-				<div class="text-right">
-					<div class="text-xs text-base-content/50 mb-1">Stock Quantity</div>
-					<button
-						class="btn btn-sm {detailItem.quantity === 1 ? 'btn-success' : 'btn-outline'}"
-						onclick={() => handleToggleQuantity(detailItem!)}
-					>
-						{detailItem.quantity === 1 ? '1 — In Stock' : '0 — Out of Stock'}
-					</button>
-				</div>
+				{#if !isRawMaterial}
+					<div class="text-right">
+						<div class="text-xs text-base-content/50 mb-1">Stock</div>
+						<button
+							class="btn btn-sm {detailItem.quantity === 1 ? 'btn-success' : 'btn-outline'}"
+							onclick={() => handleToggleQuantity(detailItem!)}
+						>
+							{detailItem.quantity === 1 ? 'In Stock' : 'Out of Stock'}
+						</button>
+					</div>
+				{/if}
 			</div>
 
-			<!-- Linked transaction -->
-			{#if detailItem.saleEntryId}
+			<!-- Disposition / Linked transaction -->
+			{#if detailItem.dispositionType === 'own_use' && !detailItem.saleEntryId}
+				<div class="bg-warning/10 rounded-box p-3 mb-3">
+					<div class="text-xs text-base-content/50 mb-1">Disposition</div>
+					<span class="badge badge-warning">Own Consumption</span>
+					<div class="text-xs text-base-content/50 mt-1">Marked directly — no journal entry.</div>
+				</div>
+			{:else if detailItem.saleEntryId}
 				<div class="bg-base-200 rounded-box p-3 mb-3">
 					<div class="text-xs text-base-content/50 mb-1">Linked Transaction</div>
 					<div class="flex items-center justify-between">
-						<span class="badge {detailItem.saleEntryType === 'own_use' ? 'badge-warning' : 'badge-success'}">
-							{detailItem.saleEntryType === 'own_use' ? 'Own Use' : 'Sale'}
+						<span class="badge {detailItem.dispositionType === 'own_use' ? 'badge-warning' : 'badge-success'}">
+							{detailItem.dispositionType === 'own_use' ? 'Own Use' : 'Sale'}
 						</span>
-						<a href="/journals?highlightEntry={detailItem.saleEntryId}" class="link link-primary text-sm">
+						<a href="/journals" class="link link-primary text-sm">
 							View Journal Entry #{detailItem.saleEntryId}
 						</a>
 					</div>
@@ -587,15 +661,35 @@
 					{/if}
 				</div>
 			{:else}
-				<div class="text-sm text-base-content/40 mb-3">No linked sale transaction.</div>
+				<div class="text-sm text-base-content/40 mb-3">No linked sale or consumption record.</div>
 			{/if}
 
 			<div class="modal-action">
 				<button class="btn btn-ghost btn-sm" onclick={() => { closeDetailModal(); openEdit(detailItem!); }}>Edit Item</button>
+				{#if !isRawMaterial && detailItem.quantity === 1 && !detailItem.dispositionType}
+					<button class="btn btn-warning btn-sm" onclick={() => { closeDetailModal(); openOwnUseModal(detailItem!); }}>Mark Own Use</button>
+				{/if}
 				<button class="btn" onclick={closeDetailModal}>Close</button>
 			</div>
 		</div>
 		<div class="modal-backdrop" onclick={closeDetailModal}></div>
+	</div>
+{/if}
+
+<!-- Own Use Modal -->
+{#if showOwnUseModal && ownUseItem}
+	<div class="modal modal-open" onclick={(e) => { if (e.target === e.currentTarget) closeOwnUseModal(); }}>
+		<div class="modal-box max-w-sm">
+			<h3 class="font-bold text-lg mb-2">Mark as Own Consumption</h3>
+			<p class="text-sm text-base-content/70 mb-4">
+				This will mark <strong>{ownUseItem.name}</strong> as consumed for personal/own use and set its stock to 0. No journal entry will be created.
+			</p>
+			<div class="modal-action">
+				<button class="btn btn-ghost" onclick={closeOwnUseModal}>Cancel</button>
+				<button class="btn btn-warning" onclick={handleOwnUse}>Confirm Own Use</button>
+			</div>
+		</div>
+		<div class="modal-backdrop" onclick={closeOwnUseModal}></div>
 	</div>
 {/if}
 

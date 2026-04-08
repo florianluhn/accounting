@@ -338,12 +338,12 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				fieldValues: inventoryItems.fieldValues,
 				totalValue: inventoryItems.totalValue,
 				quantity: inventoryItems.quantity,
+				dispositionType: inventoryItems.dispositionType,
 				remainingQuantity: inventoryItems.remainingQuantity,
 				remainingValue: inventoryItems.remainingValue,
 				createdAt: inventoryItems.createdAt,
 				updatedAt: inventoryItems.updatedAt,
 				saleEntryId: sql<number | null>`(SELECT je.id FROM journal_entries je WHERE je.inventory_item_id = inventory_items.id ORDER BY je.created_at DESC LIMIT 1)`,
-				saleEntryType: sql<string | null>`(SELECT je.inventory_link_type FROM journal_entries je WHERE je.inventory_item_id = inventory_items.id ORDER BY je.created_at DESC LIMIT 1)`,
 				customerId: sql<number | null>`(SELECT je.customer_id FROM journal_entries je WHERE je.inventory_item_id = inventory_items.id ORDER BY je.created_at DESC LIMIT 1)`,
 				customerName: sql<string | null>`(SELECT c.first_name || ' ' || c.last_name FROM journal_entries je LEFT JOIN customers c ON je.customer_id = c.id WHERE je.inventory_item_id = inventory_items.id ORDER BY je.created_at DESC LIMIT 1)`
 			})
@@ -439,6 +439,22 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 			return { ...updated, fieldValues: resolved };
 		}
 	);
+
+	// POST /api/inventory/items/:id/own-use — mark item as own consumption (no journal entry needed)
+	fastify.post<{ Params: { id: string } }>('/items/:id/own-use', async (request, reply) => {
+		const id = parseInt(request.params.id);
+		if (isNaN(id)) return reply.status(400).send({ error: 'Bad Request', message: 'Invalid item ID' });
+
+		const [existing] = await db.select().from(inventoryItems).where(eq(inventoryItems.id, id)).limit(1);
+		if (!existing) return reply.status(404).send({ error: 'Not Found', message: `Item ${id} not found` });
+
+		await db.update(inventoryItems)
+			.set({ quantity: 0, dispositionType: 'own_use' })
+			.where(eq(inventoryItems.id, id));
+
+		await saveDatabase();
+		return { success: true };
+	});
 
 	// DELETE /api/inventory/items/:id
 	fastify.delete<{ Params: { id: string } }>('/items/:id', async (request, reply) => {

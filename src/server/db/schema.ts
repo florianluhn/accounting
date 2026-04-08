@@ -325,6 +325,8 @@ export const inventoryItems = sqliteTable(
 		totalValue: real('total_value').notNull().default(0),
 		// For finished goods: 1 = in stock, 0 = sold/consumed. User-managed.
 		quantity: integer('quantity').notNull().default(1),
+		// For finished goods: how the item was disposed of ('sale' | 'own_use'), set directly or via journal entry
+		dispositionType: text('disposition_type'),
 		// Raw material only: how much quantity remains after consumption allocations
 		remainingQuantity: real('remaining_quantity'),
 		// Raw material only: monetary value of remaining quantity (used for balance sheet)

@@ -975,10 +975,10 @@ export interface InventoryItem {
 	fieldValues: Record<string, string | number>;
 	totalValue: number;
 	quantity: number;
+	dispositionType?: 'sale' | 'own_use' | null;
 	remainingQuantity?: number | null;
 	remainingValue?: number | null;
 	saleEntryId?: number | null;
-	saleEntryType?: 'sale' | 'own_use' | null;
 	customerId?: number | null;
 	customerName?: string | null;
 	createdAt: Date;
@@ -1050,6 +1050,10 @@ export const inventoryAPI = {
 
 	async deleteItem(id: number): Promise<void> {
 		return apiFetch(`/api/inventory/items/${id}`, { method: 'DELETE' });
+	},
+
+	async markOwnUse(id: number): Promise<void> {
+		return apiFetch(`/api/inventory/items/${id}/own-use`, { method: 'POST' });
 	},
 
 	async getItemAllocations(itemId: number): Promise<{ asRawMaterial: MaterialAllocation[]; asFinishedGood: MaterialAllocation[] }> {
