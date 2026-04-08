@@ -154,7 +154,8 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 			categoryType: data.categoryType,
 			quantityField: data.quantityField,
 			fieldDefinitions: JSON.stringify(data.fieldDefinitions),
-			valueFormula: data.valueFormula
+			valueFormula: data.valueFormula,
+			assetAccountId: 0 // legacy NOT NULL constraint in DB; column no longer used
 		}).returning();
 
 		await logAudit({ operation: 'CREATE', resourceType: 'inventory_category', resourceId: inserted[0].id, source: 'Web UI', newData: inserted[0] });
