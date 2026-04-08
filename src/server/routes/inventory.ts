@@ -342,10 +342,10 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				remainingValue: inventoryItems.remainingValue,
 				createdAt: inventoryItems.createdAt,
 				updatedAt: inventoryItems.updatedAt,
-				saleEntryId: sql<number | null>`(SELECT id FROM journal_entries WHERE inventory_item_id = ${inventoryItems.id} ORDER BY created_at DESC LIMIT 1)`,
-				saleEntryType: sql<string | null>`(SELECT inventory_link_type FROM journal_entries WHERE inventory_item_id = ${inventoryItems.id} ORDER BY created_at DESC LIMIT 1)`,
-				customerId: sql<number | null>`(SELECT customer_id FROM journal_entries WHERE inventory_item_id = ${inventoryItems.id} ORDER BY created_at DESC LIMIT 1)`,
-				customerName: sql<string | null>`(SELECT c.first_name || ' ' || c.last_name FROM journal_entries je LEFT JOIN customers c ON je.customer_id = c.id WHERE je.inventory_item_id = ${inventoryItems.id} ORDER BY je.created_at DESC LIMIT 1)`
+				saleEntryId: sql<number | null>`(SELECT je.id FROM journal_entries je WHERE je.inventory_item_id = inventory_items.id ORDER BY je.created_at DESC LIMIT 1)`,
+				saleEntryType: sql<string | null>`(SELECT je.inventory_link_type FROM journal_entries je WHERE je.inventory_item_id = inventory_items.id ORDER BY je.created_at DESC LIMIT 1)`,
+				customerId: sql<number | null>`(SELECT je.customer_id FROM journal_entries je WHERE je.inventory_item_id = inventory_items.id ORDER BY je.created_at DESC LIMIT 1)`,
+				customerName: sql<string | null>`(SELECT c.first_name || ' ' || c.last_name FROM journal_entries je LEFT JOIN customers c ON je.customer_id = c.id WHERE je.inventory_item_id = inventory_items.id ORDER BY je.created_at DESC LIMIT 1)`
 			})
 			.from(inventoryItems)
 			.where(eq(inventoryItems.categoryId, categoryId))
