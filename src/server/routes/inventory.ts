@@ -485,6 +485,7 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				id: materialAllocations.id,
 				quantityUsed: materialAllocations.quantityUsed,
 				notes: materialAllocations.notes,
+				allocationDate: materialAllocations.allocationDate,
 				createdAt: materialAllocations.createdAt,
 				finishedGoodItemId: materialAllocations.finishedGoodItemId,
 				finishedGoodName: inventoryItems.name
@@ -499,6 +500,7 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				id: materialAllocations.id,
 				quantityUsed: materialAllocations.quantityUsed,
 				notes: materialAllocations.notes,
+				allocationDate: materialAllocations.allocationDate,
 				createdAt: materialAllocations.createdAt,
 				rawMaterialItemId: materialAllocations.rawMaterialItemId,
 				rawMaterialName: inventoryItems.name
