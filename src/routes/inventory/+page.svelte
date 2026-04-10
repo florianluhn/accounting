@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { inventoryAPI, type InventoryCategory, type FieldDefinition } from '$lib/api';
+	import { inventoryAPI, type InventoryCategory, type InventorySummary, type FieldDefinition } from '$lib/api';
 
 	let categories = $state<InventoryCategory[]>([]);
+	let summary = $state<InventorySummary | null>(null);
 	let loading = $state(true);
 	let error = $state('');
 
@@ -35,7 +36,10 @@
 		try {
 			loading = true;
 			error = '';
-			categories = await inventoryAPI.listCategories();
+			[categories, summary] = await Promise.all([
+				inventoryAPI.listCategories(),
+				inventoryAPI.getSummary()
+			]);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load inventory';
 		} finally {
@@ -151,6 +155,17 @@
 	function formatCurrency(n: number) {
 		return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
 	}
+
+	function formatQty(n: number) {
+		return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n);
+	}
+
+	// Find the human-readable unit label for the quantityField of a raw material category
+	function getRawMaterialUnit(rm: InventorySummary['rawMaterials'][number]): string {
+		if (!rm.quantityField) return 'units';
+		const field = rm.fieldDefinitions.find(f => f.key === rm.quantityField);
+		return field?.unit || field?.label || rm.quantityField;
+	}
 </script>
 
 <div class="max-w-7xl mx-auto">
@@ -171,6 +186,76 @@
 	<div class="flex justify-end mb-6">
 		<button class="btn btn-primary" onclick={openCreate}>+ New Category</button>
 	</div>
+
+	{#if summary && !loading}
+		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+
+			<!-- Finished Goods Summary -->
+			<div class="card bg-base-100 shadow-xl">
+				<div class="card-body">
+					<h2 class="card-title text-base">
+						<span class="badge badge-success badge-sm">Finished Goods</span>
+						Overview
+					</h2>
+					<div class="grid grid-cols-2 gap-4 mt-2">
+						<div class="stat p-0">
+							<div class="stat-title text-xs">Available</div>
+							<div class="stat-value text-2xl text-success">{summary.finishedGoods.availableCount}</div>
+							<div class="stat-desc">{formatCurrency(summary.finishedGoods.availableValue)}</div>
+						</div>
+						<div class="stat p-0">
+							<div class="stat-title text-xs">Sold</div>
+							<div class="stat-value text-2xl text-primary">{summary.finishedGoods.soldCount}</div>
+							<div class="stat-desc">of {summary.finishedGoods.totalCount} total</div>
+						</div>
+						<div class="stat p-0">
+							<div class="stat-title text-xs">Own Use</div>
+							<div class="stat-value text-2xl">{summary.finishedGoods.ownUseCount}</div>
+							<div class="stat-desc">&nbsp;</div>
+						</div>
+						<div class="stat p-0">
+							<div class="stat-title text-xs">Gifted</div>
+							<div class="stat-value text-2xl">{summary.finishedGoods.giftCount}</div>
+							<div class="stat-desc">&nbsp;</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Raw Materials Summary -->
+			<div class="card bg-base-100 shadow-xl">
+				<div class="card-body">
+					<h2 class="card-title text-base">
+						<span class="badge badge-warning badge-sm">Raw Materials</span>
+						Remaining Stock
+					</h2>
+					{#if summary.rawMaterials.length === 0}
+						<p class="text-sm text-base-content/60 mt-2">No raw material categories yet.</p>
+					{:else}
+						<div class="mt-2 space-y-3">
+							{#each summary.rawMaterials as rm}
+								<div>
+									<div class="flex justify-between items-baseline">
+										<a href="/inventory/{rm.categoryId}" class="link link-hover text-sm font-medium">{rm.categoryName}</a>
+										<span class="text-xs text-base-content/60">{rm.itemCount} item{rm.itemCount === 1 ? '' : 's'}</span>
+									</div>
+									<div class="flex justify-between items-baseline mt-0.5">
+										<span class="text-lg font-bold font-mono">
+											{formatQty(rm.totalRemainingQuantity)}
+											<span class="text-xs font-normal text-base-content/60 ml-1">{getRawMaterialUnit(rm)}</span>
+										</span>
+										<span class="text-sm text-base-content/70">{formatCurrency(rm.totalRemainingValue)}</span>
+									</div>
+									<div class="divider my-1"></div>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			</div>
+
+		</div>
+	{/if}
 
 	<div class="card bg-base-100 shadow-xl">
 		<div class="card-body">

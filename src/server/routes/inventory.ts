@@ -85,6 +85,52 @@ async function recalculateRemaining(rawMaterialItemId: number): Promise<void> {
 
 export default async function inventoryRoutes(fastify: FastifyInstance) {
 
+	// ── Summary ─────────────────────────────────────────────────────────────
+
+	// GET /api/inventory/summary
+	fastify.get('/summary', async () => {
+		// Finished goods aggregate
+		const fgRows = await db
+			.select({
+				availableCount: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.quantity} = 1 THEN 1 ELSE 0 END), 0)`,
+				availableValue: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.quantity} = 1 THEN ${inventoryItems.totalValue} ELSE 0 END), 0)`,
+				soldCount: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.dispositionType} = 'sale' THEN 1 ELSE 0 END), 0)`,
+				ownUseCount: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.dispositionType} = 'own_use' THEN 1 ELSE 0 END), 0)`,
+				giftCount: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.dispositionType} = 'gift' THEN 1 ELSE 0 END), 0)`,
+				totalCount: sql<number>`COALESCE(COUNT(${inventoryItems.id}), 0)`
+			})
+			.from(inventoryItems)
+			.leftJoin(inventoryCategories, eq(inventoryItems.categoryId, inventoryCategories.id))
+			.where(sql`${inventoryCategories.categoryType} = 'finished_good'`);
+
+		const fg = fgRows[0] ?? { availableCount: 0, availableValue: 0, soldCount: 0, ownUseCount: 0, giftCount: 0, totalCount: 0 };
+
+		// Raw material remaining per category
+		const rmRows = await db
+			.select({
+				categoryId: inventoryCategories.id,
+				categoryName: inventoryCategories.name,
+				quantityField: inventoryCategories.quantityField,
+				fieldDefinitions: inventoryCategories.fieldDefinitions,
+				totalRemainingQuantity: sql<number>`COALESCE(SUM(${inventoryItems.remainingQuantity}), 0)`,
+				totalRemainingValue: sql<number>`COALESCE(SUM(COALESCE(${inventoryItems.remainingValue}, ${inventoryItems.totalValue})), 0)`,
+				itemCount: sql<number>`COALESCE(COUNT(${inventoryItems.id}), 0)`
+			})
+			.from(inventoryCategories)
+			.leftJoin(inventoryItems, eq(inventoryItems.categoryId, inventoryCategories.id))
+			.where(sql`${inventoryCategories.categoryType} = 'raw_material'`)
+			.groupBy(inventoryCategories.id)
+			.orderBy(inventoryCategories.name);
+
+		return {
+			finishedGoods: fg,
+			rawMaterials: rmRows.map(r => ({
+				...r,
+				fieldDefinitions: JSON.parse(r.fieldDefinitions as string)
+			}))
+		};
+	});
+
 	// ── Categories ──────────────────────────────────────────────────────────
 
 	// GET /api/inventory/categories

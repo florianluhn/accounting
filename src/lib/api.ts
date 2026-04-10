@@ -1035,7 +1035,31 @@ export interface RawMaterialItem extends InventoryItem {
 	quantityField: string | null;
 }
 
+export interface InventorySummary {
+	finishedGoods: {
+		availableCount: number;
+		availableValue: number;
+		soldCount: number;
+		ownUseCount: number;
+		giftCount: number;
+		totalCount: number;
+	};
+	rawMaterials: {
+		categoryId: number;
+		categoryName: string;
+		quantityField: string | null;
+		fieldDefinitions: FieldDefinition[];
+		totalRemainingQuantity: number;
+		totalRemainingValue: number;
+		itemCount: number;
+	}[];
+}
+
 export const inventoryAPI = {
+	async getSummary(): Promise<InventorySummary> {
+		return apiFetch('/api/inventory/summary');
+	},
+
 	async listCategories(): Promise<InventoryCategory[]> {
 		return apiFetch('/api/inventory/categories');
 	},
