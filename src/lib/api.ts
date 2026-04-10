@@ -943,6 +943,26 @@ export const backupAPI = {
 };
 
 // ========================================
+// Settings API
+// ========================================
+
+export interface AppSettings {
+	vendors: boolean;
+	customers: boolean;
+	inventory: boolean;
+	timeTracking: boolean;
+}
+
+export const settingsAPI = {
+	async get(): Promise<AppSettings> {
+		return apiFetch('/api/settings');
+	},
+	async update(data: Partial<AppSettings>): Promise<AppSettings> {
+		return apiFetch('/api/settings', { method: 'PUT', body: JSON.stringify(data) });
+	}
+};
+
+// ========================================
 // Inventory API
 // ========================================
 

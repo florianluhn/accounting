@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { currenciesAPI, type Currency, backupAPI, type BackupStatus } from '$lib/api';
+	import { currenciesAPI, type Currency, backupAPI, type BackupStatus, settingsAPI } from '$lib/api';
+	import { modules, applyModuleSettings } from '$lib/modules.svelte';
 
 	let currencies = $state<Currency[]>([]);
 	let loading = $state(true);
@@ -24,7 +25,36 @@
 	$effect(() => {
 		loadCurrencies();
 		loadBackupStatus();
+		loadModuleSettings();
 	});
+
+	let modulesSaving = $state(false);
+
+	async function loadModuleSettings() {
+		try {
+			const s = await settingsAPI.get();
+			applyModuleSettings(s);
+		} catch (e) {
+			console.error('Failed to load module settings:', e);
+		}
+	}
+
+	async function saveModuleSettings() {
+		try {
+			modulesSaving = true;
+			const updated = await settingsAPI.update({
+				vendors: modules.vendors,
+				customers: modules.customers,
+				inventory: modules.inventory,
+				timeTracking: modules.timeTracking
+			});
+			applyModuleSettings(updated);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to save module settings';
+		} finally {
+			modulesSaving = false;
+		}
+	}
 
 	async function loadCurrencies() {
 		try {
@@ -221,6 +251,47 @@
 						</tbody>
 					</table>
 				</div>
+			{/if}
+		</div>
+	</div>
+
+	<!-- Modules Section -->
+	<div class="card bg-base-100 shadow-xl mb-6">
+		<div class="card-body">
+			<h2 class="card-title mb-1">Modules</h2>
+			<p class="text-sm text-base-content/60 mb-4">Enable or disable features. Disabled modules are hidden from the navigation and journal entry forms.</p>
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+				<label class="flex items-center justify-between p-3 bg-base-200 rounded-box cursor-pointer">
+					<div>
+						<div class="font-medium">Vendors</div>
+						<div class="text-xs text-base-content/50">Vendor management and journal entry links</div>
+					</div>
+					<input type="checkbox" class="toggle toggle-primary" bind:checked={modules.vendors} onchange={saveModuleSettings} />
+				</label>
+				<label class="flex items-center justify-between p-3 bg-base-200 rounded-box cursor-pointer">
+					<div>
+						<div class="font-medium">Customers</div>
+						<div class="text-xs text-base-content/50">Customer management and journal entry links</div>
+					</div>
+					<input type="checkbox" class="toggle toggle-primary" bind:checked={modules.customers} onchange={saveModuleSettings} />
+				</label>
+				<label class="flex items-center justify-between p-3 bg-base-200 rounded-box cursor-pointer">
+					<div>
+						<div class="font-medium">Inventory</div>
+						<div class="text-xs text-base-content/50">Raw materials, finished goods, and allocations</div>
+					</div>
+					<input type="checkbox" class="toggle toggle-primary" bind:checked={modules.inventory} onchange={saveModuleSettings} />
+				</label>
+				<label class="flex items-center justify-between p-3 bg-base-200 rounded-box cursor-pointer">
+					<div>
+						<div class="font-medium">Time Tracking</div>
+						<div class="text-xs text-base-content/50">Log hours and activities</div>
+					</div>
+					<input type="checkbox" class="toggle toggle-primary" bind:checked={modules.timeTracking} onchange={saveModuleSettings} />
+				</label>
+			</div>
+			{#if modulesSaving}
+				<div class="text-sm text-base-content/50 mt-2">Saving...</div>
 			{/if}
 		</div>
 	</div>

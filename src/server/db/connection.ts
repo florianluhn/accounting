@@ -758,6 +758,31 @@ function migrateInventoryItemQuantity(): void {
 	}
 }
 
+function migrateAppSettings(): void {
+	try {
+		sqlite.run(`
+			CREATE TABLE IF NOT EXISTS app_settings (
+				key TEXT PRIMARY KEY,
+				value TEXT NOT NULL
+			)
+		`);
+		// Insert defaults if not present
+		const defaults: Record<string, string> = {
+			vendors: 'true',
+			customers: 'true',
+			inventory: 'true',
+			timeTracking: 'true'
+		};
+		for (const [key, value] of Object.entries(defaults)) {
+			sqlite.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('${key}', '${value}')`);
+		}
+		console.log('✓ App settings table ready');
+	} catch (error) {
+		console.error('Failed to migrate app settings:', error);
+		throw error;
+	}
+}
+
 // Run integrity check on startup
 if (!checkIntegrity()) {
 	console.error('❌ Database integrity check failed!');
@@ -775,6 +800,7 @@ migrateInventory();
 migrateConsumption();
 migrateJournalEntryItemLink();
 migrateInventoryItemQuantity();
+migrateAppSettings();
 
 export { sqlite };
 export default db;

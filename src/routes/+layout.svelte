@@ -3,21 +3,10 @@
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
 	import type { LayoutData } from './$types';
+	import { settingsAPI } from '$lib/api';
+	import { modules, applyModuleSettings } from '$lib/modules.svelte';
 
-	export let data: LayoutData;
-
-	const navItems = [
-		{ href: '/', label: 'Dashboard', icon: '📊' },
-		{ href: '/accounts', label: 'Accounts', icon: '🏦' },
-		{ href: '/journals', label: 'Journals', icon: '📖' },
-		{ href: '/vendors', label: 'Vendors', icon: '🏢' },
-		{ href: '/customers', label: 'Customers', icon: '👥' },
-		{ href: '/inventory', label: 'Inventory', icon: '📦' },
-		{ href: '/timetracking', label: 'Time Tracking', icon: '🕐' },
-		{ href: '/reports', label: 'Reports', icon: '📈' },
-		{ href: '/audit', label: 'Audit Trail', icon: '🔍' },
-		{ href: '/settings', label: 'Settings', icon: '⚙️' }
-	];
+	let { data }: { data: LayoutData } = $props();
 
 	// Inject app config into window for API client to use
 	if (browser) {
@@ -28,6 +17,32 @@
 	const appName = data.appConfig.APP_SHORT_NAME || 'Accounting';
 	const appFullName = data.appConfig.APP_NAME || 'Accounting App';
 	const appDescription = data.appConfig.APP_DESCRIPTION || 'Personal Finance';
+
+	// Load module settings once on app start
+	$effect(() => {
+		if (browser) {
+			settingsAPI.get().then(applyModuleSettings).catch(() => {});
+		}
+	});
+
+	const allNavItems = [
+		{ href: '/', label: 'Dashboard', icon: '📊', module: null },
+		{ href: '/accounts', label: 'Accounts', icon: '🏦', module: null },
+		{ href: '/journals', label: 'Journals', icon: '📖', module: null },
+		{ href: '/vendors', label: 'Vendors', icon: '🏢', module: 'vendors' },
+		{ href: '/customers', label: 'Customers', icon: '👥', module: 'customers' },
+		{ href: '/inventory', label: 'Inventory', icon: '📦', module: 'inventory' },
+		{ href: '/timetracking', label: 'Time Tracking', icon: '🕐', module: 'timeTracking' },
+		{ href: '/reports', label: 'Reports', icon: '📈', module: null },
+		{ href: '/audit', label: 'Audit Trail', icon: '🔍', module: null },
+		{ href: '/settings', label: 'Settings', icon: '⚙️', module: null }
+	];
+
+	let navItems = $derived(
+		allNavItems.filter(item =>
+			item.module === null || modules[item.module as keyof typeof modules]
+		)
+	);
 </script>
 
 <svelte:head>

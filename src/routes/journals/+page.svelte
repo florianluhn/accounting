@@ -15,6 +15,7 @@
 		type Customer,
 		type InventoryItem
 	} from '$lib/api';
+	import { modules } from '$lib/modules.svelte';
 
 	let entries = $state<JournalEntry[]>([]);
 	let subledgerAccounts = $state<SubledgerAccount[]>([]);
@@ -931,6 +932,7 @@
 					</div>
 
 					<!-- Vendor -->
+					{#if modules.vendors}
 					<div class="form-control">
 						<label class="label">
 							<span class="label-text">Vendor (Optional)</span>
@@ -942,8 +944,10 @@
 							{/each}
 						</select>
 					</div>
+					{/if}
 
 					<!-- Customer -->
+					{#if modules.customers}
 					<div class="form-control">
 						<label class="label">
 							<span class="label-text">Customer (Optional)</span>
@@ -955,9 +959,10 @@
 							{/each}
 						</select>
 					</div>
+					{/if}
 
 					<!-- Finished Good Item link -->
-					{#if finishedGoodItems.length > 0}
+					{#if modules.inventory && finishedGoodItems.length > 0}
 						<div class="form-control col-span-2">
 							<label class="label">
 								<span class="label-text">Finished Good Item (Optional)</span>

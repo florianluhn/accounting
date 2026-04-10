@@ -380,6 +380,14 @@ export type MaterialAllocation = typeof materialAllocations.$inferSelect;
 export type NewMaterialAllocation = typeof materialAllocations.$inferInsert;
 
 // ========================================
+// App Settings Table (key-value)
+// ========================================
+export const appSettings = sqliteTable('app_settings', {
+	key: text('key').primaryKey(),
+	value: text('value').notNull()
+});
+
+// ========================================
 // Audit Logs Table
 // ========================================
 export const auditLogs = sqliteTable(
