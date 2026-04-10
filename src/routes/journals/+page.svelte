@@ -45,7 +45,7 @@
 		vendorId: 0,
 		customerId: 0,
 		inventoryItemId: 0,
-		inventoryLinkType: 'sale' as 'sale' | 'own_use'
+		inventoryLinkType: 'sale' as 'sale' | 'own_use' | 'gift'
 	});
 	let selectedFiles = $state<File[]>([]);
 	let uploadingFiles = $state(false);
@@ -235,7 +235,7 @@
 			vendorId: 0,
 			customerId: 0,
 			inventoryItemId: 0,
-			inventoryLinkType: 'sale' as 'sale' | 'own_use'
+			inventoryLinkType: 'sale' as 'sale' | 'own_use' | 'gift'
 		};
 		editingEntry = null;
 		selectedFiles = [];
@@ -259,7 +259,7 @@
 			vendorId: entry.vendorId || 0,
 			customerId: entry.customerId || 0,
 			inventoryItemId: entry.inventoryItemId || 0,
-			inventoryLinkType: (entry.inventoryLinkType as 'sale' | 'own_use') || 'sale'
+			inventoryLinkType: (entry.inventoryLinkType as 'sale' | 'own_use' | 'gift') || 'sale'
 		};
 		editingEntry = entry;
 		debitAccountSearch = getAccountDisplay(entry.debitAccountId);
@@ -750,8 +750,8 @@
 											</a>
 										{/if}
 										{#if entry.inventoryItemId}
-											<span class="badge {entry.inventoryLinkType === 'own_use' ? 'badge-warning' : 'badge-success'} badge-sm mt-1 block w-fit">
-												{entry.inventoryLinkType === 'own_use' ? 'Own Use' : 'Sold'}: {entry.inventoryItemName || '#' + entry.inventoryItemId}
+											<span class="badge {entry.inventoryLinkType === 'own_use' ? 'badge-warning' : entry.inventoryLinkType === 'gift' ? 'badge-secondary' : 'badge-success'} badge-sm mt-1 block w-fit">
+												{entry.inventoryLinkType === 'own_use' ? 'Own Use' : entry.inventoryLinkType === 'gift' ? 'Gift' : 'Sold'}: {entry.inventoryItemName || '#' + entry.inventoryItemId}
 											</span>
 										{/if}
 									</td>
@@ -892,11 +892,14 @@
 					<div class="form-control col-span-2">
 						<label class="label">
 							<span class="label-text">Amount</span>
+							{#if formData.inventoryItemId && (formData.inventoryLinkType === 'gift' || formData.inventoryLinkType === 'own_use')}
+								<span class="label-text-alt text-xs text-base-content/50">$0 allowed for non-cash dispositions</span>
+							{/if}
 						</label>
 						<input
 							type="number"
 							step="0.01"
-							min="0.01"
+							min="0"
 							class="input input-bordered"
 							bind:value={formData.amount}
 							required
@@ -978,14 +981,18 @@
 						{#if formData.inventoryItemId}
 							<div class="form-control col-span-2">
 								<label class="label"><span class="label-text">Disposition Type</span></label>
-								<div class="flex gap-6">
+								<div class="flex gap-6 flex-wrap">
 									<label class="flex items-center gap-2 cursor-pointer">
 										<input type="radio" class="radio radio-sm" bind:group={formData.inventoryLinkType} value="sale" />
 										<span class="text-sm">Sale <span class="text-base-content/50">(Revenue entry)</span></span>
 									</label>
 									<label class="flex items-center gap-2 cursor-pointer">
 										<input type="radio" class="radio radio-sm" bind:group={formData.inventoryLinkType} value="own_use" />
-										<span class="text-sm">Own Use <span class="text-base-content/50">(Owner's draw / personal use)</span></span>
+										<span class="text-sm">Own Use <span class="text-base-content/50">(Personal use, $0 ok)</span></span>
+									</label>
+									<label class="flex items-center gap-2 cursor-pointer">
+										<input type="radio" class="radio radio-sm" bind:group={formData.inventoryLinkType} value="gift" />
+										<span class="text-sm">Gift <span class="text-base-content/50">(Given away, $0 ok)</span></span>
 									</label>
 								</div>
 							</div>

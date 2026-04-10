@@ -414,7 +414,7 @@ export interface JournalEntry {
 	customerName?: string | null;
 	customerLastName?: string | null;
 	inventoryItemId?: number | null;
-	inventoryLinkType?: 'sale' | 'own_use' | null;
+	inventoryLinkType?: 'sale' | 'own_use' | 'gift' | null;
 	inventoryItemName?: string | null;
 	createdAt: Date;
 	updatedAt: Date;
@@ -995,7 +995,7 @@ export interface InventoryItem {
 	fieldValues: Record<string, string | number>;
 	totalValue: number;
 	quantity: number;
-	dispositionType?: 'sale' | 'own_use' | null;
+	dispositionType?: 'sale' | 'own_use' | 'gift' | null;
 	remainingQuantity?: number | null;
 	remainingValue?: number | null;
 	saleEntryId?: number | null;
@@ -1011,7 +1011,7 @@ export interface CustomerPurchase {
 	amount: number;
 	currencyCode: string;
 	description: string;
-	inventoryLinkType?: 'sale' | 'own_use' | null;
+	inventoryLinkType?: 'sale' | 'own_use' | 'gift' | null;
 	inventoryItemId?: number | null;
 	inventoryItemName?: string | null;
 	inventoryItemValue?: number | null;

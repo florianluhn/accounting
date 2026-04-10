@@ -10,7 +10,7 @@ import { logAudit, generateBatchId } from '../services/audit.js';
 // Validation schemas
 const createJournalEntrySchema = z.object({
 	entryDate: z.coerce.date(),
-	amount: z.number().positive(),
+	amount: z.number().min(0),
 	currencyCode: z.string().length(3).default('USD'),
 	debitAccountId: z.number().int().positive(),
 	creditAccountId: z.number().int().positive(),
@@ -20,15 +20,18 @@ const createJournalEntrySchema = z.object({
 	vendorId: z.number().int().positive().nullable().optional(),
 	customerId: z.number().int().positive().nullable().optional(),
 	inventoryItemId: z.number().int().positive().nullable().optional(),
-	inventoryLinkType: z.enum(['sale', 'own_use']).optional()
+	inventoryLinkType: z.enum(['sale', 'own_use', 'gift']).optional()
 }).refine((data) => data.debitAccountId !== data.creditAccountId, {
 	message: 'Debit and credit accounts must be different',
 	path: ['creditAccountId']
+}).refine((data) => data.amount > 0 || !!data.inventoryItemId, {
+	message: 'Amount can only be 0 when linked to an inventory item disposition',
+	path: ['amount']
 });
 
 const updateJournalEntrySchema = z.object({
 	entryDate: z.coerce.date().optional(),
-	amount: z.number().positive().optional(),
+	amount: z.number().min(0).optional(),
 	currencyCode: z.string().length(3).optional(),
 	debitAccountId: z.number().int().positive().optional(),
 	creditAccountId: z.number().int().positive().optional(),
@@ -38,7 +41,7 @@ const updateJournalEntrySchema = z.object({
 	vendorId: z.number().int().positive().nullable().optional(),
 	customerId: z.number().int().positive().nullable().optional(),
 	inventoryItemId: z.number().int().positive().nullable().optional(),
-	inventoryLinkType: z.enum(['sale', 'own_use']).optional()
+	inventoryLinkType: z.enum(['sale', 'own_use', 'gift']).optional()
 });
 
 export default async function journalEntriesRoutes(fastify: FastifyInstance) {

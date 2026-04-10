@@ -272,9 +272,11 @@
 	let fgInStock    = $derived(items.filter(i => i.quantity === 1 && !i.dispositionType));
 	let fgSold       = $derived(items.filter(i => i.dispositionType === 'sale'));
 	let fgOwnUse     = $derived(items.filter(i => i.dispositionType === 'own_use'));
+	let fgGifted     = $derived(items.filter(i => i.dispositionType === 'gift'));
 	let fgInStockVal = $derived(fgInStock.reduce((s, i) => s + i.totalValue, 0));
 	let fgSoldVal    = $derived(fgSold.reduce((s, i) => s + i.totalValue, 0));
 	let fgOwnUseVal  = $derived(fgOwnUse.reduce((s, i) => s + i.totalValue, 0));
+	let fgGiftedVal  = $derived(fgGifted.reduce((s, i) => s + i.totalValue, 0));
 
 	let filteredItems = $derived(() => {
 		let result = items;
@@ -292,6 +294,8 @@
 				result = result.filter(i => i.dispositionType === 'sale');
 			} else if (dispositionFilter === 'own_use') {
 				result = result.filter(i => i.dispositionType === 'own_use');
+			} else if (dispositionFilter === 'gift') {
+				result = result.filter(i => i.dispositionType === 'gift');
 			}
 		}
 		return result;
@@ -491,6 +495,11 @@
 					<div class="stat-desc">{formatCurrency(fgOwnUseVal)}</div>
 				</div>
 				<div class="stat bg-base-100 shadow rounded-box">
+					<div class="stat-title">Gifted</div>
+					<div class="stat-value text-secondary">{fgGifted.length}</div>
+					<div class="stat-desc">{formatCurrency(fgGiftedVal)}</div>
+				</div>
+				<div class="stat bg-base-100 shadow rounded-box">
 					<div class="stat-title">Total Items / Value</div>
 					<div class="stat-value text-2xl">{items.length}</div>
 					<div class="stat-desc text-primary font-semibold">{formatCurrency(totalValue)}</div>
@@ -536,6 +545,7 @@
 								<option value="in_stock">In stock only</option>
 								<option value="sale">Sold</option>
 								<option value="own_use">Own consumption</option>
+								<option value="gift">Gifted</option>
 							</select>
 						{/if}
 					</div>
@@ -572,8 +582,8 @@
 										<td class="font-medium">
 											<button class="link link-hover text-left" onclick={() => openDetailModal(item)}>{item.name}</button>
 											{#if !isRawMaterial && item.dispositionType}
-												<span class="badge {item.dispositionType === 'own_use' ? 'badge-warning' : 'badge-success'} badge-xs ml-1">
-													{item.dispositionType === 'own_use' ? 'Own Use' : 'Sold'}
+												<span class="badge {item.dispositionType === 'own_use' ? 'badge-warning' : item.dispositionType === 'gift' ? 'badge-secondary' : 'badge-success'} badge-xs ml-1">
+													{item.dispositionType === 'own_use' ? 'Own Use' : item.dispositionType === 'gift' ? 'Gift' : 'Sold'}
 												</span>
 											{/if}
 											{#if !isRawMaterial && item.customerName}
@@ -646,8 +656,8 @@
 				<h3 class="font-bold text-lg">{detailItem.name}</h3>
 				<div class="flex gap-1">
 					{#if detailItem.dispositionType}
-						<span class="badge badge-lg {detailItem.dispositionType === 'own_use' ? 'badge-warning' : 'badge-success'}">
-							{detailItem.dispositionType === 'own_use' ? 'Own Use' : 'Sold'}
+						<span class="badge badge-lg {detailItem.dispositionType === 'own_use' ? 'badge-warning' : detailItem.dispositionType === 'gift' ? 'badge-secondary' : 'badge-success'}">
+							{detailItem.dispositionType === 'own_use' ? 'Own Use' : detailItem.dispositionType === 'gift' ? 'Gift' : 'Sold'}
 						</span>
 					{:else}
 						<span class="badge badge-lg {detailItem.quantity === 1 ? 'badge-success' : 'badge-ghost'}">
@@ -701,8 +711,8 @@
 				<div class="bg-base-200 rounded-box p-3 mb-3">
 					<div class="text-xs text-base-content/50 mb-1">Linked Transaction</div>
 					<div class="flex items-center justify-between">
-						<span class="badge {detailItem.dispositionType === 'own_use' ? 'badge-warning' : 'badge-success'}">
-							{detailItem.dispositionType === 'own_use' ? 'Own Use' : 'Sale'}
+						<span class="badge {detailItem.dispositionType === 'own_use' ? 'badge-warning' : detailItem.dispositionType === 'gift' ? 'badge-secondary' : 'badge-success'}">
+							{detailItem.dispositionType === 'own_use' ? 'Own Use' : detailItem.dispositionType === 'gift' ? 'Gift' : 'Sale'}
 						</span>
 						<a href="/journals" class="link link-primary text-sm">
 							View Journal Entry #{detailItem.saleEntryId}
