@@ -350,29 +350,6 @@
 		}
 	}
 
-	// Own consumption modal
-	let showOwnUseModal = $state(false);
-	let ownUseItem = $state<InventoryItem | null>(null);
-
-	function openOwnUseModal(item: InventoryItem) {
-		ownUseItem = item;
-		showOwnUseModal = true;
-	}
-
-	function closeOwnUseModal() { showOwnUseModal = false; ownUseItem = null; }
-
-	async function handleOwnUse() {
-		if (!ownUseItem || !category) return;
-		try {
-			error = '';
-			await inventoryAPI.markOwnUse(ownUseItem.id);
-			items = await inventoryAPI.listItems(category.id);
-			if (detailItem?.id === ownUseItem.id) detailItem = items.find(i => i.id === ownUseItem!.id) ?? null;
-			closeOwnUseModal();
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to mark own consumption';
-		}
-	}
 
 	// ── CSV import/export ─────────────────────────────────────────────────────
 
@@ -623,9 +600,6 @@
 													<button class="btn btn-xs btn-ghost" onclick={() => openUsageModal(item)}>Usage</button>
 												{:else}
 													<button class="btn btn-xs btn-ghost btn-info" onclick={() => openAllocModal(item)}>Materials</button>
-													{#if item.quantity === 1 && !item.dispositionType}
-														<button class="btn btn-xs btn-ghost text-warning" onclick={() => openOwnUseModal(item)}>Own Use</button>
-													{/if}
 												{/if}
 												<button class="btn btn-xs btn-ghost text-error" onclick={() => handleDeleteItem(item.id)}>Delete</button>
 											</div>
@@ -733,9 +707,6 @@
 
 			<div class="modal-action">
 				<button class="btn btn-ghost btn-sm" onclick={() => { closeDetailModal(); openEdit(detailItem!); }}>Edit Item</button>
-				{#if !isRawMaterial && detailItem.quantity === 1 && !detailItem.dispositionType}
-					<button class="btn btn-warning btn-sm" onclick={() => { closeDetailModal(); openOwnUseModal(detailItem!); }}>Mark Own Use</button>
-				{/if}
 				<button class="btn" onclick={closeDetailModal}>Close</button>
 			</div>
 		</div>
@@ -743,22 +714,6 @@
 	</div>
 {/if}
 
-<!-- Own Use Modal -->
-{#if showOwnUseModal && ownUseItem}
-	<div class="modal modal-open" onclick={(e) => { if (e.target === e.currentTarget) closeOwnUseModal(); }}>
-		<div class="modal-box max-w-sm">
-			<h3 class="font-bold text-lg mb-2">Mark as Own Consumption</h3>
-			<p class="text-sm text-base-content/70 mb-4">
-				This will mark <strong>{ownUseItem.name}</strong> as consumed for personal/own use and set its stock to 0. No journal entry will be created.
-			</p>
-			<div class="modal-action">
-				<button class="btn btn-ghost" onclick={closeOwnUseModal}>Cancel</button>
-				<button class="btn btn-warning" onclick={handleOwnUse}>Confirm Own Use</button>
-			</div>
-		</div>
-		<div class="modal-backdrop" onclick={closeOwnUseModal}></div>
-	</div>
-{/if}
 
 <!-- Item Create/Edit Modal -->
 {#if showItemModal && category}

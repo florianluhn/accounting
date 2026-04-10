@@ -114,7 +114,8 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				fieldDefinitions: inventoryCategories.fieldDefinitions,
 				totalRemainingQuantity: sql<number>`COALESCE(SUM(${inventoryItems.remainingQuantity}), 0)`,
 				totalRemainingValue: sql<number>`COALESCE(SUM(COALESCE(${inventoryItems.remainingValue}, ${inventoryItems.totalValue})), 0)`,
-				itemCount: sql<number>`COALESCE(COUNT(${inventoryItems.id}), 0)`
+				// Exclude fully depleted items (remainingQuantity = 0) from count
+				itemCount: sql<number>`COALESCE(COUNT(CASE WHEN ${inventoryItems.remainingQuantity} IS NULL OR ${inventoryItems.remainingQuantity} > 0 THEN ${inventoryItems.id} END), 0)`
 			})
 			.from(inventoryCategories)
 			.leftJoin(inventoryItems, eq(inventoryItems.categoryId, inventoryCategories.id))
@@ -146,7 +147,8 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				valueFormula: inventoryCategories.valueFormula,
 				createdAt: inventoryCategories.createdAt,
 				updatedAt: inventoryCategories.updatedAt,
-				itemCount: sql<number>`COALESCE(COUNT(${inventoryItems.id}), 0)`,
+				// For raw material categories: exclude fully depleted items (remainingQuantity = 0)
+				itemCount: sql<number>`COALESCE(COUNT(CASE WHEN ${inventoryCategories.categoryType} != 'raw_material' OR ${inventoryItems.remainingQuantity} IS NULL OR ${inventoryItems.remainingQuantity} > 0 THEN ${inventoryItems.id} END), 0)`,
 				totalValue: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryCategories.categoryType} = 'raw_material' THEN COALESCE(${inventoryItems.remainingValue}, ${inventoryItems.totalValue}) ELSE ${inventoryItems.totalValue} END), 0)`
 			})
 			.from(inventoryCategories)
@@ -176,7 +178,7 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				valueFormula: inventoryCategories.valueFormula,
 				createdAt: inventoryCategories.createdAt,
 				updatedAt: inventoryCategories.updatedAt,
-				itemCount: sql<number>`COALESCE(COUNT(${inventoryItems.id}), 0)`,
+				itemCount: sql<number>`COALESCE(COUNT(CASE WHEN ${inventoryCategories.categoryType} != 'raw_material' OR ${inventoryItems.remainingQuantity} IS NULL OR ${inventoryItems.remainingQuantity} > 0 THEN ${inventoryItems.id} END), 0)`,
 				totalValue: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryCategories.categoryType} = 'raw_material' THEN COALESCE(${inventoryItems.remainingValue}, ${inventoryItems.totalValue}) ELSE ${inventoryItems.totalValue} END), 0)`
 			})
 			.from(inventoryCategories)

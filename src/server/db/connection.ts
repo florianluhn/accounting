@@ -53,11 +53,12 @@ sqlite.run(`
 	END;
 `);
 
-// Ensure amount is positive
+// Ensure amount is positive (allow $0 only when linked to an inventory item disposition)
+sqlite.run(`DROP TRIGGER IF EXISTS ensure_positive_amount`);
 sqlite.run(`
-	CREATE TRIGGER IF NOT EXISTS ensure_positive_amount
+	CREATE TRIGGER ensure_positive_amount
 	BEFORE INSERT ON journal_entries
-	WHEN NEW.amount <= 0
+	WHEN NEW.amount <= 0 AND NEW.inventory_item_id IS NULL
 	BEGIN
 		SELECT RAISE(ABORT, 'Amount must be positive');
 	END;
