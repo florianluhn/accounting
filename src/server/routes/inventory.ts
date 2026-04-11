@@ -7,7 +7,7 @@ import {
 	materialAllocations,
 	journalEntries
 } from '../db/schema.js';
-import { eq, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { logAudit } from '../services/audit.js';
 import { computeTotalValue, resolveFields, type FieldDefinition } from '../services/formula.js';
 import { parse as csvParse } from 'csv-parse/sync';
@@ -577,7 +577,10 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 			})
 			.from(inventoryItems)
 			.innerJoin(inventoryCategories, eq(inventoryItems.categoryId, inventoryCategories.id))
-			.where(eq(inventoryCategories.categoryType, 'raw_material'))
+			.where(and(
+				eq(inventoryCategories.categoryType, 'raw_material'),
+				sql`(${inventoryItems.remainingQuantity} IS NULL OR ${inventoryItems.remainingQuantity} > 0)`
+			))
 			.orderBy(inventoryCategories.name, inventoryItems.name);
 
 		return items.map(i => ({ ...i, fieldValues: JSON.parse(i.fieldValues as string) }));
