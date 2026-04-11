@@ -1,10 +1,32 @@
 <script lang="ts">
-	import { inventoryAPI, type InventoryCategory, type InventorySummary, type FieldDefinition } from '$lib/api';
+	import { inventoryAPI, type InventoryCategory, type InventorySummary, type FinishedGoodSummaryItem, type FieldDefinition } from '$lib/api';
 
 	let categories = $state<InventoryCategory[]>([]);
 	let summary = $state<InventorySummary | null>(null);
 	let loading = $state(true);
 	let error = $state('');
+
+	// Clickable stat drill-down
+	let activeFgFilter = $state<string | null>(null);
+	let fgItems = $state<FinishedGoodSummaryItem[]>([]);
+	let fgItemsLoading = $state(false);
+
+	async function toggleFgFilter(disposition: string) {
+		if (activeFgFilter === disposition) {
+			activeFgFilter = null;
+			fgItems = [];
+			return;
+		}
+		activeFgFilter = disposition;
+		fgItemsLoading = true;
+		try {
+			fgItems = await inventoryAPI.listFinishedGoods(disposition);
+		} catch (_) {
+			fgItems = [];
+		} finally {
+			fgItemsLoading = false;
+		}
+	}
 
 	let showModal = $state(false);
 	let editingCategory = $state<InventoryCategory | null>(null);
@@ -188,73 +210,118 @@
 	</div>
 
 	{#if summary && !loading}
-		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-
-			<!-- Finished Goods Summary -->
-			<div class="card bg-base-100 shadow-xl">
-				<div class="card-body">
-					<h2 class="card-title text-base">
-						<span class="badge badge-success badge-sm">Finished Goods</span>
-						Overview
-					</h2>
-					<div class="grid grid-cols-2 gap-4 mt-2">
-						<div class="stat p-0">
-							<div class="stat-title text-xs">Available</div>
-							<div class="stat-value text-2xl text-success">{summary.finishedGoods.availableCount}</div>
-							<div class="stat-desc">{formatCurrency(summary.finishedGoods.availableValue)}</div>
-						</div>
-						<div class="stat p-0">
-							<div class="stat-title text-xs">Sold</div>
-							<div class="stat-value text-2xl text-primary">{summary.finishedGoods.soldCount}</div>
-							<div class="stat-desc">of {summary.finishedGoods.totalCount} total</div>
-						</div>
-						<div class="stat p-0">
-							<div class="stat-title text-xs">Own Use</div>
-							<div class="stat-value text-2xl">{summary.finishedGoods.ownUseCount}</div>
-							<div class="stat-desc">&nbsp;</div>
-						</div>
-						<div class="stat p-0">
-							<div class="stat-title text-xs">Gifted</div>
-							<div class="stat-value text-2xl">{summary.finishedGoods.giftCount}</div>
-							<div class="stat-desc">&nbsp;</div>
-						</div>
-					</div>
+		<!-- Finished Goods Summary -->
+		<div class="card bg-base-100 shadow-xl mb-6">
+			<div class="card-body pb-3">
+				<h2 class="card-title text-base mb-3">
+					<span class="badge badge-success badge-sm">Finished Goods</span>
+					Overview
+					<span class="text-sm font-normal text-base-content/50 ml-auto">{summary.finishedGoods.totalCount} total</span>
+				</h2>
+				<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+					<button
+						class="stat bg-base-200 rounded-box px-4 py-3 cursor-pointer hover:bg-success/10 transition-colors text-left {activeFgFilter === 'available' ? 'ring-2 ring-success' : ''}"
+						onclick={() => toggleFgFilter('available')}
+					>
+						<div class="stat-title text-xs">Available</div>
+						<div class="stat-value text-2xl text-success">{summary.finishedGoods.availableCount}</div>
+						<div class="stat-desc font-mono">{formatCurrency(summary.finishedGoods.availableValue)}</div>
+					</button>
+					<button
+						class="stat bg-base-200 rounded-box px-4 py-3 cursor-pointer hover:bg-primary/10 transition-colors text-left {activeFgFilter === 'sale' ? 'ring-2 ring-primary' : ''}"
+						onclick={() => toggleFgFilter('sale')}
+					>
+						<div class="stat-title text-xs">Sold</div>
+						<div class="stat-value text-2xl text-primary">{summary.finishedGoods.soldCount}</div>
+						<div class="stat-desc font-mono">{formatCurrency(summary.finishedGoods.soldValue)}</div>
+					</button>
+					<button
+						class="stat bg-base-200 rounded-box px-4 py-3 cursor-pointer hover:bg-warning/10 transition-colors text-left {activeFgFilter === 'own_use' ? 'ring-2 ring-warning' : ''}"
+						onclick={() => toggleFgFilter('own_use')}
+					>
+						<div class="stat-title text-xs">Own Use</div>
+						<div class="stat-value text-2xl text-warning">{summary.finishedGoods.ownUseCount}</div>
+						<div class="stat-desc font-mono">{formatCurrency(summary.finishedGoods.ownUseValue)}</div>
+					</button>
+					<button
+						class="stat bg-base-200 rounded-box px-4 py-3 cursor-pointer hover:bg-secondary/10 transition-colors text-left {activeFgFilter === 'gift' ? 'ring-2 ring-secondary' : ''}"
+						onclick={() => toggleFgFilter('gift')}
+					>
+						<div class="stat-title text-xs">Gifted</div>
+						<div class="stat-value text-2xl text-secondary">{summary.finishedGoods.giftCount}</div>
+						<div class="stat-desc font-mono">{formatCurrency(summary.finishedGoods.giftValue)}</div>
+					</button>
 				</div>
-			</div>
 
-			<!-- Raw Materials Summary -->
-			<div class="card bg-base-100 shadow-xl">
+				<!-- Drill-down item list -->
+				{#if activeFgFilter}
+					<div class="mt-3 border-t border-base-300 pt-3">
+						{#if fgItemsLoading}
+							<div class="flex justify-center py-4"><span class="loading loading-spinner loading-sm"></span></div>
+						{:else if fgItems.length === 0}
+							<p class="text-sm text-base-content/50">No items.</p>
+						{:else}
+							<div class="overflow-x-auto">
+								<table class="table table-sm table-zebra">
+									<thead>
+										<tr>
+											<th>Item</th>
+											<th>Category</th>
+											<th class="text-right">Value</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each fgItems as item}
+											<tr>
+												<td><a href="/inventory/{item.categoryId}" class="link link-hover">{item.name}</a></td>
+												<td class="text-sm text-base-content/70">{item.categoryName}</td>
+												<td class="text-right font-mono">{formatCurrency(item.totalValue)}</td>
+											</tr>
+										{/each}
+									</tbody>
+									<tfoot>
+										<tr>
+											<td colspan="2" class="font-bold">Total</td>
+											<td class="text-right font-mono font-bold">{formatCurrency(fgItems.reduce((s, i) => s + i.totalValue, 0))}</td>
+										</tr>
+									</tfoot>
+								</table>
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		</div>
+
+		<!-- Raw Materials Summary -->
+		{#if summary.rawMaterials.length > 0}
+			<div class="card bg-base-100 shadow-xl mb-6">
 				<div class="card-body">
 					<h2 class="card-title text-base">
 						<span class="badge badge-warning badge-sm">Raw Materials</span>
 						Remaining Stock
 					</h2>
-					{#if summary.rawMaterials.length === 0}
-						<p class="text-sm text-base-content/60 mt-2">No raw material categories yet.</p>
-					{:else}
-						<div class="mt-2 space-y-3">
-							{#each summary.rawMaterials as rm}
-								<div>
-									<div class="flex justify-between items-baseline">
-										<a href="/inventory/{rm.categoryId}" class="link link-hover text-sm font-medium">{rm.categoryName}</a>
-										<span class="text-xs text-base-content/60">{rm.itemCount} item{rm.itemCount === 1 ? '' : 's'}</span>
-									</div>
-									<div class="flex justify-between items-baseline mt-0.5">
-										<span class="text-lg font-bold font-mono">
-											{formatQty(rm.totalRemainingQuantity)}
-											<span class="text-xs font-normal text-base-content/60 ml-1">{getRawMaterialUnit(rm)}</span>
-										</span>
-										<span class="text-sm text-base-content/70">{formatCurrency(rm.totalRemainingValue)}</span>
-									</div>
-									<div class="divider my-1"></div>
+					<div class="mt-2 space-y-3">
+						{#each summary.rawMaterials as rm}
+							<div>
+								<div class="flex justify-between items-baseline">
+									<a href="/inventory/{rm.categoryId}" class="link link-hover text-sm font-medium">{rm.categoryName}</a>
+									<span class="text-xs text-base-content/60">{rm.itemCount} item{rm.itemCount === 1 ? '' : 's'}</span>
 								</div>
-							{/each}
-						</div>
-					{/if}
+								<div class="flex justify-between items-baseline mt-0.5">
+									<span class="text-lg font-bold font-mono">
+										{formatQty(rm.totalRemainingQuantity)}
+										<span class="text-xs font-normal text-base-content/60 ml-1">{getRawMaterialUnit(rm)}</span>
+									</span>
+									<span class="text-sm text-base-content/70">{formatCurrency(rm.totalRemainingValue)}</span>
+								</div>
+								<div class="divider my-1"></div>
+							</div>
+						{/each}
+					</div>
 				</div>
 			</div>
-
-		</div>
+		{/if}
 	{/if}
 
 	<div class="card bg-base-100 shadow-xl">
@@ -275,8 +342,6 @@
 							<tr>
 								<th>Category</th>
 								<th>Fields</th>
-								<th class="text-right">Items</th>
-								<th class="text-right">Total Value</th>
 								<th>Actions</th>
 							</tr>
 						</thead>
@@ -301,8 +366,6 @@
 											{/each}
 										</div>
 									</td>
-									<td class="text-right font-mono">{cat.itemCount ?? 0}</td>
-									<td class="text-right font-mono font-bold">{formatCurrency(cat.totalValue ?? 0)}</td>
 									<td>
 										<div class="flex gap-2">
 											<a href="/inventory/{cat.id}" class="btn btn-sm btn-ghost">View</a>
@@ -313,15 +376,6 @@
 								</tr>
 							{/each}
 						</tbody>
-						<tfoot>
-							<tr>
-								<td colspan="3" class="font-bold">Total Inventory Value</td>
-								<td class="text-right font-mono font-bold text-primary">
-									{formatCurrency(categories.reduce((s, c) => s + (c.totalValue ?? 0), 0))}
-								</td>
-								<td></td>
-							</tr>
-						</tfoot>
 					</table>
 				</div>
 			{/if}

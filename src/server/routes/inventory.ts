@@ -92,11 +92,14 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 		// Finished goods aggregate
 		const fgRows = await db
 			.select({
-				availableCount: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.quantity} = 1 THEN 1 ELSE 0 END), 0)`,
-				availableValue: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.quantity} = 1 THEN ${inventoryItems.totalValue} ELSE 0 END), 0)`,
+				availableCount: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.quantity} = 1 AND ${inventoryItems.dispositionType} IS NULL THEN 1 ELSE 0 END), 0)`,
+				availableValue: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.quantity} = 1 AND ${inventoryItems.dispositionType} IS NULL THEN ${inventoryItems.totalValue} ELSE 0 END), 0)`,
 				soldCount: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.dispositionType} = 'sale' THEN 1 ELSE 0 END), 0)`,
+				soldValue: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.dispositionType} = 'sale' THEN ${inventoryItems.totalValue} ELSE 0 END), 0)`,
 				ownUseCount: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.dispositionType} = 'own_use' THEN 1 ELSE 0 END), 0)`,
+				ownUseValue: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.dispositionType} = 'own_use' THEN ${inventoryItems.totalValue} ELSE 0 END), 0)`,
 				giftCount: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.dispositionType} = 'gift' THEN 1 ELSE 0 END), 0)`,
+				giftValue: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.dispositionType} = 'gift' THEN ${inventoryItems.totalValue} ELSE 0 END), 0)`,
 				totalCount: sql<number>`COALESCE(COUNT(${inventoryItems.id}), 0)`
 			})
 			.from(inventoryItems)
@@ -130,6 +133,37 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				fieldDefinitions: JSON.parse(r.fieldDefinitions as string)
 			}))
 		};
+	});
+
+	// GET /api/inventory/finished-goods?disposition=sale|own_use|gift|available
+	fastify.get<{ Querystring: { disposition?: string } }>('/finished-goods', async (request) => {
+		const disp = request.query.disposition;
+		let condition;
+		if (disp === 'available') {
+			condition = sql`${inventoryCategories.categoryType} = 'finished_good' AND ${inventoryItems.quantity} = 1 AND ${inventoryItems.dispositionType} IS NULL`;
+		} else if (disp && ['sale', 'own_use', 'gift'].includes(disp)) {
+			condition = sql`${inventoryCategories.categoryType} = 'finished_good' AND ${inventoryItems.dispositionType} = ${disp}`;
+		} else {
+			condition = sql`${inventoryCategories.categoryType} = 'finished_good'`;
+		}
+
+		const rows = await db
+			.select({
+				id: inventoryItems.id,
+				name: inventoryItems.name,
+				categoryId: inventoryItems.categoryId,
+				categoryName: inventoryCategories.name,
+				totalValue: inventoryItems.totalValue,
+				quantity: inventoryItems.quantity,
+				dispositionType: inventoryItems.dispositionType,
+				createdAt: inventoryItems.createdAt
+			})
+			.from(inventoryItems)
+			.innerJoin(inventoryCategories, eq(inventoryItems.categoryId, inventoryCategories.id))
+			.where(condition)
+			.orderBy(inventoryCategories.name, inventoryItems.name);
+
+		return rows;
 	});
 
 	// ── Categories ──────────────────────────────────────────────────────────

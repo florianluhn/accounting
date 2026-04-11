@@ -1040,8 +1040,11 @@ export interface InventorySummary {
 		availableCount: number;
 		availableValue: number;
 		soldCount: number;
+		soldValue: number;
 		ownUseCount: number;
+		ownUseValue: number;
 		giftCount: number;
+		giftValue: number;
 		totalCount: number;
 	};
 	rawMaterials: {
@@ -1055,9 +1058,25 @@ export interface InventorySummary {
 	}[];
 }
 
+export interface FinishedGoodSummaryItem {
+	id: number;
+	name: string;
+	categoryId: number;
+	categoryName: string;
+	totalValue: number;
+	quantity: number;
+	dispositionType: string | null;
+	createdAt: Date;
+}
+
 export const inventoryAPI = {
 	async getSummary(): Promise<InventorySummary> {
 		return apiFetch('/api/inventory/summary');
+	},
+
+	async listFinishedGoods(disposition?: string): Promise<FinishedGoodSummaryItem[]> {
+		const q = disposition ? `?disposition=${disposition}` : '';
+		return apiFetch(`/api/inventory/finished-goods${q}`);
 	},
 
 	async listCategories(): Promise<InventoryCategory[]> {
