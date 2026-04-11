@@ -7,6 +7,37 @@ import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { logAudit, generateBatchId } from '../services/audit.js';
 
+/**
+ * Recompute an inventory item's dispositionType and quantity based on remaining
+ * journal entries that reference it with a disposition link type.
+ * Called after an entry is deleted or its item link changes.
+ */
+async function recomputeItemDisposition(itemId: number) {
+	// Find all journal entries still linked to this item
+	const remaining = await db
+		.select({ inventoryLinkType: journalEntries.inventoryLinkType })
+		.from(journalEntries)
+		.where(eq(journalEntries.inventoryItemId, itemId))
+		.orderBy(desc(journalEntries.createdAt));
+
+	// Find the most recent one that sets a disposition
+	const dispositionEntry = remaining.find(r =>
+		r.inventoryLinkType && ['sale', 'own_use', 'gift'].includes(r.inventoryLinkType)
+	);
+
+	if (dispositionEntry) {
+		// Another disposition entry still exists — keep its type
+		await db.update(inventoryItems)
+			.set({ dispositionType: dispositionEntry.inventoryLinkType, quantity: 0 })
+			.where(eq(inventoryItems.id, itemId));
+	} else {
+		// No disposition entries left — clear the flag, restore stock
+		await db.update(inventoryItems)
+			.set({ dispositionType: null, quantity: 1 })
+			.where(eq(inventoryItems.id, itemId));
+	}
+}
+
 // Validation schemas
 const createJournalEntrySchema = z.object({
 	entryDate: z.coerce.date(),
@@ -364,6 +395,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			updateData.amountInUSD = Math.round(amount * currency[0].exchangeRate * 100) / 100;
 		}
 
+		const oldEntry = existing[0];
+
 		// Update journal entry
 		const updated = await db
 			.update(journalEntries)
@@ -371,20 +404,44 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			.where(eq(journalEntries.id, id))
 			.returning();
 
+		const newEntry = updated[0];
+
+		// Sync inventory item disposition on update
+		const oldItemId = oldEntry.inventoryItemId;
+		const newItemId = newEntry.inventoryItemId;
+		const newLinkType = newEntry.inventoryLinkType;
+
+		// If the linked item changed or was removed, clear the old item's disposition
+		// (only if no other disposition entry still references it)
+		if (oldItemId && oldItemId !== newItemId) {
+			await recomputeItemDisposition(oldItemId);
+		}
+
+		// Set disposition on the (possibly new) linked item
+		if (newItemId && newLinkType && ['sale', 'own_use', 'gift'].includes(newLinkType)) {
+			await db.update(inventoryItems)
+				.set({ dispositionType: newLinkType, quantity: 0 })
+				.where(eq(inventoryItems.id, newItemId));
+		}
+		// If the item stayed the same but link type was cleared, recompute
+		if (newItemId && oldItemId === newItemId && !newLinkType && oldEntry.inventoryLinkType) {
+			await recomputeItemDisposition(newItemId);
+		}
+
 		// Log audit entry
 		await logAudit({
 			operation: 'UPDATE',
 			resourceType: 'journal_entry',
 			resourceId: id,
 			source: 'Web UI',
-			oldData: existing[0],
-			newData: updated[0]
+			oldData: oldEntry,
+			newData: newEntry
 		});
 
 		// Save database
 		await saveDatabase();
 
-		return updated[0];
+		return newEntry;
 	});
 
 	// DELETE /api/journal-entries/:id - Delete journal entry
@@ -412,8 +469,15 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			});
 		}
 
+		const oldEntry = existing[0];
+
 		// Delete journal entry
 		await db.delete(journalEntries).where(eq(journalEntries.id, id));
+
+		// Clear disposition on linked inventory item if no other disposition entries remain
+		if (oldEntry.inventoryItemId) {
+			await recomputeItemDisposition(oldEntry.inventoryItemId);
+		}
 
 		// Log audit entry
 		await logAudit({
@@ -421,7 +485,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			resourceType: 'journal_entry',
 			resourceId: id,
 			source: 'Web UI',
-			oldData: existing[0]
+			oldData: oldEntry
 		});
 
 		// Save database
