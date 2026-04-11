@@ -20,7 +20,7 @@ const createJournalEntrySchema = z.object({
 	vendorId: z.number().int().positive().nullable().optional(),
 	customerId: z.number().int().positive().nullable().optional(),
 	inventoryItemId: z.number().int().positive().nullable().optional(),
-	inventoryLinkType: z.enum(['sale', 'own_use', 'gift']).optional()
+	inventoryLinkType: z.enum(['sale', 'own_use', 'gift']).nullable().optional()
 }).refine((data) => data.debitAccountId !== data.creditAccountId, {
 	message: 'Debit and credit accounts must be different',
 	path: ['creditAccountId']
@@ -41,7 +41,7 @@ const updateJournalEntrySchema = z.object({
 	vendorId: z.number().int().positive().nullable().optional(),
 	customerId: z.number().int().positive().nullable().optional(),
 	inventoryItemId: z.number().int().positive().nullable().optional(),
-	inventoryLinkType: z.enum(['sale', 'own_use', 'gift']).optional()
+	inventoryLinkType: z.enum(['sale', 'own_use', 'gift']).nullable().optional()
 });
 
 export default async function journalEntriesRoutes(fastify: FastifyInstance) {
@@ -230,7 +230,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			// Calculate amount in USD (round to 2 decimal places)
 			const amountInUSD = Math.round(validatedData.amount * currency[0].exchangeRate * 100) / 100;
 
-			const linkType = validatedData.inventoryItemId ? (validatedData.inventoryLinkType ?? 'sale') : null;
+			const linkType = validatedData.inventoryItemId ? (validatedData.inventoryLinkType ?? null) : null;
 
 			// Insert new journal entry
 			const newEntry = await db
@@ -244,8 +244,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 				})
 				.returning();
 
-			// Sync dispositionType on linked inventory item
-			if (validatedData.inventoryItemId && linkType) {
+			// Sync dispositionType on linked inventory item (only for disposition types, not related costs)
+			if (validatedData.inventoryItemId && linkType && ['sale', 'own_use', 'gift'].includes(linkType)) {
 				await db.update(inventoryItems)
 					.set({ dispositionType: linkType, quantity: 0 })
 					.where(eq(inventoryItems.id, validatedData.inventoryItemId));

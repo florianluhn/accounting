@@ -45,7 +45,7 @@
 		vendorId: 0,
 		customerId: 0,
 		inventoryItemId: 0,
-		inventoryLinkType: 'sale' as 'sale' | 'own_use' | 'gift'
+		inventoryLinkType: '' as '' | 'sale' | 'own_use' | 'gift'
 	});
 	let selectedFiles = $state<File[]>([]);
 	let uploadingFiles = $state(false);
@@ -235,7 +235,7 @@
 			vendorId: 0,
 			customerId: 0,
 			inventoryItemId: 0,
-			inventoryLinkType: 'sale' as 'sale' | 'own_use' | 'gift'
+			inventoryLinkType: '' as '' | 'sale' | 'own_use' | 'gift'
 		};
 		editingEntry = null;
 		selectedFiles = [];
@@ -259,7 +259,7 @@
 			vendorId: entry.vendorId || 0,
 			customerId: entry.customerId || 0,
 			inventoryItemId: entry.inventoryItemId || 0,
-			inventoryLinkType: (entry.inventoryLinkType as 'sale' | 'own_use' | 'gift') || 'sale'
+			inventoryLinkType: (entry.inventoryLinkType as '' | 'sale' | 'own_use' | 'gift') || ''
 		};
 		editingEntry = entry;
 		debitAccountSearch = getAccountDisplay(entry.debitAccountId);
@@ -312,7 +312,7 @@
 				vendorId: formData.vendorId || null,
 				customerId: formData.customerId || null,
 				inventoryItemId: formData.inventoryItemId || null,
-				inventoryLinkType: formData.inventoryItemId ? formData.inventoryLinkType : undefined
+				inventoryLinkType: formData.inventoryItemId && formData.inventoryLinkType ? formData.inventoryLinkType : null
 			};
 
 			let entryId: number;
@@ -750,8 +750,8 @@
 											</a>
 										{/if}
 										{#if entry.inventoryItemId}
-											<span class="badge {entry.inventoryLinkType === 'own_use' ? 'badge-warning' : entry.inventoryLinkType === 'gift' ? 'badge-secondary' : 'badge-success'} badge-sm mt-1 block w-fit">
-												{entry.inventoryLinkType === 'own_use' ? 'Own Use' : entry.inventoryLinkType === 'gift' ? 'Gift' : 'Sold'}: {entry.inventoryItemName || '#' + entry.inventoryItemId}
+											<span class="badge {entry.inventoryLinkType === 'own_use' ? 'badge-warning' : entry.inventoryLinkType === 'gift' ? 'badge-secondary' : entry.inventoryLinkType === 'sale' ? 'badge-success' : 'badge-ghost'} badge-sm mt-1 block w-fit">
+												{entry.inventoryLinkType === 'own_use' ? 'Own Use' : entry.inventoryLinkType === 'gift' ? 'Gift' : entry.inventoryLinkType === 'sale' ? 'Sold' : 'Linked'}: {entry.inventoryItemName || '#' + entry.inventoryItemId}
 											</span>
 										{/if}
 									</td>
@@ -980,19 +980,23 @@
 						</div>
 						{#if formData.inventoryItemId}
 							<div class="form-control col-span-2">
-								<label class="label"><span class="label-text">Disposition Type</span></label>
+								<label class="label"><span class="label-text">Link Type</span></label>
 								<div class="flex gap-6 flex-wrap">
 									<label class="flex items-center gap-2 cursor-pointer">
+										<input type="radio" class="radio radio-sm" bind:group={formData.inventoryLinkType} value="" />
+										<span class="text-sm">Related cost <span class="text-base-content/50">(shipping, supplies…)</span></span>
+									</label>
+									<label class="flex items-center gap-2 cursor-pointer">
 										<input type="radio" class="radio radio-sm" bind:group={formData.inventoryLinkType} value="sale" />
-										<span class="text-sm">Sale <span class="text-base-content/50">(Revenue entry)</span></span>
+										<span class="text-sm">Sale <span class="text-base-content/50">(marks item sold)</span></span>
 									</label>
 									<label class="flex items-center gap-2 cursor-pointer">
 										<input type="radio" class="radio radio-sm" bind:group={formData.inventoryLinkType} value="own_use" />
-										<span class="text-sm">Own Use <span class="text-base-content/50">(Personal use, $0 ok)</span></span>
+										<span class="text-sm">Own Use <span class="text-base-content/50">(personal, $0 ok)</span></span>
 									</label>
 									<label class="flex items-center gap-2 cursor-pointer">
 										<input type="radio" class="radio radio-sm" bind:group={formData.inventoryLinkType} value="gift" />
-										<span class="text-sm">Gift <span class="text-base-content/50">(Given away, $0 ok)</span></span>
+										<span class="text-sm">Gift <span class="text-base-content/50">(given away, $0 ok)</span></span>
 									</label>
 								</div>
 							</div>

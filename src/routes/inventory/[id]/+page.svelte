@@ -2,11 +2,13 @@
 	import { page } from '$app/stores';
 	import {
 		inventoryAPI,
+		journalEntriesAPI,
 		type InventoryCategory,
 		type InventoryItem,
 		type FieldDefinition,
 		type MaterialAllocation,
-		type RawMaterialItem
+		type RawMaterialItem,
+		type JournalEntry
 	} from '$lib/api';
 
 	let category = $state<InventoryCategory | null>(null);
@@ -330,13 +332,19 @@
 
 	let showDetailModal = $state(false);
 	let detailItem = $state<InventoryItem | null>(null);
+	let linkedEntries = $state<JournalEntry[]>([]);
 
-	function openDetailModal(item: InventoryItem) {
+	async function openDetailModal(item: InventoryItem) {
 		detailItem = item;
+		linkedEntries = [];
 		showDetailModal = true;
+		// Fetch linked journal entries in background
+		try {
+			linkedEntries = await journalEntriesAPI.list({ inventoryItemId: item.id });
+		} catch (_) { /* non-critical */ }
 	}
 
-	function closeDetailModal() { showDetailModal = false; detailItem = null; }
+	function closeDetailModal() { showDetailModal = false; detailItem = null; linkedEntries = []; }
 
 	async function handleToggleQuantity(item: InventoryItem) {
 		if (!category) return;
@@ -674,26 +682,32 @@
 				{/if}
 			</div>
 
-			<!-- Disposition / Linked transaction -->
-			{#if detailItem.dispositionType === 'own_use' && !detailItem.saleEntryId}
-				<div class="bg-warning/10 rounded-box p-3 mb-3">
-					<div class="text-xs text-base-content/50 mb-1">Disposition</div>
-					<span class="badge badge-warning">Own Consumption</span>
-					<div class="text-xs text-base-content/50 mt-1">Marked directly — no journal entry.</div>
-				</div>
-			{:else if detailItem.saleEntryId}
+			<!-- Linked transactions -->
+			{#if linkedEntries.length > 0}
 				<div class="bg-base-200 rounded-box p-3 mb-3">
-					<div class="text-xs text-base-content/50 mb-1">Linked Transaction</div>
-					<div class="flex items-center justify-between">
-						<span class="badge {detailItem.dispositionType === 'own_use' ? 'badge-warning' : detailItem.dispositionType === 'gift' ? 'badge-secondary' : 'badge-success'}">
-							{detailItem.dispositionType === 'own_use' ? 'Own Use' : detailItem.dispositionType === 'gift' ? 'Gift' : 'Sale'}
-						</span>
-						<a href="/journals" class="link link-primary text-sm">
-							View Journal Entry #{detailItem.saleEntryId}
-						</a>
+					<div class="text-xs text-base-content/50 mb-2">Linked Transactions ({linkedEntries.length})</div>
+					<div class="space-y-2">
+						{#each linkedEntries as entry}
+							<div class="flex items-center justify-between text-sm">
+								<div class="flex items-center gap-2">
+									{#if entry.inventoryLinkType}
+										<span class="badge badge-xs {entry.inventoryLinkType === 'own_use' ? 'badge-warning' : entry.inventoryLinkType === 'gift' ? 'badge-secondary' : 'badge-success'}">
+											{entry.inventoryLinkType === 'own_use' ? 'Own Use' : entry.inventoryLinkType === 'gift' ? 'Gift' : 'Sale'}
+										</span>
+									{:else}
+										<span class="badge badge-xs badge-ghost">Related</span>
+									{/if}
+									<span class="truncate max-w-[200px]">{entry.description}</span>
+								</div>
+								<div class="flex items-center gap-2 text-base-content/70 shrink-0">
+									<span class="font-mono">${entry.amount.toFixed(2)}</span>
+									<span class="text-xs">{new Date(entry.entryDate).toLocaleDateString()}</span>
+								</div>
+							</div>
+						{/each}
 					</div>
 					{#if detailItem.customerName}
-						<div class="mt-2 text-sm">
+						<div class="mt-2 text-sm border-t border-base-300 pt-2">
 							<span class="text-base-content/50">Customer: </span>
 							<a href="/customers/{detailItem.customerId}" class="link link-hover font-medium">
 								{detailItem.customerName}
@@ -702,7 +716,7 @@
 					{/if}
 				</div>
 			{:else}
-				<div class="text-sm text-base-content/40 mb-3">No linked sale or consumption record.</div>
+				<div class="text-sm text-base-content/40 mb-3">No linked transactions.</div>
 			{/if}
 
 			<div class="modal-action">
