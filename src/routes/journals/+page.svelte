@@ -48,6 +48,7 @@
 		inventoryLinkType: '' as '' | 'sale' | 'own_use' | 'gift'
 	});
 	let selectedFiles = $state<File[]>([]);
+	let extraAmounts = $state<string[]>([]);
 	let uploadingFiles = $state(false);
 	let uploadingCSV = $state(false);
 	let csvUploadResult = $state<{ success: number; failed: number; errors: string[]; message?: string } | null>(null);
@@ -239,6 +240,7 @@
 		};
 		editingEntry = null;
 		selectedFiles = [];
+		extraAmounts = [];
 		debitAccountSearch = getAccountDisplay(defaultDebitId);
 		creditAccountSearch = getAccountDisplay(defaultCreditId);
 		showDebitDropdown = false;
@@ -262,6 +264,7 @@
 			inventoryLinkType: (entry.inventoryLinkType as '' | 'sale' | 'own_use' | 'gift') || ''
 		};
 		editingEntry = entry;
+		extraAmounts = [];
 		debitAccountSearch = getAccountDisplay(entry.debitAccountId);
 		creditAccountSearch = getAccountDisplay(entry.creditAccountId);
 		showDebitDropdown = false;
@@ -286,6 +289,14 @@
 		selectedFiles = selectedFiles.filter((_, i) => i !== index);
 	}
 
+	function addAmount() {
+		extraAmounts = [...extraAmounts, ''];
+	}
+
+	function removeAmount(index: number) {
+		extraAmounts = extraAmounts.filter((_, i) => i !== index);
+	}
+
 	async function handleSubmit() {
 		try {
 			error = '';
@@ -300,9 +311,8 @@
 				return;
 			}
 
-			const data: any = {
+			const baseData = {
 				entryDate: new Date(formData.entryDate),
-				amount: parseFloat(formData.amount),
 				currencyCode: formData.currencyCode,
 				debitAccountId: formData.debitAccountId,
 				creditAccountId: formData.creditAccountId,
@@ -315,22 +325,36 @@
 				inventoryLinkType: formData.inventoryItemId && formData.inventoryLinkType ? formData.inventoryLinkType : null
 			};
 
-			let entryId: number;
+			let firstEntryId: number;
 
 			if (editingEntry) {
-				await journalEntriesAPI.update(editingEntry.id, data);
-				entryId = editingEntry.id;
+				await journalEntriesAPI.update(editingEntry.id, { ...baseData, amount: parseFloat(formData.amount) });
+				firstEntryId = editingEntry.id;
 			} else {
-				const createdEntry = await journalEntriesAPI.create(data);
-				entryId = createdEntry.id;
+				const allAmounts = [formData.amount, ...extraAmounts]
+					.map(a => a.trim())
+					.filter(a => a !== '')
+					.map(a => parseFloat(a));
+
+				if (allAmounts.some(a => isNaN(a))) {
+					error = 'All amounts must be valid numbers';
+					return;
+				}
+
+				const created = await journalEntriesAPI.create({ ...baseData, amount: allAmounts[0] });
+				firstEntryId = created.id;
+
+				for (let i = 1; i < allAmounts.length; i++) {
+					await journalEntriesAPI.create({ ...baseData, amount: allAmounts[i] });
+				}
 			}
 
-			// Upload attachments if any
+			// Upload attachments to the first entry only
 			if (selectedFiles.length > 0) {
 				uploadingFiles = true;
 				try {
 					await Promise.all(
-						selectedFiles.map(file => attachmentsAPI.upload(entryId, file))
+						selectedFiles.map(file => attachmentsAPI.upload(firstEntryId, file))
 					);
 				} catch (uploadError) {
 					console.error('Error uploading attachments:', uploadError);
@@ -894,17 +918,60 @@
 							<span class="label-text">Amount</span>
 							{#if formData.inventoryItemId && (formData.inventoryLinkType === 'gift' || formData.inventoryLinkType === 'own_use')}
 								<span class="label-text-alt text-xs text-base-content/50">$0 allowed for non-cash dispositions</span>
+							{:else if !editingEntry}
+								<span class="label-text-alt text-xs text-base-content/50">Add more amounts to create multiple entries with the same details</span>
 							{/if}
 						</label>
-						<input
-							type="number"
-							step="0.01"
-							min="0"
-							class="input input-bordered"
-							bind:value={formData.amount}
-							required
-							placeholder="0.00"
-						/>
+						<div class="flex gap-2 items-center">
+							<input
+								type="number"
+								step="0.01"
+								min="0"
+								class="input input-bordered flex-1"
+								bind:value={formData.amount}
+								required
+								placeholder="0.00"
+							/>
+							{#if !editingEntry}
+								<button
+									type="button"
+									class="btn btn-square btn-outline"
+									onclick={addAmount}
+									title="Add another amount"
+								>
+									+
+								</button>
+							{/if}
+						</div>
+						{#if !editingEntry && extraAmounts.length > 0}
+							<div class="mt-2 space-y-2">
+								{#each extraAmounts as _, index}
+									<div class="flex gap-2 items-center">
+										<input
+											type="number"
+											step="0.01"
+											min="0"
+											class="input input-bordered flex-1"
+											bind:value={extraAmounts[index]}
+											placeholder="0.00"
+										/>
+										<button
+											type="button"
+											class="btn btn-square btn-ghost text-error"
+											onclick={() => removeAmount(index)}
+											title="Remove this amount"
+										>
+											<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+											</svg>
+										</button>
+									</div>
+								{/each}
+								<p class="text-xs text-base-content/60">
+									Will create {extraAmounts.length + 1} separate journal entries.
+								</p>
+							</div>
+						{/if}
 					</div>
 
 					<!-- Description -->
