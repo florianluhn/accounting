@@ -332,11 +332,11 @@
 				firstEntryId = editingEntry.id;
 			} else {
 				const allAmounts = [formData.amount, ...extraAmounts]
-					.map(a => a.trim())
+					.map(a => String(a ?? '').trim())
 					.filter(a => a !== '')
 					.map(a => parseFloat(a));
 
-				if (allAmounts.some(a => isNaN(a))) {
+				if (allAmounts.length === 0 || allAmounts.some(a => isNaN(a))) {
 					error = 'All amounts must be valid numbers';
 					return;
 				}
