@@ -759,6 +759,90 @@ function migrateInventoryItemQuantity(): void {
 	}
 }
 
+function migrateBookings(): void {
+	try {
+		// booking_platforms table
+		const platCheck = sqlite.exec(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name='booking_platforms'"
+		);
+		if (platCheck.length === 0 || platCheck[0].values.length === 0) {
+			console.log('Creating booking_platforms table...');
+			sqlite.run(`
+				CREATE TABLE IF NOT EXISTS booking_platforms (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					name TEXT NOT NULL UNIQUE,
+					sort_order INTEGER NOT NULL DEFAULT 0,
+					created_at INTEGER NOT NULL DEFAULT (unixepoch())
+				)
+			`);
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_booking_platforms_name ON booking_platforms(name)');
+			// Seed with common platforms
+			sqlite.run(`INSERT OR IGNORE INTO booking_platforms (name, sort_order) VALUES ('Airbnb', 1), ('Vrbo', 2), ('Booking.com', 3), ('Direct', 4)`);
+			console.log('✓ booking_platforms table created');
+		} else {
+			console.log('✓ booking_platforms table already exists');
+		}
+
+		// bookings table
+		const bookCheck = sqlite.exec(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name='bookings'"
+		);
+		if (bookCheck.length === 0 || bookCheck[0].values.length === 0) {
+			console.log('Creating bookings table...');
+			sqlite.run(`
+				CREATE TABLE IF NOT EXISTS bookings (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+					platform_id INTEGER NOT NULL REFERENCES booking_platforms(id) ON DELETE RESTRICT,
+					check_in_date TEXT NOT NULL,
+					check_out_date TEXT NOT NULL,
+					nights INTEGER NOT NULL DEFAULT 0,
+					total_paid REAL NOT NULL DEFAULT 0,
+					net_amount REAL NOT NULL DEFAULT 0,
+					cleaning_fee REAL NOT NULL DEFAULT 0,
+					sales_tax REAL NOT NULL DEFAULT 0,
+					tourist_tax REAL NOT NULL DEFAULT 0,
+					platform_fee REAL NOT NULL DEFAULT 0,
+					rental_fee REAL NOT NULL DEFAULT 0,
+					comment TEXT,
+					created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+					updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+				)
+			`);
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_bookings_customer ON bookings(customer_id)');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_bookings_platform ON bookings(platform_id)');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_bookings_check_in ON bookings(check_in_date)');
+			sqlite.run(`
+				CREATE TRIGGER IF NOT EXISTS update_bookings_timestamp
+				AFTER UPDATE ON bookings
+				FOR EACH ROW
+				BEGIN
+					UPDATE bookings SET updated_at = unixepoch() WHERE id = NEW.id;
+				END;
+			`);
+			console.log('✓ bookings table created');
+		} else {
+			console.log('✓ bookings table already exists');
+		}
+
+		// Seed default booking config settings if not present
+		const defaults: Record<string, string> = {
+			bookings: 'true',
+			booking_cleaning_fee: '0',
+			booking_sales_tax_rate: '0',
+			booking_tourist_tax_rate: '0',
+			booking_platform_fee_rate: '0'
+		};
+		for (const [key, value] of Object.entries(defaults)) {
+			sqlite.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('${key}', '${value}')`);
+		}
+		console.log('✓ Booking settings seeded');
+	} catch (error) {
+		console.error('Failed to migrate bookings:', error);
+		throw error;
+	}
+}
+
 function migrateAppSettings(): void {
 	try {
 		sqlite.run(`
@@ -802,6 +886,7 @@ migrateConsumption();
 migrateJournalEntryItemLink();
 migrateInventoryItemQuantity();
 migrateAppSettings();
+migrateBookings();
 
 export { sqlite };
 export default db;

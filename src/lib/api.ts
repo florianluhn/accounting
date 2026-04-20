@@ -951,6 +951,7 @@ export interface AppSettings {
 	customers: boolean;
 	inventory: boolean;
 	timeTracking: boolean;
+	bookings: boolean;
 }
 
 export const settingsAPI = {
@@ -1157,5 +1158,87 @@ export const inventoryAPI = {
 			throw new Error(err.message || 'Upload failed');
 		}
 		return response.json();
+	}
+};
+
+// ========================================
+// Bookings API
+// ========================================
+
+export interface BookingPlatform {
+	id: number;
+	name: string;
+	sortOrder: number;
+	createdAt?: Date;
+}
+
+export interface BookingConfig {
+	cleaningFee: number;
+	salesTaxRate: number;
+	touristTaxRate: number;
+	platformFeeRate: number;
+}
+
+export interface Booking {
+	id: number;
+	customerId: number;
+	customerFirstName?: string | null;
+	customerLastName?: string | null;
+	platformId: number;
+	platformName?: string | null;
+	checkInDate: string;
+	checkOutDate: string;
+	nights: number;
+	totalPaid: number;
+	netAmount: number;
+	cleaningFee: number;
+	salesTax: number;
+	touristTax: number;
+	platformFee: number;
+	rentalFee: number;
+	comment?: string | null;
+	createdAt?: Date;
+	updatedAt?: Date;
+}
+
+export type NewBooking = Omit<Booking, 'id' | 'customerFirstName' | 'customerLastName' | 'platformName' | 'createdAt' | 'updatedAt'>;
+
+export const bookingsAPI = {
+	async list(): Promise<Booking[]> {
+		return apiFetch('/api/bookings');
+	},
+	async get(id: number): Promise<Booking> {
+		return apiFetch(`/api/bookings/${id}`);
+	},
+	async create(data: NewBooking): Promise<Booking> {
+		return apiFetch('/api/bookings', { method: 'POST', body: JSON.stringify(data) });
+	},
+	async update(id: number, data: Partial<NewBooking>): Promise<Booking> {
+		return apiFetch(`/api/bookings/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+	},
+	async delete(id: number): Promise<void> {
+		return apiFetch(`/api/bookings/${id}`, { method: 'DELETE' });
+	},
+
+	// Config
+	async getConfig(): Promise<BookingConfig> {
+		return apiFetch('/api/bookings/config');
+	},
+	async updateConfig(data: Partial<BookingConfig>): Promise<BookingConfig> {
+		return apiFetch('/api/bookings/config', { method: 'PUT', body: JSON.stringify(data) });
+	},
+
+	// Platforms
+	async listPlatforms(): Promise<BookingPlatform[]> {
+		return apiFetch('/api/bookings/platforms');
+	},
+	async createPlatform(data: { name: string; sortOrder?: number }): Promise<BookingPlatform> {
+		return apiFetch('/api/bookings/platforms', { method: 'POST', body: JSON.stringify(data) });
+	},
+	async updatePlatform(id: number, data: { name: string; sortOrder?: number }): Promise<BookingPlatform> {
+		return apiFetch(`/api/bookings/platforms/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+	},
+	async deletePlatform(id: number): Promise<void> {
+		return apiFetch(`/api/bookings/platforms/${id}`, { method: 'DELETE' });
 	}
 };

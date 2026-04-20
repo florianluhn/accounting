@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { currenciesAPI, type Currency, backupAPI, type BackupStatus, settingsAPI } from '$lib/api';
+	import { currenciesAPI, type Currency, backupAPI, type BackupStatus, settingsAPI, bookingsAPI, type BookingConfig, type BookingPlatform } from '$lib/api';
 	import { modules, applyModuleSettings } from '$lib/modules.svelte';
 
 	let currencies = $state<Currency[]>([]);
@@ -22,11 +22,86 @@
 		isDefault: false
 	});
 
+	// Booking settings state
+	let bookingConfig = $state<BookingConfig>({
+		cleaningFee: 0,
+		salesTaxRate: 0,
+		touristTaxRate: 0,
+		platformFeeRate: 0
+	});
+	let bookingConfigSaving = $state(false);
+	let bookingPlatforms = $state<BookingPlatform[]>([]);
+	let newPlatformName = $state('');
+	let editingPlatformId = $state<number | null>(null);
+	let editingPlatformName = $state('');
+
 	$effect(() => {
 		loadCurrencies();
 		loadBackupStatus();
 		loadModuleSettings();
+		loadBookingSettings();
 	});
+
+	async function loadBookingSettings() {
+		try {
+			bookingConfig = await bookingsAPI.getConfig();
+			bookingPlatforms = await bookingsAPI.listPlatforms();
+		} catch (e) {
+			console.error('Failed to load booking settings:', e);
+		}
+	}
+
+	async function saveBookingConfig() {
+		try {
+			bookingConfigSaving = true;
+			bookingConfig = await bookingsAPI.updateConfig(bookingConfig);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to save booking config';
+		} finally {
+			bookingConfigSaving = false;
+		}
+	}
+
+	async function addPlatform() {
+		const name = newPlatformName.trim();
+		if (!name) return;
+		try {
+			await bookingsAPI.createPlatform({ name, sortOrder: (bookingPlatforms[bookingPlatforms.length - 1]?.sortOrder ?? 0) + 1 });
+			newPlatformName = '';
+			bookingPlatforms = await bookingsAPI.listPlatforms();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to add platform';
+		}
+	}
+
+	function startEditPlatform(p: BookingPlatform) {
+		editingPlatformId = p.id;
+		editingPlatformName = p.name;
+	}
+
+	async function saveEditPlatform() {
+		if (editingPlatformId === null) return;
+		const name = editingPlatformName.trim();
+		if (!name) return;
+		try {
+			await bookingsAPI.updatePlatform(editingPlatformId, { name });
+			editingPlatformId = null;
+			editingPlatformName = '';
+			bookingPlatforms = await bookingsAPI.listPlatforms();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to update platform';
+		}
+	}
+
+	async function deletePlatform(id: number) {
+		if (!confirm('Delete this booking platform?')) return;
+		try {
+			await bookingsAPI.deletePlatform(id);
+			bookingPlatforms = await bookingsAPI.listPlatforms();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to delete platform';
+		}
+	}
 
 	let modulesSaving = $state(false);
 
@@ -46,7 +121,8 @@
 				vendors: modules.vendors,
 				customers: modules.customers,
 				inventory: modules.inventory,
-				timeTracking: modules.timeTracking
+				timeTracking: modules.timeTracking,
+				bookings: modules.bookings
 			});
 			applyModuleSettings(updated);
 		} catch (e) {
@@ -289,12 +365,95 @@
 					</div>
 					<input type="checkbox" class="toggle toggle-primary" bind:checked={modules.timeTracking} onchange={saveModuleSettings} />
 				</label>
+				<label class="flex items-center justify-between p-3 bg-base-200 rounded-box cursor-pointer">
+					<div>
+						<div class="font-medium">Bookings</div>
+						<div class="text-xs text-base-content/50">Overnight booking management</div>
+					</div>
+					<input type="checkbox" class="toggle toggle-primary" bind:checked={modules.bookings} onchange={saveModuleSettings} />
+				</label>
 			</div>
 			{#if modulesSaving}
 				<div class="text-sm text-base-content/50 mt-2">Saving...</div>
 			{/if}
 		</div>
 	</div>
+
+	<!-- Booking Settings Section -->
+	{#if modules.bookings}
+	<div class="card bg-base-100 shadow-xl mb-6">
+		<div class="card-body">
+			<h2 class="card-title mb-1">Booking Settings</h2>
+			<p class="text-sm text-base-content/60 mb-4">Default values and tax rates used when calculating bookings. Individual bookings can override any value.</p>
+
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+				<div class="form-control">
+					<label class="label"><span class="label-text">Default Cleaning Fee ($)</span></label>
+					<input type="number" step="0.01" min="0" class="input input-bordered" bind:value={bookingConfig.cleaningFee} />
+				</div>
+				<div class="form-control">
+					<label class="label">
+						<span class="label-text">Sales Tax Rate (%)</span>
+						<span class="label-text-alt text-xs text-base-content/50">e.g. 7 for 7%</span>
+					</label>
+					<input type="number" step="0.001" min="0" class="input input-bordered" bind:value={bookingConfig.salesTaxRate} />
+				</div>
+				<div class="form-control">
+					<label class="label">
+						<span class="label-text">Tourist Tax Rate (%)</span>
+						<span class="label-text-alt text-xs text-base-content/50">e.g. 5 for 5%</span>
+					</label>
+					<input type="number" step="0.001" min="0" class="input input-bordered" bind:value={bookingConfig.touristTaxRate} />
+				</div>
+				<div class="form-control">
+					<label class="label">
+						<span class="label-text">Platform Fee Rate (%)</span>
+						<span class="label-text-alt text-xs text-base-content/50">Applied to total paid</span>
+					</label>
+					<input type="number" step="0.001" min="0" class="input input-bordered" bind:value={bookingConfig.platformFeeRate} />
+				</div>
+			</div>
+
+			<div class="flex justify-end">
+				<button class="btn btn-primary" onclick={saveBookingConfig} disabled={bookingConfigSaving}>
+					{bookingConfigSaving ? 'Saving...' : 'Save Booking Defaults'}
+				</button>
+			</div>
+
+			<div class="divider"></div>
+
+			<h3 class="font-semibold mb-2">Booking Platforms</h3>
+			<p class="text-sm text-base-content/60 mb-4">Configure the platforms that appear in the dropdown when creating a booking.</p>
+
+			<div class="space-y-2 mb-4">
+				{#each bookingPlatforms as platform (platform.id)}
+					<div class="flex items-center justify-between bg-base-200 p-3 rounded-box">
+						{#if editingPlatformId === platform.id}
+							<input type="text" class="input input-bordered input-sm flex-1 mr-2" bind:value={editingPlatformName} />
+							<div class="flex gap-2">
+								<button class="btn btn-sm btn-primary" onclick={saveEditPlatform}>Save</button>
+								<button class="btn btn-sm btn-ghost" onclick={() => { editingPlatformId = null; }}>Cancel</button>
+							</div>
+						{:else}
+							<span class="font-medium">{platform.name}</span>
+							<div class="flex gap-2">
+								<button class="btn btn-sm btn-ghost" onclick={() => startEditPlatform(platform)}>Edit</button>
+								<button class="btn btn-sm btn-ghost text-error" onclick={() => deletePlatform(platform.id)}>Delete</button>
+							</div>
+						{/if}
+					</div>
+				{:else}
+					<p class="text-sm text-base-content/50">No platforms configured.</p>
+				{/each}
+			</div>
+
+			<div class="flex gap-2">
+				<input type="text" class="input input-bordered flex-1" placeholder="New platform name..." bind:value={newPlatformName} onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPlatform(); } }} />
+				<button class="btn btn-primary" onclick={addPlatform} disabled={!newPlatformName.trim()}>+ Add Platform</button>
+			</div>
+		</div>
+	</div>
+	{/if}
 
 	<!-- Backup Section -->
 	<div class="card bg-base-100 shadow-xl mb-6">

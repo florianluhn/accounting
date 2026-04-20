@@ -388,6 +388,67 @@ export const appSettings = sqliteTable('app_settings', {
 });
 
 // ========================================
+// Booking Platforms Table
+// ========================================
+export const bookingPlatforms = sqliteTable(
+	'booking_platforms',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		name: text('name').notNull().unique(),
+		sortOrder: integer('sort_order').notNull().default(0),
+		createdAt: integer('created_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`)
+	},
+	(table) => ({
+		nameIdx: index('idx_booking_platforms_name').on(table.name)
+	})
+);
+
+// ========================================
+// Bookings Table
+// ========================================
+export const bookings = sqliteTable(
+	'bookings',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		customerId: integer('customer_id')
+			.notNull()
+			.references(() => customers.id, { onDelete: 'restrict' }),
+		platformId: integer('platform_id')
+			.notNull()
+			.references(() => bookingPlatforms.id, { onDelete: 'restrict' }),
+		checkInDate: text('check_in_date').notNull(), // ISO date yyyy-mm-dd
+		checkOutDate: text('check_out_date').notNull(),
+		nights: integer('nights').notNull().default(0),
+		totalPaid: real('total_paid').notNull().default(0),
+		netAmount: real('net_amount').notNull().default(0),
+		cleaningFee: real('cleaning_fee').notNull().default(0),
+		salesTax: real('sales_tax').notNull().default(0),
+		touristTax: real('tourist_tax').notNull().default(0),
+		platformFee: real('platform_fee').notNull().default(0),
+		rentalFee: real('rental_fee').notNull().default(0),
+		comment: text('comment'),
+		createdAt: integer('created_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer('updated_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`)
+	},
+	(table) => ({
+		customerIdx: index('idx_bookings_customer').on(table.customerId),
+		platformIdx: index('idx_bookings_platform').on(table.platformId),
+		checkInIdx: index('idx_bookings_check_in').on(table.checkInDate)
+	})
+);
+
+export type BookingPlatform = typeof bookingPlatforms.$inferSelect;
+export type NewBookingPlatform = typeof bookingPlatforms.$inferInsert;
+export type Booking = typeof bookings.$inferSelect;
+export type NewBooking = typeof bookings.$inferInsert;
+
+// ========================================
 // Audit Logs Table
 // ========================================
 export const auditLogs = sqliteTable(
