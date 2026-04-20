@@ -400,6 +400,8 @@ export const bookingPlatforms = sqliteTable(
 		id: integer('id').primaryKey({ autoIncrement: true }),
 		name: text('name').notNull().unique(),
 		sortOrder: integer('sort_order').notNull().default(0),
+		platformFeeRate: real('platform_fee_rate').notNull().default(0),
+		withholdsTaxes: integer('withholds_taxes', { mode: 'boolean' }).notNull().default(false),
 		createdAt: integer('created_at', { mode: 'timestamp' })
 			.notNull()
 			.default(sql`(unixepoch())`)

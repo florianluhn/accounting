@@ -1219,6 +1219,8 @@ export interface BookingPlatform {
 	id: number;
 	name: string;
 	sortOrder: number;
+	platformFeeRate: number;
+	withholdsTaxes: boolean;
 	createdAt?: Date;
 }
 
@@ -1226,7 +1228,6 @@ export interface BookingConfig {
 	cleaningFee: number;
 	salesTaxRate: number;
 	touristTaxRate: number;
-	platformFeeRate: number;
 }
 
 export interface Booking {
@@ -1282,10 +1283,10 @@ export const bookingsAPI = {
 	async listPlatforms(): Promise<BookingPlatform[]> {
 		return apiFetch('/api/bookings/platforms');
 	},
-	async createPlatform(data: { name: string; sortOrder?: number }): Promise<BookingPlatform> {
+	async createPlatform(data: { name: string; sortOrder?: number; platformFeeRate?: number; withholdsTaxes?: boolean }): Promise<BookingPlatform> {
 		return apiFetch('/api/bookings/platforms', { method: 'POST', body: JSON.stringify(data) });
 	},
-	async updatePlatform(id: number, data: { name: string; sortOrder?: number }): Promise<BookingPlatform> {
+	async updatePlatform(id: number, data: { name: string; sortOrder?: number; platformFeeRate?: number; withholdsTaxes?: boolean }): Promise<BookingPlatform> {
 		return apiFetch(`/api/bookings/platforms/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 	},
 	async deletePlatform(id: number): Promise<void> {

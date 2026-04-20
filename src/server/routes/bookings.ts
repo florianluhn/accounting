@@ -24,15 +24,10 @@ const updateBookingSchema = createBookingSchema.partial();
 
 const createPlatformSchema = z.object({
 	name: z.string().min(1).max(100),
-	sortOrder: z.number().int().optional()
+	sortOrder: z.number().int().optional(),
+	platformFeeRate: z.number().min(0).max(100).optional(),
+	withholdsTaxes: z.boolean().optional()
 });
-
-const BOOKING_CONFIG_KEYS = [
-	'booking_cleaning_fee',
-	'booking_sales_tax_rate',
-	'booking_tourist_tax_rate',
-	'booking_platform_fee_rate'
-] as const;
 
 async function getBookingConfig() {
 	const rows = await db.select().from(appSettings);
@@ -41,8 +36,7 @@ async function getBookingConfig() {
 	return {
 		cleaningFee: parseFloat(map.booking_cleaning_fee || '0') || 0,
 		salesTaxRate: parseFloat(map.booking_sales_tax_rate || '0') || 0,
-		touristTaxRate: parseFloat(map.booking_tourist_tax_rate || '0') || 0,
-		platformFeeRate: parseFloat(map.booking_platform_fee_rate || '0') || 0
+		touristTaxRate: parseFloat(map.booking_tourist_tax_rate || '0') || 0
 	};
 }
 
@@ -54,15 +48,14 @@ export default async function bookingsRoutes(fastify: FastifyInstance) {
 		return getBookingConfig();
 	});
 
-	fastify.put<{ Body: Partial<{ cleaningFee: number; salesTaxRate: number; touristTaxRate: number; platformFeeRate: number }> }>(
+	fastify.put<{ Body: Partial<{ cleaningFee: number; salesTaxRate: number; touristTaxRate: number }> }>(
 		'/config',
 		async (request) => {
 			const body = request.body || {};
 			const pairs: Record<string, number | undefined> = {
 				booking_cleaning_fee: body.cleaningFee,
 				booking_sales_tax_rate: body.salesTaxRate,
-				booking_tourist_tax_rate: body.touristTaxRate,
-				booking_platform_fee_rate: body.platformFeeRate
+				booking_tourist_tax_rate: body.touristTaxRate
 			};
 			for (const [key, value] of Object.entries(pairs)) {
 				if (typeof value === 'number' && !isNaN(value)) {

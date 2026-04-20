@@ -26,14 +26,15 @@
 	let bookingConfig = $state<BookingConfig>({
 		cleaningFee: 0,
 		salesTaxRate: 0,
-		touristTaxRate: 0,
-		platformFeeRate: 0
+		touristTaxRate: 0
 	});
 	let bookingConfigSaving = $state(false);
 	let bookingPlatforms = $state<BookingPlatform[]>([]);
 	let newPlatformName = $state('');
 	let editingPlatformId = $state<number | null>(null);
 	let editingPlatformName = $state('');
+	let editingPlatformFeeRate = $state(0);
+	let editingPlatformWithholdsTaxes = $state(false);
 
 	$effect(() => {
 		loadCurrencies();
@@ -77,6 +78,8 @@
 	function startEditPlatform(p: BookingPlatform) {
 		editingPlatformId = p.id;
 		editingPlatformName = p.name;
+		editingPlatformFeeRate = p.platformFeeRate ?? 0;
+		editingPlatformWithholdsTaxes = p.withholdsTaxes ?? false;
 	}
 
 	async function saveEditPlatform() {
@@ -84,9 +87,15 @@
 		const name = editingPlatformName.trim();
 		if (!name) return;
 		try {
-			await bookingsAPI.updatePlatform(editingPlatformId, { name });
+			await bookingsAPI.updatePlatform(editingPlatformId, {
+				name,
+				platformFeeRate: editingPlatformFeeRate,
+				withholdsTaxes: editingPlatformWithholdsTaxes
+			});
 			editingPlatformId = null;
 			editingPlatformName = '';
+			editingPlatformFeeRate = 0;
+			editingPlatformWithholdsTaxes = false;
 			bookingPlatforms = await bookingsAPI.listPlatforms();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to update platform';
@@ -405,13 +414,6 @@
 					</label>
 					<input type="number" step="0.001" min="0" class="input input-bordered" bind:value={bookingConfig.touristTaxRate} />
 				</div>
-				<div class="form-control">
-					<label class="label">
-						<span class="label-text">Platform Fee Rate (%)</span>
-						<span class="label-text-alt text-xs text-base-content/50">Applied to total paid</span>
-					</label>
-					<input type="number" step="0.001" min="0" class="input input-bordered" bind:value={bookingConfig.platformFeeRate} />
-				</div>
 			</div>
 
 			<div class="flex justify-end">
@@ -427,18 +429,44 @@
 
 			<div class="space-y-2 mb-4">
 				{#each bookingPlatforms as platform (platform.id)}
-					<div class="flex items-center justify-between bg-base-200 p-3 rounded-box">
+					<div class="bg-base-200 p-3 rounded-box">
 						{#if editingPlatformId === platform.id}
-							<input type="text" class="input input-bordered input-sm flex-1 mr-2" bind:value={editingPlatformName} />
-							<div class="flex gap-2">
+							<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+								<div class="form-control">
+									<label class="label py-1"><span class="label-text text-xs">Name</span></label>
+									<input type="text" class="input input-bordered input-sm" bind:value={editingPlatformName} />
+								</div>
+								<div class="form-control">
+									<label class="label py-1"><span class="label-text text-xs">Platform Fee Rate (%)</span></label>
+									<input type="number" step="0.001" min="0" class="input input-bordered input-sm" bind:value={editingPlatformFeeRate} />
+								</div>
+								<div class="form-control">
+									<label class="label py-1"><span class="label-text text-xs">Withholds Taxes</span></label>
+									<label class="flex items-center gap-2 h-[2rem]">
+										<input type="checkbox" class="toggle toggle-primary toggle-sm" bind:checked={editingPlatformWithholdsTaxes} />
+										<span class="text-xs text-base-content/60">If on, no taxes are added; customer paid = net</span>
+									</label>
+								</div>
+							</div>
+							<div class="flex gap-2 justify-end">
 								<button class="btn btn-sm btn-primary" onclick={saveEditPlatform}>Save</button>
 								<button class="btn btn-sm btn-ghost" onclick={() => { editingPlatformId = null; }}>Cancel</button>
 							</div>
 						{:else}
-							<span class="font-medium">{platform.name}</span>
-							<div class="flex gap-2">
-								<button class="btn btn-sm btn-ghost" onclick={() => startEditPlatform(platform)}>Edit</button>
-								<button class="btn btn-sm btn-ghost text-error" onclick={() => deletePlatform(platform.id)}>Delete</button>
+							<div class="flex items-center justify-between">
+								<div class="flex-1">
+									<div class="font-medium">{platform.name}</div>
+									<div class="text-xs text-base-content/60 mt-1">
+										Fee: {(platform.platformFeeRate ?? 0).toFixed(3)}%
+										{#if platform.withholdsTaxes}
+											· <span class="badge badge-sm badge-info">Withholds Taxes</span>
+										{/if}
+									</div>
+								</div>
+								<div class="flex gap-2">
+									<button class="btn btn-sm btn-ghost" onclick={() => startEditPlatform(platform)}>Edit</button>
+									<button class="btn btn-sm btn-ghost text-error" onclick={() => deletePlatform(platform.id)}>Delete</button>
+								</div>
 							</div>
 						{/if}
 					</div>

@@ -16,8 +16,7 @@
 	let config = $state<BookingConfig>({
 		cleaningFee: 0,
 		salesTaxRate: 0,
-		touristTaxRate: 0,
-		platformFeeRate: 0
+		touristTaxRate: 0
 	});
 	let loading = $state(true);
 	let error = $state('');
@@ -83,9 +82,16 @@
 		return Math.round(ms / (1000 * 60 * 60 * 24));
 	});
 
+	// Currently-selected platform (drives fee rate + whether taxes are withheld)
+	let selectedPlatform = $derived(platforms.find((p) => p.id === platformId));
+	let platformWithholdsTaxes = $derived(selectedPlatform?.withholdsTaxes ?? false);
+	let platformFeeRate = $derived(selectedPlatform?.platformFeeRate ?? 0);
+
 	// Base used to derive default sales/tourist tax: totalPaid / (1 + sr + tr)
+	// When platform withholds taxes, no taxes are extracted — taxable amount equals totalPaid.
 	let computedTaxBase = $derived.by(() => {
 		const tp = parseFloat(totalPaid) || 0;
+		if (platformWithholdsTaxes) return tp;
 		const sr = (config.salesTaxRate || 0) / 100;
 		const tr = (config.touristTaxRate || 0) / 100;
 		const denom = 1 + sr + tr;
@@ -93,16 +99,20 @@
 		return tp / denom;
 	});
 
-	let computedSalesTax = $derived(computedTaxBase * ((config.salesTaxRate || 0) / 100));
-	let computedTouristTax = $derived(computedTaxBase * ((config.touristTaxRate || 0) / 100));
+	let computedSalesTax = $derived(
+		platformWithholdsTaxes ? 0 : computedTaxBase * ((config.salesTaxRate || 0) / 100)
+	);
+	let computedTouristTax = $derived(
+		platformWithholdsTaxes ? 0 : computedTaxBase * ((config.touristTaxRate || 0) / 100)
+	);
 
 	// Taxable amount (read-only): totalPaid minus the actual sales+tourist tax shown
 	let taxableAmount = $derived(
 		(parseFloat(totalPaid) || 0) - (parseFloat(salesTax) || 0) - (parseFloat(touristTax) || 0)
 	);
 
-	// Platform fee derives from the taxable amount, not totalPaid
-	let computedPlatformFee = $derived(taxableAmount * ((config.platformFeeRate || 0) / 100));
+	// Platform fee derives from the taxable amount, using the platform's own fee rate
+	let computedPlatformFee = $derived(taxableAmount * (platformFeeRate / 100));
 
 	// Rental fee (read-only): totalPaid minus all fees
 	let rentalFee = $derived(
@@ -115,12 +125,21 @@
 
 	let pricePerNight = $derived(nights > 0 ? rentalFee / nights : 0);
 
-	// Sync computed values into displayed inputs when not overridden
+	// Sync computed values into displayed inputs when not overridden.
+	// When the selected platform withholds taxes, force tax fields to 0 regardless of overrides.
 	$effect(() => {
-		if (!salesTaxOverride) salesTax = computedSalesTax.toFixed(2);
+		if (platformWithholdsTaxes) {
+			salesTax = '0.00';
+		} else if (!salesTaxOverride) {
+			salesTax = computedSalesTax.toFixed(2);
+		}
 	});
 	$effect(() => {
-		if (!touristTaxOverride) touristTax = computedTouristTax.toFixed(2);
+		if (platformWithholdsTaxes) {
+			touristTax = '0.00';
+		} else if (!touristTaxOverride) {
+			touristTax = computedTouristTax.toFixed(2);
+		}
 	});
 	$effect(() => {
 		if (!cleaningFeeOverride) cleaningFee = (config.cleaningFee || 0).toFixed(2);
@@ -438,21 +457,27 @@
 
 				<div class="form-control">
 					<label class="label">
-						<span class="label-text">Sales Tax {salesTaxOverride ? '(overridden)' : '(auto)'}</span>
-						{#if salesTaxOverride}
+						<span class="label-text">
+							Sales Tax
+							{#if platformWithholdsTaxes}(withheld by platform){:else}{salesTaxOverride ? '(overridden)' : '(auto)'}{/if}
+						</span>
+						{#if salesTaxOverride && !platformWithholdsTaxes}
 							<button type="button" class="label-text-alt link" onclick={() => { salesTaxOverride = false; }}>Reset</button>
 						{/if}
 					</label>
-					<input type="number" step="0.01" class="input input-bordered" bind:value={salesTax} oninput={() => { salesTaxOverride = true; }} />
+					<input type="number" step="0.01" class="input input-bordered {platformWithholdsTaxes ? 'bg-base-200' : ''}" bind:value={salesTax} oninput={() => { salesTaxOverride = true; }} disabled={platformWithholdsTaxes} />
 				</div>
 				<div class="form-control">
 					<label class="label">
-						<span class="label-text">Tourist Tax {touristTaxOverride ? '(overridden)' : '(auto)'}</span>
-						{#if touristTaxOverride}
+						<span class="label-text">
+							Tourist Tax
+							{#if platformWithholdsTaxes}(withheld by platform){:else}{touristTaxOverride ? '(overridden)' : '(auto)'}{/if}
+						</span>
+						{#if touristTaxOverride && !platformWithholdsTaxes}
 							<button type="button" class="label-text-alt link" onclick={() => { touristTaxOverride = false; }}>Reset</button>
 						{/if}
 					</label>
-					<input type="number" step="0.01" class="input input-bordered" bind:value={touristTax} oninput={() => { touristTaxOverride = true; }} />
+					<input type="number" step="0.01" class="input input-bordered {platformWithholdsTaxes ? 'bg-base-200' : ''}" bind:value={touristTax} oninput={() => { touristTaxOverride = true; }} disabled={platformWithholdsTaxes} />
 				</div>
 
 				<div class="form-control">

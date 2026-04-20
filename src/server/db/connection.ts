@@ -788,6 +788,8 @@ function migrateBookings(): void {
 					id INTEGER PRIMARY KEY AUTOINCREMENT,
 					name TEXT NOT NULL UNIQUE,
 					sort_order INTEGER NOT NULL DEFAULT 0,
+					platform_fee_rate REAL NOT NULL DEFAULT 0,
+					withholds_taxes INTEGER NOT NULL DEFAULT 0,
 					created_at INTEGER NOT NULL DEFAULT (unixepoch())
 				)
 			`);
@@ -797,6 +799,27 @@ function migrateBookings(): void {
 			console.log('✓ booking_platforms table created');
 		} else {
 			console.log('✓ booking_platforms table already exists');
+			// Add new columns if missing
+			const platCols = sqlite.exec('PRAGMA table_info(booking_platforms)');
+			const platColInfo = platCols.length > 0 ? platCols[0].values : [];
+			const hasPlatformFeeRate = platColInfo.some((c: any) => c[1] === 'platform_fee_rate');
+			const hasWithholdsTaxes = platColInfo.some((c: any) => c[1] === 'withholds_taxes');
+			if (!hasPlatformFeeRate) {
+				sqlite.run('ALTER TABLE booking_platforms ADD COLUMN platform_fee_rate REAL NOT NULL DEFAULT 0');
+				// Backfill from legacy global setting if present
+				const legacy = sqlite.exec("SELECT value FROM app_settings WHERE key='booking_platform_fee_rate'");
+				if (legacy.length > 0 && legacy[0].values.length > 0) {
+					const legacyVal = parseFloat(String(legacy[0].values[0][0])) || 0;
+					if (legacyVal > 0) {
+						sqlite.run(`UPDATE booking_platforms SET platform_fee_rate = ${legacyVal}`);
+					}
+				}
+				console.log('✓ Added platform_fee_rate to booking_platforms');
+			}
+			if (!hasWithholdsTaxes) {
+				sqlite.run('ALTER TABLE booking_platforms ADD COLUMN withholds_taxes INTEGER NOT NULL DEFAULT 0');
+				console.log('✓ Added withholds_taxes to booking_platforms');
+			}
 		}
 
 		// bookings table
@@ -846,8 +869,7 @@ function migrateBookings(): void {
 			bookings: 'true',
 			booking_cleaning_fee: '0',
 			booking_sales_tax_rate: '0',
-			booking_tourist_tax_rate: '0',
-			booking_platform_fee_rate: '0'
+			booking_tourist_tax_rate: '0'
 		};
 		for (const [key, value] of Object.entries(defaults)) {
 			sqlite.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('${key}', '${value}')`);
