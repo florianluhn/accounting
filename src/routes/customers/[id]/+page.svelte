@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { customersAPI, type Customer, type CustomerPurchase } from '$lib/api';
+	import { customersAPI, type Customer, type CustomerPurchase, type CustomerBooking } from '$lib/api';
+	import { modules } from '$lib/modules.svelte';
 
 	let customer = $state<Customer | null>(null);
 	let purchases = $state<CustomerPurchase[]>([]);
+	let bookings = $state<CustomerBooking[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 
@@ -33,16 +35,27 @@
 		try {
 			loading = true;
 			error = '';
-			[customer, purchases] = await Promise.all([
+			const [cust, purch, books] = await Promise.all([
 				customersAPI.get(id),
-				customersAPI.getPurchases(id)
+				customersAPI.getPurchases(id),
+				customersAPI.getBookings(id).catch(() => [])
 			]);
+			customer = cust;
+			purchases = purch;
+			bookings = books;
 		} catch (e) {
 			console.error('Error loading customer:', e);
 			error = e instanceof Error ? e.message : 'Failed to load customer';
 		} finally {
 			loading = false;
 		}
+	}
+
+	function formatDateString(d: string): string {
+		if (!d) return '';
+		const parts = d.split('-');
+		if (parts.length !== 3) return d;
+		return `${parts[1]}/${parts[2]}/${parts[0]}`;
 	}
 
 	function formatDate(d: Date | string): string {
@@ -203,6 +216,46 @@
 				</div>
 			</div>
 		</div>
+
+		<!-- Bookings -->
+		{#if modules.bookings && bookings.length > 0}
+			<div class="card bg-base-100 shadow-xl mb-8">
+				<div class="card-body">
+					<div class="flex items-center justify-between mb-4">
+						<h2 class="card-title">Bookings <span class="badge badge-neutral">{bookings.length}</span></h2>
+						<a href="/bookings" class="link link-hover text-sm">All bookings →</a>
+					</div>
+					<div class="overflow-x-auto">
+						<table class="table table-zebra">
+							<thead>
+								<tr>
+									<th>Check-in</th>
+									<th>Check-out</th>
+									<th>Nights</th>
+									<th>Platform</th>
+									<th class="text-right">Total Paid</th>
+									<th class="text-right">Net</th>
+									<th class="text-right">Rental Fee</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each bookings as b (b.id)}
+									<tr>
+										<td>{formatDateString(b.checkInDate)}</td>
+										<td>{formatDateString(b.checkOutDate)}</td>
+										<td>{b.nights}</td>
+										<td>{b.platformName || `#${b.platformId}`}</td>
+										<td class="text-right font-mono">{formatCurrency(b.totalPaid)}</td>
+										<td class="text-right font-mono">{formatCurrency(b.netAmount)}</td>
+										<td class="text-right font-mono">{formatCurrency(b.rentalFee)}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		{/if}
 
 		<!-- Purchases -->
 		{#if purchases.length > 0}

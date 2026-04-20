@@ -356,6 +356,10 @@ export const customersAPI = {
 		return apiFetch(`/api/customers/${id}/purchases`);
 	},
 
+	async getBookings(id: number): Promise<CustomerBooking[]> {
+		return apiFetch(`/api/customers/${id}/bookings`);
+	},
+
 	async downloadCSV(): Promise<void> {
 		const url = `${getApiBaseUrl()}/api/customers/export/csv`;
 		const response = await fetch(url);
@@ -1016,6 +1020,23 @@ export interface CustomerPurchase {
 	inventoryItemId?: number | null;
 	inventoryItemName?: string | null;
 	inventoryItemValue?: number | null;
+}
+
+export interface CustomerBooking {
+	id: number;
+	platformId: number;
+	platformName?: string | null;
+	checkInDate: string;
+	checkOutDate: string;
+	nights: number;
+	totalPaid: number;
+	netAmount: number;
+	cleaningFee: number;
+	salesTax: number;
+	touristTax: number;
+	platformFee: number;
+	rentalFee: number;
+	comment?: string | null;
 }
 
 export interface MaterialAllocation {

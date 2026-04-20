@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
-import { customers, journalEntries, inventoryItems, subledgerAccounts } from '../db/schema.js';
+import { customers, journalEntries, inventoryItems, subledgerAccounts, bookings, bookingPlatforms } from '../db/schema.js';
 import { eq, like, or, desc } from 'drizzle-orm';
 import { logAudit, generateBatchId } from '../services/audit.js';
 import { parse } from 'csv-parse/sync';
@@ -213,6 +213,36 @@ export default async function customersRoutes(fastify: FastifyInstance) {
 			.orderBy(desc(journalEntries.entryDate));
 
 		return purchases;
+	});
+
+	// GET /api/customers/:id/bookings - Get bookings linked to customer
+	fastify.get<{ Params: { id: string } }>('/:id/bookings', async (request, reply) => {
+		const id = parseInt(request.params.id);
+		if (isNaN(id)) return reply.status(400).send({ error: 'Bad Request', message: 'Invalid customer ID' });
+
+		const result = await db
+			.select({
+				id: bookings.id,
+				platformId: bookings.platformId,
+				platformName: bookingPlatforms.name,
+				checkInDate: bookings.checkInDate,
+				checkOutDate: bookings.checkOutDate,
+				nights: bookings.nights,
+				totalPaid: bookings.totalPaid,
+				netAmount: bookings.netAmount,
+				cleaningFee: bookings.cleaningFee,
+				salesTax: bookings.salesTax,
+				touristTax: bookings.touristTax,
+				platformFee: bookings.platformFee,
+				rentalFee: bookings.rentalFee,
+				comment: bookings.comment
+			})
+			.from(bookings)
+			.leftJoin(bookingPlatforms, eq(bookings.platformId, bookingPlatforms.id))
+			.where(eq(bookings.customerId, id))
+			.orderBy(desc(bookings.checkInDate));
+
+		return result;
 	});
 
 	// GET /api/customers/:id - Get single customer
