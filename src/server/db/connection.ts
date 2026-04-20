@@ -892,29 +892,42 @@ function migrateAttachmentsBookings(): void {
 
 		if (!hasBookingId || journalNotNull) {
 			console.log('Migrating attachments table to support bookings...');
-			// Recreate to drop NOT NULL on journal_entry_id and add booking_id
-			sqlite.run(`
-				CREATE TABLE attachments_new (
-					id INTEGER PRIMARY KEY AUTOINCREMENT,
-					journal_entry_id INTEGER REFERENCES journal_entries(id) ON DELETE CASCADE,
-					booking_id INTEGER REFERENCES bookings(id) ON DELETE CASCADE,
-					filename TEXT NOT NULL,
-					stored_filename TEXT NOT NULL,
-					mime_type TEXT NOT NULL,
-					file_size INTEGER NOT NULL,
-					uploaded_at INTEGER NOT NULL DEFAULT (unixepoch())
-				)
-			`);
-			const bookingCol = hasBookingId ? 'booking_id' : 'NULL AS booking_id';
-			sqlite.run(`
-				INSERT INTO attachments_new (id, journal_entry_id, booking_id, filename, stored_filename, mime_type, file_size, uploaded_at)
-				SELECT id, journal_entry_id, ${bookingCol}, filename, stored_filename, mime_type, file_size, uploaded_at FROM attachments
-			`);
-			sqlite.run('DROP TABLE attachments');
-			sqlite.run('ALTER TABLE attachments_new RENAME TO attachments');
-			sqlite.run('CREATE INDEX IF NOT EXISTS idx_attachments_journal ON attachments(journal_entry_id)');
-			sqlite.run('CREATE INDEX IF NOT EXISTS idx_attachments_booking ON attachments(booking_id)');
-			console.log('✓ attachments table migrated to support bookings');
+			// Disable FKs while we copy — orphaned journal_entry_id values from old data
+			// would otherwise fail the FK check on INSERT.
+			sqlite.run('PRAGMA foreign_keys = OFF');
+			try {
+				// Null out journal_entry_id for orphaned attachments so they survive the migration
+				sqlite.run(`
+					UPDATE attachments SET journal_entry_id = NULL
+					WHERE journal_entry_id IS NOT NULL
+					  AND journal_entry_id NOT IN (SELECT id FROM journal_entries)
+				`);
+
+				sqlite.run(`
+					CREATE TABLE attachments_new (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						journal_entry_id INTEGER REFERENCES journal_entries(id) ON DELETE CASCADE,
+						booking_id INTEGER REFERENCES bookings(id) ON DELETE CASCADE,
+						filename TEXT NOT NULL,
+						stored_filename TEXT NOT NULL,
+						mime_type TEXT NOT NULL,
+						file_size INTEGER NOT NULL,
+						uploaded_at INTEGER NOT NULL DEFAULT (unixepoch())
+					)
+				`);
+				const bookingCol = hasBookingId ? 'booking_id' : 'NULL AS booking_id';
+				sqlite.run(`
+					INSERT INTO attachments_new (id, journal_entry_id, booking_id, filename, stored_filename, mime_type, file_size, uploaded_at)
+					SELECT id, journal_entry_id, ${bookingCol}, filename, stored_filename, mime_type, file_size, uploaded_at FROM attachments
+				`);
+				sqlite.run('DROP TABLE attachments');
+				sqlite.run('ALTER TABLE attachments_new RENAME TO attachments');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_attachments_journal ON attachments(journal_entry_id)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_attachments_booking ON attachments(booking_id)');
+				console.log('✓ attachments table migrated to support bookings');
+			} finally {
+				sqlite.run('PRAGMA foreign_keys = ON');
+			}
 		}
 	} catch (error) {
 		console.error('Failed to migrate attachments for bookings:', error);
