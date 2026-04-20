@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
-import { customers, journalEntries, inventoryItems, subledgerAccounts, bookings, bookingPlatforms } from '../db/schema.js';
+import { customers, journalEntries, inventoryItems, subledgerAccounts, glAccounts, bookings, bookingPlatforms } from '../db/schema.js';
 import { eq, like, or, desc } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 import { logAudit, generateBatchId } from '../services/audit.js';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
@@ -195,6 +196,11 @@ export default async function customersRoutes(fastify: FastifyInstance) {
 		const id = parseInt(request.params.id);
 		if (isNaN(id)) return reply.status(400).send({ error: 'Bad Request', message: 'Invalid customer ID' });
 
+		const debitSub = alias(subledgerAccounts, 'debit_sub');
+		const creditSub = alias(subledgerAccounts, 'credit_sub');
+		const debitGl = alias(glAccounts, 'debit_gl');
+		const creditGl = alias(glAccounts, 'credit_gl');
+
 		const purchases = await db
 			.select({
 				journalEntryId: journalEntries.id,
@@ -205,10 +211,16 @@ export default async function customersRoutes(fastify: FastifyInstance) {
 				inventoryLinkType: journalEntries.inventoryLinkType,
 				inventoryItemId: inventoryItems.id,
 				inventoryItemName: inventoryItems.name,
-				inventoryItemValue: inventoryItems.totalValue
+				inventoryItemValue: inventoryItems.totalValue,
+				debitAccountType: debitGl.type,
+				creditAccountType: creditGl.type
 			})
 			.from(journalEntries)
 			.leftJoin(inventoryItems, eq(journalEntries.inventoryItemId, inventoryItems.id))
+			.leftJoin(debitSub, eq(journalEntries.debitAccountId, debitSub.id))
+			.leftJoin(debitGl, eq(debitSub.glAccountId, debitGl.id))
+			.leftJoin(creditSub, eq(journalEntries.creditAccountId, creditSub.id))
+			.leftJoin(creditGl, eq(creditSub.glAccountId, creditGl.id))
 			.where(eq(journalEntries.customerId, id))
 			.orderBy(desc(journalEntries.entryDate));
 

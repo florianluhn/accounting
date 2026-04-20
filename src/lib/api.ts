@@ -1020,6 +1020,8 @@ export interface CustomerPurchase {
 	inventoryItemId?: number | null;
 	inventoryItemName?: string | null;
 	inventoryItemValue?: number | null;
+	debitAccountType?: string | null;
+	creditAccountType?: string | null;
 }
 
 export interface CustomerBooking {

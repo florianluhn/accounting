@@ -58,6 +58,19 @@
 		return `${parts[1]}/${parts[2]}/${parts[0]}`;
 	}
 
+	function isPL(type?: string | null): boolean {
+		return type === 'Profit' || type === 'Loss';
+	}
+
+	let totalRevenue = $derived(
+		purchases.reduce((sum, p) => {
+			let delta = 0;
+			if (isPL(p.creditAccountType)) delta += p.amount;
+			if (isPL(p.debitAccountType)) delta -= p.amount;
+			return sum + delta;
+		}, 0)
+	);
+
 	function formatDate(d: Date | string): string {
 		const date = new Date(d);
 		return date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
@@ -152,7 +165,8 @@
 				</div>
 				<div class="stat bg-base-100 shadow rounded-box">
 					<div class="stat-title">Total Revenue</div>
-					<div class="stat-value text-primary text-2xl">{formatCurrency(purchases.reduce((s, p) => s + p.amount, 0))}</div>
+					<div class="stat-value text-primary text-2xl">{formatCurrency(totalRevenue)}</div>
+					<div class="stat-desc">Net P/L postings</div>
 				</div>
 			</div>
 		{/if}
