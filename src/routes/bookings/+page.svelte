@@ -31,21 +31,17 @@
 	let checkInDate = $state('');
 	let checkOutDate = $state('');
 	let totalPaid = $state('');
-	let netAmount = $state('');
 	let cleaningFee = $state('');
 	let salesTax = $state('');
 	let touristTax = $state('');
 	let platformFee = $state('');
-	let rentalFee = $state('');
 	let comment = $state('');
 
 	// Override flags — when true, field keeps user's typed value
-	let netOverride = $state(false);
 	let salesTaxOverride = $state(false);
 	let touristTaxOverride = $state(false);
 	let cleaningFeeOverride = $state(false);
 	let platformFeeOverride = $state(false);
-	let rentalFeeOverride = $state(false);
 
 	// Attachments for the currently edited booking
 	let existingAttachments = $state<Attachment[]>([]);
@@ -87,40 +83,39 @@
 		return Math.round(ms / (1000 * 60 * 60 * 24));
 	});
 
-	let computedNet = $derived.by(() => {
+	// Base used to derive default sales/tourist tax: totalPaid / (1 + sr + tr)
+	let computedTaxBase = $derived.by(() => {
 		const tp = parseFloat(totalPaid) || 0;
-		const st = (config.salesTaxRate || 0) / 100;
-		const tt = (config.touristTaxRate || 0) / 100;
-		const denom = 1 + st + tt;
+		const sr = (config.salesTaxRate || 0) / 100;
+		const tr = (config.touristTaxRate || 0) / 100;
+		const denom = 1 + sr + tr;
 		if (denom === 0) return 0;
 		return tp / denom;
 	});
 
-	let computedSalesTax = $derived.by(() => {
-		const net = netOverride ? (parseFloat(netAmount) || 0) : computedNet;
-		return net * ((config.salesTaxRate || 0) / 100);
-	});
+	let computedSalesTax = $derived(computedTaxBase * ((config.salesTaxRate || 0) / 100));
+	let computedTouristTax = $derived(computedTaxBase * ((config.touristTaxRate || 0) / 100));
 
-	let computedTouristTax = $derived.by(() => {
-		const net = netOverride ? (parseFloat(netAmount) || 0) : computedNet;
-		return net * ((config.touristTaxRate || 0) / 100);
-	});
+	// Taxable amount (read-only): totalPaid minus the actual sales+tourist tax shown
+	let taxableAmount = $derived(
+		(parseFloat(totalPaid) || 0) - (parseFloat(salesTax) || 0) - (parseFloat(touristTax) || 0)
+	);
 
-	let computedPlatformFee = $derived.by(() => {
-		const tp = parseFloat(totalPaid) || 0;
-		return tp * ((config.platformFeeRate || 0) / 100);
-	});
+	// Platform fee derives from the taxable amount, not totalPaid
+	let computedPlatformFee = $derived(taxableAmount * ((config.platformFeeRate || 0) / 100));
 
-	let computedRentalFee = $derived.by(() => {
-		const net = netOverride ? (parseFloat(netAmount) || 0) : computedNet;
-		const cf = cleaningFeeOverride ? (parseFloat(cleaningFee) || 0) : config.cleaningFee;
-		return net - cf;
-	});
+	// Rental fee (read-only): totalPaid minus all fees
+	let rentalFee = $derived(
+		(parseFloat(totalPaid) || 0)
+			- (parseFloat(cleaningFee) || 0)
+			- (parseFloat(salesTax) || 0)
+			- (parseFloat(touristTax) || 0)
+			- (parseFloat(platformFee) || 0)
+	);
+
+	let pricePerNight = $derived(nights > 0 ? rentalFee / nights : 0);
 
 	// Sync computed values into displayed inputs when not overridden
-	$effect(() => {
-		if (!netOverride) netAmount = computedNet.toFixed(2);
-	});
 	$effect(() => {
 		if (!salesTaxOverride) salesTax = computedSalesTax.toFixed(2);
 	});
@@ -133,9 +128,6 @@
 	$effect(() => {
 		if (!platformFeeOverride) platformFee = computedPlatformFee.toFixed(2);
 	});
-	$effect(() => {
-		if (!rentalFeeOverride) rentalFee = computedRentalFee.toFixed(2);
-	});
 
 	function resetForm() {
 		customerId = 0;
@@ -145,12 +137,10 @@
 		checkOutDate = today;
 		totalPaid = '';
 		comment = '';
-		netOverride = false;
 		salesTaxOverride = false;
 		touristTaxOverride = false;
 		cleaningFeeOverride = false;
 		platformFeeOverride = false;
-		rentalFeeOverride = false;
 		existingAttachments = [];
 		selectedFiles = [];
 	}
@@ -212,20 +202,16 @@
 		checkInDate = b.checkInDate;
 		checkOutDate = b.checkOutDate;
 		totalPaid = b.totalPaid.toFixed(2);
-		netAmount = b.netAmount.toFixed(2);
 		cleaningFee = b.cleaningFee.toFixed(2);
 		salesTax = b.salesTax.toFixed(2);
 		touristTax = b.touristTax.toFixed(2);
 		platformFee = b.platformFee.toFixed(2);
-		rentalFee = b.rentalFee.toFixed(2);
 		comment = b.comment || '';
 		// Treat stored values as overrides so editing doesn't clobber saved numbers
-		netOverride = true;
 		salesTaxOverride = true;
 		touristTaxOverride = true;
 		cleaningFeeOverride = true;
 		platformFeeOverride = true;
-		rentalFeeOverride = true;
 		selectedFiles = [];
 		existingAttachments = [];
 		loadAttachments(b.id);
@@ -251,12 +237,12 @@
 				checkOutDate,
 				nights,
 				totalPaid: parseFloat(totalPaid) || 0,
-				netAmount: parseFloat(netAmount) || 0,
+				netAmount: taxableAmount,
 				cleaningFee: parseFloat(cleaningFee) || 0,
 				salesTax: parseFloat(salesTax) || 0,
 				touristTax: parseFloat(touristTax) || 0,
 				platformFee: parseFloat(platformFee) || 0,
-				rentalFee: parseFloat(rentalFee) || 0,
+				rentalFee,
 				comment: comment || null
 			};
 
@@ -355,8 +341,9 @@
 								<th>Check-out</th>
 								<th>Nights</th>
 								<th>Total Paid</th>
-								<th>Net</th>
+								<th>Taxable</th>
 								<th>Rental Fee</th>
+								<th>Price/Night</th>
 								<th>Actions</th>
 							</tr>
 						</thead>
@@ -371,6 +358,7 @@
 									<td class="font-mono">{formatMoney(b.totalPaid)}</td>
 									<td class="font-mono">{formatMoney(b.netAmount)}</td>
 									<td class="font-mono">{formatMoney(b.rentalFee)}</td>
+									<td class="font-mono">{b.nights > 0 ? formatMoney(b.rentalFee / b.nights) : '-'}</td>
 									<td>
 										<div class="flex gap-2">
 											<button class="btn btn-sm btn-ghost" onclick={() => openEdit(b)}>Edit</button>
@@ -434,12 +422,9 @@
 
 				<div class="form-control">
 					<label class="label">
-						<span class="label-text">Net Amount {netOverride ? '(overridden)' : '(auto)'}</span>
-						{#if netOverride}
-							<button type="button" class="label-text-alt link" onclick={() => { netOverride = false; }}>Reset</button>
-						{/if}
+						<span class="label-text">Taxable Amount (auto)</span>
 					</label>
-					<input type="number" step="0.01" class="input input-bordered" bind:value={netAmount} oninput={() => { netOverride = true; }} />
+					<input type="text" class="input input-bordered bg-base-200" value={taxableAmount.toFixed(2)} disabled readonly />
 				</div>
 				<div class="form-control">
 					<label class="label">
@@ -481,12 +466,9 @@
 				</div>
 				<div class="form-control">
 					<label class="label">
-						<span class="label-text">Rental Fee {rentalFeeOverride ? '(overridden)' : '(auto)'}</span>
-						{#if rentalFeeOverride}
-							<button type="button" class="label-text-alt link" onclick={() => { rentalFeeOverride = false; }}>Reset</button>
-						{/if}
+						<span class="label-text">Rental Fee (auto)</span>
 					</label>
-					<input type="number" step="0.01" class="input input-bordered" bind:value={rentalFee} oninput={() => { rentalFeeOverride = true; }} />
+					<input type="text" class="input input-bordered bg-base-200" value={rentalFee.toFixed(2)} disabled readonly />
 				</div>
 
 				<div class="form-control col-span-2">
