@@ -896,13 +896,6 @@ function migrateAttachmentsBookings(): void {
 			// would otherwise fail the FK check on INSERT.
 			sqlite.run('PRAGMA foreign_keys = OFF');
 			try {
-				// Null out journal_entry_id for orphaned attachments so they survive the migration
-				sqlite.run(`
-					UPDATE attachments SET journal_entry_id = NULL
-					WHERE journal_entry_id IS NOT NULL
-					  AND journal_entry_id NOT IN (SELECT id FROM journal_entries)
-				`);
-
 				sqlite.run(`
 					CREATE TABLE attachments_new (
 						id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -915,10 +908,15 @@ function migrateAttachmentsBookings(): void {
 						uploaded_at INTEGER NOT NULL DEFAULT (unixepoch())
 					)
 				`);
-				const bookingCol = hasBookingId ? 'booking_id' : 'NULL AS booking_id';
+				const bookingCol = hasBookingId ? 'booking_id' : 'NULL';
+				// Replace orphaned journal_entry_id values with NULL so the new (FK-enforced) table is consistent
 				sqlite.run(`
 					INSERT INTO attachments_new (id, journal_entry_id, booking_id, filename, stored_filename, mime_type, file_size, uploaded_at)
-					SELECT id, journal_entry_id, ${bookingCol}, filename, stored_filename, mime_type, file_size, uploaded_at FROM attachments
+					SELECT id,
+					       CASE WHEN journal_entry_id IN (SELECT id FROM journal_entries) THEN journal_entry_id ELSE NULL END,
+					       ${bookingCol},
+					       filename, stored_filename, mime_type, file_size, uploaded_at
+					FROM attachments
 				`);
 				sqlite.run('DROP TABLE attachments');
 				sqlite.run('ALTER TABLE attachments_new RENAME TO attachments');
