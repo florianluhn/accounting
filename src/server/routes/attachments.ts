@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
-import { attachments, journalEntries } from '../db/schema.js';
+import { attachments, journalEntries, bookings } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { join } from 'path';
 import { mkdir, writeFile, unlink, readFile, stat } from 'fs/promises';
@@ -12,7 +12,7 @@ import { logAudit } from '../services/audit.js';
 
 export default async function attachmentsRoutes(fastify: FastifyInstance) {
 	// GET /api/attachments - List all attachments
-	fastify.get<{ Querystring: { journalEntryId?: string } }>(
+	fastify.get<{ Querystring: { journalEntryId?: string; bookingId?: string } }>(
 		'/',
 		async (request, reply) => {
 			let query = db.select().from(attachments);
@@ -22,6 +22,11 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 				const journalEntryId = parseInt(request.query.journalEntryId);
 				if (!isNaN(journalEntryId)) {
 					query = query.where(eq(attachments.journalEntryId, journalEntryId)) as any;
+				}
+			} else if (request.query.bookingId) {
+				const bookingId = parseInt(request.query.bookingId);
+				if (!isNaN(bookingId)) {
+					query = query.where(eq(attachments.bookingId, bookingId)) as any;
 				}
 			}
 
@@ -105,31 +110,67 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 		}
 	});
 
-	// POST /api/attachments - Upload attachment
-	fastify.post<{ Querystring: { journalEntryId: string } }>(
+	// POST /api/attachments - Upload attachment (for journal entry or booking)
+	fastify.post<{ Querystring: { journalEntryId?: string; bookingId?: string } }>(
 		'/',
 		async (request, reply) => {
-			const journalEntryId = parseInt(request.query.journalEntryId);
+			const journalEntryId = request.query.journalEntryId
+				? parseInt(request.query.journalEntryId)
+				: null;
+			const bookingId = request.query.bookingId ? parseInt(request.query.bookingId) : null;
 
-			if (isNaN(journalEntryId)) {
+			if (!journalEntryId && !bookingId) {
 				return reply.status(400).send({
 					error: 'Bad Request',
-					message: 'Invalid journal entry ID'
+					message: 'Either journalEntryId or bookingId must be provided'
+				});
+			}
+			if (journalEntryId && bookingId) {
+				return reply.status(400).send({
+					error: 'Bad Request',
+					message: 'Provide either journalEntryId or bookingId, not both'
 				});
 			}
 
-			// Check if journal entry exists
-			const journalEntry = await db
-				.select()
-				.from(journalEntries)
-				.where(eq(journalEntries.id, journalEntryId))
-				.limit(1);
-
-			if (journalEntry.length === 0) {
-				return reply.status(404).send({
-					error: 'Not Found',
-					message: `Journal entry ${journalEntryId} not found`
-				});
+			let ownerPrefix: string;
+			if (journalEntryId) {
+				if (isNaN(journalEntryId)) {
+					return reply.status(400).send({
+						error: 'Bad Request',
+						message: 'Invalid journal entry ID'
+					});
+				}
+				const journalEntry = await db
+					.select()
+					.from(journalEntries)
+					.where(eq(journalEntries.id, journalEntryId))
+					.limit(1);
+				if (journalEntry.length === 0) {
+					return reply.status(404).send({
+						error: 'Not Found',
+						message: `Journal entry ${journalEntryId} not found`
+					});
+				}
+				ownerPrefix = `j${journalEntryId}`;
+			} else {
+				if (isNaN(bookingId!)) {
+					return reply.status(400).send({
+						error: 'Bad Request',
+						message: 'Invalid booking ID'
+					});
+				}
+				const booking = await db
+					.select()
+					.from(bookings)
+					.where(eq(bookings.id, bookingId!))
+					.limit(1);
+				if (booking.length === 0) {
+					return reply.status(404).send({
+						error: 'Not Found',
+						message: `Booking ${bookingId} not found`
+					});
+				}
+				ownerPrefix = `b${bookingId}`;
 			}
 
 			// Get uploaded file
@@ -152,7 +193,7 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 				});
 			}
 
-			// Generate storage path: data/attachments/{year}/{month}/{journalId}_{uuid}.{ext}
+			// Generate storage path: data/attachments/{year}/{month}/{ownerPrefix}_{uuid}.{ext}
 			const uploadDate = new Date();
 			const year = uploadDate.getFullYear();
 			const month = String(uploadDate.getMonth() + 1).padStart(2, '0');
@@ -161,7 +202,7 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 			// Extract file extension
 			const originalFilename = data.filename;
 			const ext = originalFilename.split('.').pop() || 'bin';
-			const storedFilename = `${year}/${month}/${journalEntryId}_${uuid}.${ext}`;
+			const storedFilename = `${year}/${month}/${ownerPrefix}_${uuid}.${ext}`;
 
 			// Create directory structure
 			const dirPath = join(process.cwd(), CONFIG.ATTACHMENTS_PATH, year.toString(), month);
@@ -176,6 +217,7 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 				.insert(attachments)
 				.values({
 					journalEntryId,
+					bookingId,
 					filename: originalFilename,
 					storedFilename,
 					mimeType: data.mimetype,

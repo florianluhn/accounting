@@ -175,6 +175,8 @@ export const customers = sqliteTable(
 		state: text('state'),
 		zipCode: text('zip_code'),
 		city: text('city'),
+		street: text('street'),
+		streetNumber: text('street_number'),
 		contactMethod: text('contact_method'),
 		comment: text('comment'),
 		createdAt: integer('created_at', { mode: 'timestamp' })
@@ -199,9 +201,10 @@ export const attachments = sqliteTable(
 	'attachments',
 	{
 		id: integer('id').primaryKey({ autoIncrement: true }),
-		journalEntryId: integer('journal_entry_id')
-			.notNull()
-			.references(() => journalEntries.id, { onDelete: 'cascade' }),
+		journalEntryId: integer('journal_entry_id').references(() => journalEntries.id, {
+			onDelete: 'cascade'
+		}),
+		bookingId: integer('booking_id').references(() => bookings.id, { onDelete: 'cascade' }),
 		filename: text('filename').notNull(), // Original filename
 		storedFilename: text('stored_filename').notNull(), // UUID-based storage name
 		mimeType: text('mime_type').notNull(),
@@ -211,7 +214,8 @@ export const attachments = sqliteTable(
 			.default(sql`(unixepoch())`)
 	},
 	(table) => ({
-		journalEntryIdx: index('idx_attachments_journal').on(table.journalEntryId)
+		journalEntryIdx: index('idx_attachments_journal').on(table.journalEntryId),
+		bookingIdx: index('idx_attachments_booking').on(table.bookingId)
 	})
 );
 

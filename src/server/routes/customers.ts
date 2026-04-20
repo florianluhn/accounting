@@ -18,6 +18,8 @@ const createCustomerSchema = z.object({
 	state: z.string().max(100).optional(),
 	zipCode: z.string().max(20).optional(),
 	city: z.string().max(100).optional(),
+	street: z.string().max(200).optional(),
+	streetNumber: z.string().max(20).optional(),
 	contactMethod: z.string().max(50).optional(),
 	comment: z.string().max(1000).optional()
 });
@@ -31,6 +33,8 @@ const updateCustomerSchema = z.object({
 	state: z.string().max(100).optional(),
 	zipCode: z.string().max(20).optional(),
 	city: z.string().max(100).optional(),
+	street: z.string().max(200).optional(),
+	streetNumber: z.string().max(20).optional(),
 	contactMethod: z.string().max(50).optional(),
 	comment: z.string().max(1000).optional()
 });
@@ -71,13 +75,15 @@ export default async function customersRoutes(fastify: FastifyInstance) {
 			State: c.state || '',
 			'ZIP Code': c.zipCode || '',
 			City: c.city || '',
+			Street: c.street || '',
+			'Street Number': c.streetNumber || '',
 			'Contact Method': c.contactMethod || '',
 			Comment: c.comment || ''
 		}));
 
 		const csv = stringify(csvData, {
 			header: true,
-			columns: ['First Name', 'Last Name', 'Email', 'Phone', 'Country', 'State', 'ZIP Code', 'City', 'Contact Method', 'Comment']
+			columns: ['First Name', 'Last Name', 'Email', 'Phone', 'Country', 'State', 'ZIP Code', 'City', 'Street', 'Street Number', 'Contact Method', 'Comment']
 		});
 
 		reply.header('Content-Type', 'text/csv');
@@ -128,6 +134,8 @@ export default async function customersRoutes(fastify: FastifyInstance) {
 			state: string | null;
 			zipCode: string | null;
 			city: string | null;
+			street: string | null;
+			streetNumber: string | null;
 			contactMethod: string | null;
 			comment: string | null;
 		}> = [];
@@ -151,6 +159,8 @@ export default async function customersRoutes(fastify: FastifyInstance) {
 					state: record.State?.trim() || null,
 					zipCode: record['ZIP Code']?.trim() || null,
 					city: record.City?.trim() || null,
+					street: record.Street?.trim() || null,
+					streetNumber: record['Street Number']?.trim() || null,
 					contactMethod: record['Contact Method']?.trim() || null,
 					comment: record.Comment?.trim() || null
 				});

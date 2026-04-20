@@ -471,6 +471,8 @@ function migrateCustomers(): void {
 					state TEXT,
 					zip_code TEXT,
 					city TEXT,
+					street TEXT,
+					street_number TEXT,
 					contact_method TEXT,
 					comment TEXT,
 					created_at INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -492,6 +494,20 @@ function migrateCustomers(): void {
 			console.log('✓ customers table created successfully');
 		} else {
 			console.log('✓ customers table already exists');
+		}
+
+		// Add street / street_number columns if missing (for existing databases)
+		const custCols = sqlite.exec('PRAGMA table_info(customers)');
+		if (custCols.length > 0) {
+			const colNames = custCols[0].values.map((c: any) => c[1]);
+			if (!colNames.includes('street')) {
+				sqlite.run('ALTER TABLE customers ADD COLUMN street TEXT');
+				console.log('✓ Added street to customers');
+			}
+			if (!colNames.includes('street_number')) {
+				sqlite.run('ALTER TABLE customers ADD COLUMN street_number TEXT');
+				console.log('✓ Added street_number to customers');
+			}
 		}
 
 		// Update audit_logs CHECK constraint to include 'customer'
@@ -843,6 +859,69 @@ function migrateBookings(): void {
 	}
 }
 
+function migrateAttachmentsBookings(): void {
+	try {
+		const attachCheck = sqlite.exec(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name='attachments'"
+		);
+		if (attachCheck.length === 0 || attachCheck[0].values.length === 0) {
+			// Table doesn't exist yet — create with new schema
+			sqlite.run(`
+				CREATE TABLE IF NOT EXISTS attachments (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					journal_entry_id INTEGER REFERENCES journal_entries(id) ON DELETE CASCADE,
+					booking_id INTEGER REFERENCES bookings(id) ON DELETE CASCADE,
+					filename TEXT NOT NULL,
+					stored_filename TEXT NOT NULL,
+					mime_type TEXT NOT NULL,
+					file_size INTEGER NOT NULL,
+					uploaded_at INTEGER NOT NULL DEFAULT (unixepoch())
+				)
+			`);
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_attachments_journal ON attachments(journal_entry_id)');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_attachments_booking ON attachments(booking_id)');
+			console.log('✓ attachments table created with booking support');
+			return;
+		}
+
+		const cols = sqlite.exec('PRAGMA table_info(attachments)');
+		const colInfo = cols.length > 0 ? cols[0].values : [];
+		const hasBookingId = colInfo.some((c: any) => c[1] === 'booking_id');
+		const journalCol = colInfo.find((c: any) => c[1] === 'journal_entry_id');
+		const journalNotNull = journalCol ? journalCol[3] === 1 : false;
+
+		if (!hasBookingId || journalNotNull) {
+			console.log('Migrating attachments table to support bookings...');
+			// Recreate to drop NOT NULL on journal_entry_id and add booking_id
+			sqlite.run(`
+				CREATE TABLE attachments_new (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					journal_entry_id INTEGER REFERENCES journal_entries(id) ON DELETE CASCADE,
+					booking_id INTEGER REFERENCES bookings(id) ON DELETE CASCADE,
+					filename TEXT NOT NULL,
+					stored_filename TEXT NOT NULL,
+					mime_type TEXT NOT NULL,
+					file_size INTEGER NOT NULL,
+					uploaded_at INTEGER NOT NULL DEFAULT (unixepoch())
+				)
+			`);
+			const bookingCol = hasBookingId ? 'booking_id' : 'NULL AS booking_id';
+			sqlite.run(`
+				INSERT INTO attachments_new (id, journal_entry_id, booking_id, filename, stored_filename, mime_type, file_size, uploaded_at)
+				SELECT id, journal_entry_id, ${bookingCol}, filename, stored_filename, mime_type, file_size, uploaded_at FROM attachments
+			`);
+			sqlite.run('DROP TABLE attachments');
+			sqlite.run('ALTER TABLE attachments_new RENAME TO attachments');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_attachments_journal ON attachments(journal_entry_id)');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_attachments_booking ON attachments(booking_id)');
+			console.log('✓ attachments table migrated to support bookings');
+		}
+	} catch (error) {
+		console.error('Failed to migrate attachments for bookings:', error);
+		throw error;
+	}
+}
+
 function migrateAppSettings(): void {
 	try {
 		sqlite.run(`
@@ -887,6 +966,7 @@ migrateJournalEntryItemLink();
 migrateInventoryItemQuantity();
 migrateAppSettings();
 migrateBookings();
+migrateAttachmentsBookings();
 
 export { sqlite };
 export default db;

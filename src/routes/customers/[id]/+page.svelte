@@ -20,6 +20,8 @@
 		state: '',
 		zipCode: '',
 		city: '',
+		street: '',
+		streetNumber: '',
 		contactMethod: '',
 		comment: ''
 	});
@@ -91,6 +93,8 @@
 			state: customer.state || '',
 			zipCode: customer.zipCode || '',
 			city: customer.city || '',
+			street: customer.street || '',
+			streetNumber: customer.streetNumber || '',
 			contactMethod: customer.contactMethod || '',
 			comment: customer.comment || ''
 		};
@@ -114,6 +118,8 @@
 				state: formData.state || undefined,
 				zipCode: formData.zipCode || undefined,
 				city: formData.city || undefined,
+				street: formData.street || undefined,
+				streetNumber: formData.streetNumber || undefined,
 				contactMethod: formData.contactMethod || undefined,
 				comment: formData.comment || undefined
 			};
@@ -212,6 +218,18 @@
 							<p>{customer.city}</p>
 						</div>
 					{/if}
+					{#if customer.street}
+						<div>
+							<span class="font-semibold text-base-content/70">Street</span>
+							<p>{customer.street}</p>
+						</div>
+					{/if}
+					{#if customer.streetNumber}
+						<div>
+							<span class="font-semibold text-base-content/70">Street Number</span>
+							<p>{customer.streetNumber}</p>
+						</div>
+					{/if}
 					{#if customer.contactMethod}
 						<div>
 							<span class="font-semibold text-base-content/70">Contact Method</span>
@@ -224,7 +242,7 @@
 							<p class="whitespace-pre-line">{customer.comment}</p>
 						</div>
 					{/if}
-					{#if !customer.email && !customer.phone && !customer.country && !customer.state && !customer.zipCode && !customer.city && !customer.contactMethod && !customer.comment}
+					{#if !customer.email && !customer.phone && !customer.country && !customer.state && !customer.zipCode && !customer.city && !customer.street && !customer.streetNumber && !customer.contactMethod && !customer.comment}
 						<p class="text-base-content/50 col-span-full">No additional details provided.</p>
 					{/if}
 				</div>
@@ -419,6 +437,28 @@
 							type="text"
 							class="input input-bordered"
 							bind:value={formData.city}
+						/>
+					</div>
+
+					<div class="form-control">
+						<label class="label">
+							<span class="label-text">Street (Optional)</span>
+						</label>
+						<input
+							type="text"
+							class="input input-bordered"
+							bind:value={formData.street}
+						/>
+					</div>
+
+					<div class="form-control">
+						<label class="label">
+							<span class="label-text">Street Number (Optional)</span>
+						</label>
+						<input
+							type="text"
+							class="input input-bordered"
+							bind:value={formData.streetNumber}
 						/>
 					</div>
 

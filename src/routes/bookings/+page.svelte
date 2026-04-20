@@ -2,10 +2,12 @@
 	import {
 		bookingsAPI,
 		customersAPI,
+		attachmentsAPI,
 		type Booking,
 		type BookingPlatform,
 		type BookingConfig,
-		type Customer
+		type Customer,
+		type Attachment
 	} from '$lib/api';
 
 	let bookings = $state<Booking[]>([]);
@@ -44,6 +46,11 @@
 	let cleaningFeeOverride = $state(false);
 	let platformFeeOverride = $state(false);
 	let rentalFeeOverride = $state(false);
+
+	// Attachments for the currently edited booking
+	let existingAttachments = $state<Attachment[]>([]);
+	let selectedFiles = $state<File[]>([]);
+	let uploadingFiles = $state(false);
 
 	$effect(() => {
 		loadAll();
@@ -144,6 +151,44 @@
 		cleaningFeeOverride = false;
 		platformFeeOverride = false;
 		rentalFeeOverride = false;
+		existingAttachments = [];
+		selectedFiles = [];
+	}
+
+	function handleFileSelect(event: Event) {
+		const input = event.target as HTMLInputElement;
+		if (input.files) {
+			selectedFiles = [...selectedFiles, ...Array.from(input.files)];
+			input.value = '';
+		}
+	}
+
+	function removeFile(index: number) {
+		selectedFiles = selectedFiles.filter((_, i) => i !== index);
+	}
+
+	function formatFileSize(bytes: number): string {
+		if (bytes < 1024) return bytes + ' B';
+		if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+		return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+	}
+
+	async function loadAttachments(bookingId: number) {
+		try {
+			existingAttachments = await attachmentsAPI.list({ bookingId });
+		} catch {
+			existingAttachments = [];
+		}
+	}
+
+	async function handleDeleteAttachment(attachmentId: number) {
+		if (!confirm('Delete this attachment?')) return;
+		try {
+			await attachmentsAPI.delete(attachmentId);
+			if (editingBooking) await loadAttachments(editingBooking.id);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to delete attachment';
+		}
 	}
 
 	function openCreate() {
@@ -181,6 +226,9 @@
 		cleaningFeeOverride = true;
 		platformFeeOverride = true;
 		rentalFeeOverride = true;
+		selectedFiles = [];
+		existingAttachments = [];
+		loadAttachments(b.id);
 		showModal = true;
 	}
 
@@ -212,11 +260,30 @@
 				comment: comment || null
 			};
 
+			let bookingId: number;
 			if (editingBooking) {
-				await bookingsAPI.update(editingBooking.id, payload);
+				const updated = await bookingsAPI.update(editingBooking.id, payload);
+				bookingId = updated.id;
 			} else {
-				await bookingsAPI.create(payload);
+				const created = await bookingsAPI.create(payload);
+				bookingId = created.id;
 			}
+
+			// Upload any newly selected files to this booking
+			if (selectedFiles.length > 0) {
+				uploadingFiles = true;
+				try {
+					await Promise.all(
+						selectedFiles.map((file) => attachmentsAPI.uploadToBooking(bookingId, file))
+					);
+				} catch (uploadError) {
+					error = uploadError instanceof Error ? uploadError.message : 'Failed to upload attachments';
+					return;
+				} finally {
+					uploadingFiles = false;
+				}
+			}
+
 			closeModal();
 			await loadAll();
 		} catch (e) {
@@ -426,11 +493,94 @@
 					<label class="label"><span class="label-text">Comment</span></label>
 					<textarea class="textarea textarea-bordered" rows="2" bind:value={comment}></textarea>
 				</div>
+
+				<div class="form-control col-span-2">
+					<label class="label">
+						<span class="label-text">Attachments (rental contracts, receipts, etc.)</span>
+					</label>
+					<input
+						type="file"
+						class="file-input file-input-bordered w-full"
+						multiple
+						onchange={handleFileSelect}
+					/>
+					<label class="label">
+						<span class="label-text-alt">Upload documents (max 10MB per file)</span>
+					</label>
+
+					{#if existingAttachments.length > 0}
+						<div class="mt-2 space-y-2">
+							<div class="text-sm font-semibold">Existing:</div>
+							{#each existingAttachments as att (att.id)}
+								<div class="flex items-center justify-between bg-base-200 p-2 rounded">
+									<div class="flex items-center gap-2 min-w-0">
+										<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+										</svg>
+										<a
+											href={attachmentsAPI.getDownloadUrl(att.id)}
+											target="_blank"
+											rel="noopener"
+											class="text-sm link link-primary truncate"
+										>
+											{att.filename}
+										</a>
+										<span class="text-xs text-base-content/60 flex-shrink-0">({formatFileSize(att.fileSize)})</span>
+									</div>
+									<button
+										type="button"
+										class="btn btn-ghost btn-sm btn-circle text-error"
+										onclick={() => handleDeleteAttachment(att.id)}
+										aria-label="Delete attachment"
+									>
+										<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+										</svg>
+									</button>
+								</div>
+							{/each}
+						</div>
+					{/if}
+
+					{#if selectedFiles.length > 0}
+						<div class="mt-2 space-y-2">
+							<div class="text-sm font-semibold">To upload:</div>
+							{#each selectedFiles as file, index}
+								<div class="flex items-center justify-between bg-base-200 p-2 rounded">
+									<div class="flex items-center gap-2 min-w-0">
+										<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+										</svg>
+										<span class="text-sm truncate">{file.name}</span>
+										<span class="text-xs text-base-content/60 flex-shrink-0">({formatFileSize(file.size)})</span>
+									</div>
+									<button
+										type="button"
+										class="btn btn-ghost btn-sm btn-circle"
+										onclick={() => removeFile(index)}
+										aria-label="Remove file"
+									>
+										<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+										</svg>
+									</button>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
 			</div>
 
 			<div class="modal-action">
 				<button type="button" class="btn" onclick={closeModal}>Cancel</button>
-				<button type="submit" class="btn btn-primary">{editingBooking ? 'Save Changes' : 'Create Booking'}</button>
+				<button type="submit" class="btn btn-primary" disabled={uploadingFiles}>
+					{#if uploadingFiles}
+						<span class="loading loading-spinner loading-sm"></span>
+						Uploading...
+					{:else}
+						{editingBooking ? 'Save Changes' : 'Create Booking'}
+					{/if}
+				</button>
 			</div>
 		</form>
 	</div>

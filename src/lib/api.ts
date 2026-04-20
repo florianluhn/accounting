@@ -313,6 +313,8 @@ export interface Customer {
 	state?: string | null;
 	zipCode?: string | null;
 	city?: string | null;
+	street?: string | null;
+	streetNumber?: string | null;
 	contactMethod?: string | null;
 	comment?: string | null;
 	createdAt: Date;
@@ -549,7 +551,8 @@ export const journalEntriesAPI = {
 // ========================================
 export interface Attachment {
 	id: number;
-	journalEntryId: number;
+	journalEntryId: number | null;
+	bookingId: number | null;
 	filename: string;
 	storedFilename: string;
 	mimeType: string;
@@ -558,9 +561,10 @@ export interface Attachment {
 }
 
 export const attachmentsAPI = {
-	async list(params?: { journalEntryId?: number }): Promise<Attachment[]> {
+	async list(params?: { journalEntryId?: number; bookingId?: number }): Promise<Attachment[]> {
 		const query = new URLSearchParams();
 		if (params?.journalEntryId) query.set('journalEntryId', String(params.journalEntryId));
+		if (params?.bookingId) query.set('bookingId', String(params.bookingId));
 
 		const queryString = query.toString();
 		return apiFetch(`/api/attachments${queryString ? `?${queryString}` : ''}`);
@@ -576,6 +580,29 @@ export const attachmentsAPI = {
 
 		const response = await fetch(
 			`${getApiBaseUrl()}/api/attachments?journalEntryId=${journalEntryId}`,
+			{
+				method: 'POST',
+				body: formData
+			}
+		);
+
+		if (!response.ok) {
+			const error = await response.json().catch(() => ({
+				error: 'Unknown Error',
+				message: response.statusText
+			}));
+			throw new Error(error.message || `HTTP ${response.status}`);
+		}
+
+		return response.json();
+	},
+
+	async uploadToBooking(bookingId: number, file: File): Promise<Attachment> {
+		const formData = new FormData();
+		formData.append('file', file);
+
+		const response = await fetch(
+			`${getApiBaseUrl()}/api/attachments?bookingId=${bookingId}`,
 			{
 				method: 'POST',
 				body: formData

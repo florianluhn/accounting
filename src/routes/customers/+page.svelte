@@ -20,6 +20,8 @@
 		state: '',
 		zipCode: '',
 		city: '',
+		street: '',
+		streetNumber: '',
 		contactMethod: '',
 		comment: ''
 	});
@@ -51,6 +53,8 @@
 			state: '',
 			zipCode: '',
 			city: '',
+			street: '',
+			streetNumber: '',
 			contactMethod: '',
 			comment: ''
 		};
@@ -68,6 +72,8 @@
 			state: customer.state || '',
 			zipCode: customer.zipCode || '',
 			city: customer.city || '',
+			street: customer.street || '',
+			streetNumber: customer.streetNumber || '',
 			contactMethod: customer.contactMethod || '',
 			comment: customer.comment || ''
 		};
@@ -93,6 +99,8 @@
 				state: formData.state || undefined,
 				zipCode: formData.zipCode || undefined,
 				city: formData.city || undefined,
+				street: formData.street || undefined,
+				streetNumber: formData.streetNumber || undefined,
 				contactMethod: formData.contactMethod || undefined,
 				comment: formData.comment || undefined
 			};
@@ -450,6 +458,32 @@
 							class="input input-bordered"
 							bind:value={formData.city}
 							placeholder="Los Angeles"
+						/>
+					</div>
+
+					<!-- Street -->
+					<div class="form-control">
+						<label class="label">
+							<span class="label-text">Street (Optional)</span>
+						</label>
+						<input
+							type="text"
+							class="input input-bordered"
+							bind:value={formData.street}
+							placeholder="Main Street"
+						/>
+					</div>
+
+					<!-- Street Number -->
+					<div class="form-control">
+						<label class="label">
+							<span class="label-text">Street Number (Optional)</span>
+						</label>
+						<input
+							type="text"
+							class="input input-bordered"
+							bind:value={formData.streetNumber}
+							placeholder="123A"
 						/>
 					</div>
 
