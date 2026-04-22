@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npx svelte-check:*)",
       "Bash(npm run:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(pnpm run *)"
     ]
   }
 }

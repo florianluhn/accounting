@@ -321,6 +321,64 @@
 		if (b.customerLastName && b.customerFirstName) return `${b.customerLastName}, ${b.customerFirstName}`;
 		return `Customer #${b.customerId}`;
 	}
+
+	// ===== Year stats =====
+	let statsYear = $state(new Date().getFullYear());
+
+	let availableYears = $derived.by(() => {
+		const years = new Set<number>();
+		const cy = new Date().getFullYear();
+		years.add(cy);
+		for (const b of bookings) {
+			const inY = parseInt(b.checkInDate.slice(0, 4));
+			const outY = parseInt(b.checkOutDate.slice(0, 4));
+			if (!isNaN(inY)) years.add(inY);
+			if (!isNaN(outY)) years.add(outY);
+		}
+		return Array.from(years).sort((a, b) => b - a);
+	});
+
+	function isLeapYear(y: number): boolean {
+		return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+	}
+
+	function daysInYear(y: number): number {
+		return isLeapYear(y) ? 366 : 365;
+	}
+
+	// Number of nights of a booking that fall inside the given year.
+	// A "night" is keyed by its check-in date (so a booking spanning dec 31 -> jan 2 has
+	// one night in the old year and one in the new year).
+	function nightsInYear(checkIn: string, checkOut: string, year: number): number {
+		if (!checkIn || !checkOut) return 0;
+		const inMs = Date.parse(checkIn);
+		const outMs = Date.parse(checkOut);
+		if (isNaN(inMs) || isNaN(outMs) || outMs <= inMs) return 0;
+		const yearStart = Date.parse(`${year}-01-01`);
+		const yearEnd = Date.parse(`${year + 1}-01-01`);
+		const start = Math.max(inMs, yearStart);
+		const end = Math.min(outMs, yearEnd);
+		if (end <= start) return 0;
+		return Math.round((end - start) / (1000 * 60 * 60 * 24));
+	}
+
+	let yearStats = $derived.by(() => {
+		const total = daysInYear(statsYear);
+		let booked = 0;
+		let rentalTotal = 0;
+		for (const b of bookings) {
+			const n = nightsInYear(b.checkInDate, b.checkOutDate, statsYear);
+			if (n === 0) continue;
+			booked += n;
+			if (b.nights > 0) {
+				rentalTotal += (b.rentalFee / b.nights) * n;
+			}
+		}
+		const unbooked = Math.max(0, total - booked);
+		const utilization = total > 0 ? (booked / total) * 100 : 0;
+		const avgPricePerNight = booked > 0 ? rentalTotal / booked : 0;
+		return { total, booked, unbooked, utilization, rentalTotal, avgPricePerNight };
+	});
 </script>
 
 <div class="max-w-7xl mx-auto">
@@ -338,6 +396,45 @@
 	<div class="mb-6 flex justify-end">
 		<button class="btn btn-primary" onclick={openCreate}>+ New Booking</button>
 	</div>
+
+	{#if !loading && bookings.length > 0}
+		<div class="card bg-base-100 shadow-xl mb-6">
+			<div class="card-body">
+				<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+					<h2 class="card-title">Year Statistics</h2>
+					<div class="form-control">
+						<select class="select select-bordered select-sm" bind:value={statsYear}>
+							{#each availableYears as y}
+								<option value={y}>{y}</option>
+							{/each}
+						</select>
+					</div>
+				</div>
+				<div class="stats stats-vertical lg:stats-horizontal shadow w-full">
+					<div class="stat">
+						<div class="stat-title">Utilization</div>
+						<div class="stat-value text-primary">{yearStats.utilization.toFixed(1)}%</div>
+						<div class="stat-desc">{yearStats.booked} of {yearStats.total} nights booked</div>
+					</div>
+					<div class="stat">
+						<div class="stat-title">Nights Available</div>
+						<div class="stat-value">{yearStats.unbooked}</div>
+						<div class="stat-desc">Unbooked nights remaining</div>
+					</div>
+					<div class="stat">
+						<div class="stat-title">Total Rental Fee</div>
+						<div class="stat-value text-success">{formatMoney(yearStats.rentalTotal)}</div>
+						<div class="stat-desc">Sum of rental fees for {statsYear}</div>
+					</div>
+					<div class="stat">
+						<div class="stat-title">Avg Price / Night</div>
+						<div class="stat-value">{formatMoney(yearStats.avgPricePerNight)}</div>
+						<div class="stat-desc">Rental fee per booked night</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	<div class="card bg-base-100 shadow-xl">
 		<div class="card-body">
