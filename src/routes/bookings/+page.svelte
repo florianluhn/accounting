@@ -362,23 +362,145 @@
 		return Math.round((end - start) / (1000 * 60 * 60 * 24));
 	}
 
-	let yearStats = $derived.by(() => {
+	function dateStrUTC(ms: number): string {
+		const d = new Date(ms);
+		return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+	}
+
+	function todayStr(): string {
+		const t = new Date();
+		return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+	}
+
+	type DayCell =
+		| { date: string; kind: 'booked'; platformId: number; bookingId: number; customer: string; platformName: string }
+		| { date: string; kind: 'past' }
+		| { date: string; kind: 'future' };
+
+	let yearData = $derived.by(() => {
 		const total = daysInYear(statsYear);
+		const today = todayStr();
+		const yearStartMs = Date.UTC(statsYear, 0, 1);
+		const yearEndMs = Date.UTC(statsYear + 1, 0, 1);
+
+		// Map every booked date in the year to its booking
+		const bookedMap = new Map<string, Booking>();
+		for (const b of bookings) {
+			const inMs = Date.parse(b.checkInDate);
+			const outMs = Date.parse(b.checkOutDate);
+			if (isNaN(inMs) || isNaN(outMs) || outMs <= inMs) continue;
+			const start = Math.max(inMs, yearStartMs);
+			const end = Math.min(outMs, yearEndMs);
+			for (let t = start; t < end; t += 86400000) {
+				bookedMap.set(dateStrUTC(t), b);
+			}
+		}
+
 		let booked = 0;
+		let unbookedPast = 0;
+		let unbookedFuture = 0;
 		let rentalTotal = 0;
+		const months: { month: number; firstWeekday: number; days: DayCell[] }[] = [];
+		for (let m = 0; m < 12; m++) {
+			const dim = new Date(Date.UTC(statsYear, m + 1, 0)).getUTCDate();
+			const firstWeekday = new Date(Date.UTC(statsYear, m, 1)).getUTCDay();
+			const days: DayCell[] = [];
+			for (let d = 1; d <= dim; d++) {
+				const dateStr = `${statsYear}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+				const b = bookedMap.get(dateStr);
+				if (b) {
+					booked++;
+					days.push({
+						date: dateStr,
+						kind: 'booked',
+						platformId: b.platformId,
+						bookingId: b.id,
+						customer: customerLabel(b),
+						platformName: b.platformName || `#${b.platformId}`
+					});
+				} else if (dateStr < today) {
+					unbookedPast++;
+					days.push({ date: dateStr, kind: 'past' });
+				} else {
+					unbookedFuture++;
+					days.push({ date: dateStr, kind: 'future' });
+				}
+			}
+			months.push({ month: m, firstWeekday, days });
+		}
+
+		// Rental fee + per-platform aggregates — pro-rate per night-in-year
+		const perPlatform = new Map<number, { nights: number; rentalTotal: number }>();
 		for (const b of bookings) {
 			const n = nightsInYear(b.checkInDate, b.checkOutDate, statsYear);
 			if (n === 0) continue;
-			booked += n;
-			if (b.nights > 0) {
-				rentalTotal += (b.rentalFee / b.nights) * n;
-			}
+			const fee = b.nights > 0 ? (b.rentalFee / b.nights) * n : 0;
+			rentalTotal += fee;
+			const cur = perPlatform.get(b.platformId) || { nights: 0, rentalTotal: 0 };
+			cur.nights += n;
+			cur.rentalTotal += fee;
+			perPlatform.set(b.platformId, cur);
 		}
-		const unbooked = Math.max(0, total - booked);
+		const platformStats = Array.from(perPlatform.entries())
+			.map(([platformId, agg]) => ({
+				platformId,
+				platformName: platforms.find((p) => p.id === platformId)?.name || `#${platformId}`,
+				nights: agg.nights,
+				rentalTotal: agg.rentalTotal,
+				avgPricePerNight: agg.nights > 0 ? agg.rentalTotal / agg.nights : 0
+			}))
+			.sort((a, b) => b.nights - a.nights);
+
 		const utilization = total > 0 ? (booked / total) * 100 : 0;
 		const avgPricePerNight = booked > 0 ? rentalTotal / booked : 0;
-		return { total, booked, unbooked, utilization, rentalTotal, avgPricePerNight };
+		return {
+			total,
+			booked,
+			unbookedPast,
+			unbookedFuture,
+			utilization,
+			rentalTotal,
+			avgPricePerNight,
+			months,
+			platformStats
+		};
 	});
+
+	const PLATFORM_PALETTE = [
+		'#e74c3c',
+		'#3498db',
+		'#9b59b6',
+		'#f39c12',
+		'#1abc9c',
+		'#e67e22',
+		'#34495e',
+		'#d35400',
+		'#16a085',
+		'#8e44ad'
+	];
+
+	let platformColors = $derived.by(() => {
+		const m = new Map<number, string>();
+		platforms.forEach((p, idx) => {
+			m.set(p.id, PLATFORM_PALETTE[idx % PLATFORM_PALETTE.length]);
+		});
+		return m;
+	});
+
+	const UNBOOKED_FUTURE_COLOR = '#22c55e';
+	const UNBOOKED_PAST_COLOR = '#9ca3af';
+
+	function dayColor(day: DayCell): string {
+		if (day.kind === 'booked') return platformColors.get(day.platformId) || '#64748b';
+		return day.kind === 'past' ? UNBOOKED_PAST_COLOR : UNBOOKED_FUTURE_COLOR;
+	}
+
+	function dayTitle(day: DayCell): string {
+		if (day.kind === 'booked') return `${day.date} — ${day.customer} (${day.platformName})`;
+		return `${day.date} — ${day.kind === 'past' ? 'Unbooked (past)' : 'Available'}`;
+	}
+
+	const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 </script>
 
 <div class="max-w-7xl mx-auto">
@@ -410,27 +532,105 @@
 						</select>
 					</div>
 				</div>
-				<div class="stats stats-vertical lg:stats-horizontal shadow w-full">
+				<div class="stats stats-vertical lg:stats-horizontal shadow w-full mb-6">
 					<div class="stat">
 						<div class="stat-title">Utilization</div>
-						<div class="stat-value text-primary">{yearStats.utilization.toFixed(1)}%</div>
-						<div class="stat-desc">{yearStats.booked} of {yearStats.total} nights booked</div>
+						<div class="stat-value text-primary">{yearData.utilization.toFixed(1)}%</div>
+						<div class="stat-desc">{yearData.booked} of {yearData.total} nights booked</div>
 					</div>
 					<div class="stat">
 						<div class="stat-title">Nights Available</div>
-						<div class="stat-value">{yearStats.unbooked}</div>
-						<div class="stat-desc">Unbooked nights remaining</div>
+						<div class="stat-value text-success">{yearData.unbookedFuture}</div>
+						<div class="stat-desc">Unbooked future nights</div>
+					</div>
+					<div class="stat">
+						<div class="stat-title">Unbooked Nights in the Past</div>
+						<div class="stat-value text-base-content/60">{yearData.unbookedPast}</div>
+						<div class="stat-desc">Unbooked nights already elapsed</div>
 					</div>
 					<div class="stat">
 						<div class="stat-title">Total Rental Fee</div>
-						<div class="stat-value text-success">{formatMoney(yearStats.rentalTotal)}</div>
+						<div class="stat-value text-success">{formatMoney(yearData.rentalTotal)}</div>
 						<div class="stat-desc">Sum of rental fees for {statsYear}</div>
 					</div>
 					<div class="stat">
 						<div class="stat-title">Avg Price / Night</div>
-						<div class="stat-value">{formatMoney(yearStats.avgPricePerNight)}</div>
+						<div class="stat-value">{formatMoney(yearData.avgPricePerNight)}</div>
 						<div class="stat-desc">Rental fee per booked night</div>
 					</div>
+				</div>
+
+				<!-- Per-platform breakdown -->
+				{#if yearData.platformStats.length > 0}
+					<div class="mb-6">
+						<h3 class="font-semibold text-sm mb-2 text-base-content/70">By Platform</h3>
+						<div class="overflow-x-auto">
+							<table class="table table-sm">
+								<thead>
+									<tr>
+										<th>Platform</th>
+										<th class="text-right">Nights Booked</th>
+										<th class="text-right">Rental Fee</th>
+										<th class="text-right">Avg Price / Night</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each yearData.platformStats as ps (ps.platformId)}
+										<tr>
+											<td>
+												<span class="inline-flex items-center gap-2">
+													<span class="inline-block w-3 h-3 rounded-sm" style="background-color: {platformColors.get(ps.platformId) || '#64748b'};"></span>
+													{ps.platformName}
+												</span>
+											</td>
+											<td class="text-right font-mono">{ps.nights}</td>
+											<td class="text-right font-mono">{formatMoney(ps.rentalTotal)}</td>
+											<td class="text-right font-mono">{formatMoney(ps.avgPricePerNight)}</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					</div>
+				{/if}
+
+				<!-- Calendar -->
+				<div class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+					<span class="font-semibold mr-2">Legend:</span>
+					{#each platforms as p}
+						<span class="inline-flex items-center gap-1">
+							<span class="inline-block w-3 h-3 rounded-sm" style="background-color: {platformColors.get(p.id)};"></span>
+							{p.name}
+						</span>
+					{/each}
+					<span class="inline-flex items-center gap-1">
+						<span class="inline-block w-3 h-3 rounded-sm" style="background-color: {UNBOOKED_FUTURE_COLOR};"></span>
+						Available
+					</span>
+					<span class="inline-flex items-center gap-1">
+						<span class="inline-block w-3 h-3 rounded-sm" style="background-color: {UNBOOKED_PAST_COLOR};"></span>
+						Unbooked (past)
+					</span>
+				</div>
+
+				<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+					{#each yearData.months as { month, firstWeekday, days }}
+						<div class="bg-base-200 rounded-box p-2">
+							<div class="text-xs font-semibold mb-1 text-center">{MONTH_NAMES[month]}</div>
+							<div class="grid grid-cols-7 gap-[2px]">
+								{#each Array(firstWeekday) as _}
+									<div class="w-4 h-4"></div>
+								{/each}
+								{#each days as day (day.date)}
+									<div
+										class="w-4 h-4 rounded-sm cursor-pointer"
+										style="background-color: {dayColor(day)};"
+										title={dayTitle(day)}
+									></div>
+								{/each}
+							</div>
+						</div>
+					{/each}
 				</div>
 			</div>
 		</div>
