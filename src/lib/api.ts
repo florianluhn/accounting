@@ -1228,6 +1228,7 @@ export interface BookingConfig {
 	cleaningFee: number;
 	salesTaxRate: number;
 	touristTaxRate: number;
+	websiteAvailabilityPath: string;
 }
 
 export interface Booking {
@@ -1291,5 +1292,10 @@ export const bookingsAPI = {
 	},
 	async deletePlatform(id: number): Promise<void> {
 		return apiFetch(`/api/bookings/platforms/${id}`, { method: 'DELETE' });
+	},
+
+	// Sync to website
+	async syncAvailability(): Promise<{ count: number; path: string }> {
+		return apiFetch('/api/bookings/sync-availability', { method: 'POST' });
 	}
 };

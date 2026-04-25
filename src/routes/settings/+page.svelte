@@ -26,7 +26,8 @@
 	let bookingConfig = $state<BookingConfig>({
 		cleaningFee: 0,
 		salesTaxRate: 0,
-		touristTaxRate: 0
+		touristTaxRate: 0,
+		websiteAvailabilityPath: ''
 	});
 	let bookingConfigSaving = $state(false);
 	let bookingPlatforms = $state<BookingPlatform[]>([]);
@@ -413,6 +414,13 @@
 						<span class="label-text-alt text-xs text-base-content/50">e.g. 5 for 5%</span>
 					</label>
 					<input type="number" step="0.001" min="0" class="input input-bordered" bind:value={bookingConfig.touristTaxRate} />
+				</div>
+				<div class="form-control sm:col-span-2">
+					<label class="label">
+						<span class="label-text">Website Availability File Path</span>
+						<span class="label-text-alt text-xs text-base-content/50">Where "Sync to Website" writes; ~ is expanded to home</span>
+					</label>
+					<input type="text" class="input input-bordered font-mono text-sm" placeholder="~/villaluhna/VillaLuhna_Website_Claude/availability.json" bind:value={bookingConfig.websiteAvailabilityPath} />
 				</div>
 			</div>
 

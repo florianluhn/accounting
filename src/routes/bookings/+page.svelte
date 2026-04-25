@@ -322,6 +322,26 @@
 		return `Customer #${b.customerId}`;
 	}
 
+	let syncing = $state(false);
+	let syncMessage = $state('');
+	let syncSuccess = $state(false);
+
+	async function syncToWebsite() {
+		if (!confirm('Overwrite the website availability file with the current bookings?')) return;
+		try {
+			syncing = true;
+			syncMessage = '';
+			const result = await bookingsAPI.syncAvailability();
+			syncSuccess = true;
+			syncMessage = `Synced ${result.count} booking(s) to ${result.path}`;
+		} catch (e) {
+			syncSuccess = false;
+			syncMessage = e instanceof Error ? e.message : 'Sync failed';
+		} finally {
+			syncing = false;
+		}
+	}
+
 	// ===== Year stats =====
 	let statsYear = $state(new Date().getFullYear());
 
@@ -515,9 +535,24 @@
 		</div>
 	{/if}
 
-	<div class="mb-6 flex justify-end">
+	<div class="mb-6 flex justify-end gap-2">
+		<button class="btn btn-outline" onclick={syncToWebsite} disabled={syncing}>
+			{#if syncing}
+				<span class="loading loading-spinner loading-xs"></span>
+				Syncing...
+			{:else}
+				Sync to Website
+			{/if}
+		</button>
 		<button class="btn btn-primary" onclick={openCreate}>+ New Booking</button>
 	</div>
+
+	{#if syncMessage}
+		<div class="alert {syncSuccess ? 'alert-success' : 'alert-error'} mb-6">
+			<span>{syncMessage}</span>
+			<button class="btn btn-ghost btn-xs" onclick={() => { syncMessage = ''; }}>Dismiss</button>
+		</div>
+	{/if}
 
 	{#if !loading && bookings.length > 0}
 		<div class="card bg-base-100 shadow-xl mb-6">

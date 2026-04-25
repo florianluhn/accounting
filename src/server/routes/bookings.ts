@@ -1,8 +1,21 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { promises as fs } from 'fs';
+import path from 'path';
+import os from 'os';
 import db, { saveDatabase } from '../db/connection.js';
 import { bookings, bookingPlatforms, customers, appSettings } from '../db/schema.js';
 import { eq, desc, asc } from 'drizzle-orm';
+
+const DEFAULT_AVAILABILITY_PATH = '~/villaluhna/VillaLuhna_Website_Claude/availability.json';
+
+function expandPath(p: string): string {
+	if (!p) return p;
+	if (p === '~' || p.startsWith('~/') || p.startsWith('~\\')) {
+		return path.join(os.homedir(), p.slice(2));
+	}
+	return p;
+}
 
 const createBookingSchema = z.object({
 	customerId: z.number().int().positive(),
@@ -36,7 +49,8 @@ async function getBookingConfig() {
 	return {
 		cleaningFee: parseFloat(map.booking_cleaning_fee || '0') || 0,
 		salesTaxRate: parseFloat(map.booking_sales_tax_rate || '0') || 0,
-		touristTaxRate: parseFloat(map.booking_tourist_tax_rate || '0') || 0
+		touristTaxRate: parseFloat(map.booking_tourist_tax_rate || '0') || 0,
+		websiteAvailabilityPath: map.website_availability_path || DEFAULT_AVAILABILITY_PATH
 	};
 }
 
@@ -48,26 +62,72 @@ export default async function bookingsRoutes(fastify: FastifyInstance) {
 		return getBookingConfig();
 	});
 
-	fastify.put<{ Body: Partial<{ cleaningFee: number; salesTaxRate: number; touristTaxRate: number }> }>(
+	fastify.put<{ Body: Partial<{ cleaningFee: number; salesTaxRate: number; touristTaxRate: number; websiteAvailabilityPath: string }> }>(
 		'/config',
 		async (request) => {
 			const body = request.body || {};
-			const pairs: Record<string, number | undefined> = {
+			const numPairs: Record<string, number | undefined> = {
 				booking_cleaning_fee: body.cleaningFee,
 				booking_sales_tax_rate: body.salesTaxRate,
 				booking_tourist_tax_rate: body.touristTaxRate
 			};
-			for (const [key, value] of Object.entries(pairs)) {
+			for (const [key, value] of Object.entries(numPairs)) {
 				if (typeof value === 'number' && !isNaN(value)) {
 					await db.insert(appSettings)
 						.values({ key, value: String(value) })
 						.onConflictDoUpdate({ target: appSettings.key, set: { value: String(value) } });
 				}
 			}
+			if (typeof body.websiteAvailabilityPath === 'string') {
+				const v = body.websiteAvailabilityPath.trim();
+				await db.insert(appSettings)
+					.values({ key: 'website_availability_path', value: v })
+					.onConflictDoUpdate({ target: appSettings.key, set: { value: v } });
+			}
 			await saveDatabase();
 			return getBookingConfig();
 		}
 	);
+
+	// ==========================
+	// Sync availability to website
+	// ==========================
+	fastify.post('/sync-availability', async (_request, reply) => {
+		const cfg = await getBookingConfig();
+		const rawPath = cfg.websiteAvailabilityPath;
+		if (!rawPath) {
+			return reply.status(400).send({
+				error: 'Bad Request',
+				message: 'Website availability path is not configured'
+			});
+		}
+		const targetPath = expandPath(rawPath);
+
+		// Verify the parent directory exists — refuse to silently create a tree
+		try {
+			const parent = path.dirname(targetPath);
+			await fs.access(parent);
+		} catch {
+			return reply.status(400).send({
+				error: 'Bad Request',
+				message: `Target directory does not exist: ${path.dirname(targetPath)}`
+			});
+		}
+
+		const all = await db.select().from(bookings).orderBy(asc(bookings.checkInDate));
+		const entries = all.map((b) => ({ start: b.checkInDate, end: b.checkOutDate }));
+
+		try {
+			await fs.writeFile(targetPath, JSON.stringify(entries, null, 2) + '\n', 'utf8');
+		} catch (err) {
+			return reply.status(500).send({
+				error: 'Internal Server Error',
+				message: `Failed to write availability file: ${(err as Error).message}`
+			});
+		}
+
+		return { count: entries.length, path: targetPath };
+	});
 
 	// ==========================
 	// Booking platforms CRUD
