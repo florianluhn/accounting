@@ -553,6 +553,7 @@ export interface Attachment {
 	id: number;
 	journalEntryId: number | null;
 	bookingId: number | null;
+	inventoryItemId: number | null;
 	filename: string;
 	storedFilename: string;
 	mimeType: string;
@@ -561,10 +562,11 @@ export interface Attachment {
 }
 
 export const attachmentsAPI = {
-	async list(params?: { journalEntryId?: number; bookingId?: number }): Promise<Attachment[]> {
+	async list(params?: { journalEntryId?: number; bookingId?: number; inventoryItemId?: number }): Promise<Attachment[]> {
 		const query = new URLSearchParams();
 		if (params?.journalEntryId) query.set('journalEntryId', String(params.journalEntryId));
 		if (params?.bookingId) query.set('bookingId', String(params.bookingId));
+		if (params?.inventoryItemId) query.set('inventoryItemId', String(params.inventoryItemId));
 
 		const queryString = query.toString();
 		return apiFetch(`/api/attachments${queryString ? `?${queryString}` : ''}`);
@@ -603,6 +605,29 @@ export const attachmentsAPI = {
 
 		const response = await fetch(
 			`${getApiBaseUrl()}/api/attachments?bookingId=${bookingId}`,
+			{
+				method: 'POST',
+				body: formData
+			}
+		);
+
+		if (!response.ok) {
+			const error = await response.json().catch(() => ({
+				error: 'Unknown Error',
+				message: response.statusText
+			}));
+			throw new Error(error.message || `HTTP ${response.status}`);
+		}
+
+		return response.json();
+	},
+
+	async uploadToInventoryItem(inventoryItemId: number, file: File): Promise<Attachment> {
+		const formData = new FormData();
+		formData.append('file', file);
+
+		const response = await fetch(
+			`${getApiBaseUrl()}/api/attachments?inventoryItemId=${inventoryItemId}`,
 			{
 				method: 'POST',
 				body: formData

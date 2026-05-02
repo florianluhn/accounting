@@ -205,6 +205,7 @@ export const attachments = sqliteTable(
 			onDelete: 'cascade'
 		}),
 		bookingId: integer('booking_id').references(() => bookings.id, { onDelete: 'cascade' }),
+		inventoryItemId: integer('inventory_item_id').references(() => inventoryItems.id, { onDelete: 'cascade' }),
 		filename: text('filename').notNull(), // Original filename
 		storedFilename: text('stored_filename').notNull(), // UUID-based storage name
 		mimeType: text('mime_type').notNull(),
@@ -215,7 +216,8 @@ export const attachments = sqliteTable(
 	},
 	(table) => ({
 		journalEntryIdx: index('idx_attachments_journal').on(table.journalEntryId),
-		bookingIdx: index('idx_attachments_booking').on(table.bookingId)
+		bookingIdx: index('idx_attachments_booking').on(table.bookingId),
+		inventoryItemIdx: index('idx_attachments_inventory_item').on(table.inventoryItemId)
 	})
 );
 

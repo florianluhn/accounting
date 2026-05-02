@@ -8,7 +8,9 @@
 		type FieldDefinition,
 		type MaterialAllocation,
 		type RawMaterialItem,
-		type JournalEntry
+		type JournalEntry,
+		attachmentsAPI,
+		type Attachment
 	} from '$lib/api';
 
 	let category = $state<InventoryCategory | null>(null);
@@ -21,6 +23,9 @@
 	let editingItem = $state<InventoryItem | null>(null);
 	let itemName = $state('');
 	let itemFieldValues = $state<Record<string, string | number>>({});
+	let itemAttachments = $state<Attachment[]>([]);
+	let selectedFiles = $state<File[]>([]);
+	let savingItem = $state(false);
 
 	// Allocation modal (shown on a finished good item)
 	let showAllocModal = $state(false);
@@ -109,10 +114,12 @@
 		editingItem = null;
 		itemName = '';
 		itemFieldValues = initFieldValues();
+		itemAttachments = [];
+		selectedFiles = [];
 		showItemModal = true;
 	}
 
-	function openEdit(item: InventoryItem) {
+	async function openEdit(item: InventoryItem) {
 		editingItem = item;
 		itemName = item.name;
 		const vals: Record<string, string | number> = {};
@@ -122,26 +129,42 @@
 			}
 		}
 		itemFieldValues = vals;
+		itemAttachments = [];
+		selectedFiles = [];
 		showItemModal = true;
+		try {
+			itemAttachments = await attachmentsAPI.list({ inventoryItemId: item.id });
+		} catch (e) {
+			console.error('Failed to load attachments', e);
+		}
 	}
 
-	function closeItemModal() { showItemModal = false; editingItem = null; }
+	function closeItemModal() { showItemModal = false; editingItem = null; itemAttachments = []; selectedFiles = []; }
 
 	async function handleItemSubmit() {
 		if (!category) return;
 		try {
 			error = '';
+			savingItem = true;
 			const payload = { name: itemName, fieldValues: itemFieldValues };
+			let savedItem: InventoryItem;
 			if (editingItem) {
-				await inventoryAPI.updateItem(editingItem.id, payload);
+				savedItem = await inventoryAPI.updateItem(editingItem.id, payload);
 			} else {
-				await inventoryAPI.createItem(category.id, payload);
+				savedItem = await inventoryAPI.createItem(category.id, payload);
 			}
+			
+			for (const file of selectedFiles) {
+				await attachmentsAPI.uploadToInventoryItem(savedItem.id, file);
+			}
+
 			items = await inventoryAPI.listItems(category.id);
 			category = await inventoryAPI.getCategory(category.id);
 			closeItemModal();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to save item';
+		} finally {
+			savingItem = false;
 		}
 	}
 
@@ -767,14 +790,49 @@
 							</div>
 						</div>
 					{/if}
-					<div class="col-span-2 bg-primary/10 rounded-lg px-4 py-3 flex justify-between items-center">
+					<div class="col-span-2 bg-primary/10 rounded-lg px-4 py-3 flex justify-between items-center mb-2">
 						<span class="text-sm font-medium">Item Value</span>
 						<span class="font-mono font-bold text-primary text-lg">{formatCurrency(previewTotalValue)}</span>
 					</div>
+
+					<!-- Pictures Section -->
+					<div class="col-span-2 mt-2">
+						<div class="divider my-1 text-xs">Pictures</div>
+						{#if itemAttachments.length > 0}
+							<div class="flex flex-wrap gap-2 mb-4">
+								{#each itemAttachments as att}
+									<div class="relative group w-24 h-24 rounded border border-base-300 overflow-hidden bg-base-200 flex items-center justify-center">
+										{#if att.mimeType.startsWith('image/')}
+											<img src={attachmentsAPI.getDownloadUrl(att.id)} alt={att.filename} class="w-full h-full object-cover" />
+										{:else}
+											<span class="text-xs break-all p-1 text-center">{att.filename}</span>
+										{/if}
+										<button type="button" class="btn btn-xs btn-circle btn-error absolute top-1 right-1 opacity-0 group-hover:opacity-100" onclick={async () => {
+											if (confirm('Delete this picture?')) {
+												await attachmentsAPI.delete(att.id);
+												itemAttachments = itemAttachments.filter(a => a.id !== att.id);
+											}
+										}}>✕</button>
+									</div>
+								{/each}
+							</div>
+						{/if}
+						<div class="form-control">
+							<label class="label"><span class="label-text">Attach Pictures</span></label>
+							<input type="file" class="file-input file-input-bordered w-full" multiple accept="image/*" onchange={(e) => {
+								selectedFiles = Array.from((e.target as HTMLInputElement).files || []);
+							}} />
+						</div>
+					</div>
 				</div>
 				<div class="modal-action">
-					<button type="button" class="btn" onclick={closeItemModal}>Cancel</button>
-					<button type="submit" class="btn btn-primary">{editingItem ? 'Save Changes' : 'Add Item'}</button>
+					<button type="button" class="btn" onclick={closeItemModal} disabled={savingItem}>Cancel</button>
+					<button type="submit" class="btn btn-primary" disabled={savingItem}>
+						{#if savingItem}
+							<span class="loading loading-spinner loading-sm"></span>
+						{/if}
+						{editingItem ? 'Save Changes' : 'Add Item'}
+					</button>
 				</div>
 			</form>
 		</div>

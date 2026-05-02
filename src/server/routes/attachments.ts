@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
-import { attachments, journalEntries, bookings } from '../db/schema.js';
+import { attachments, journalEntries, bookings, inventoryItems } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { join } from 'path';
 import { mkdir, writeFile, unlink, readFile, stat } from 'fs/promises';
@@ -12,7 +12,7 @@ import { logAudit } from '../services/audit.js';
 
 export default async function attachmentsRoutes(fastify: FastifyInstance) {
 	// GET /api/attachments - List all attachments
-	fastify.get<{ Querystring: { journalEntryId?: string; bookingId?: string } }>(
+	fastify.get<{ Querystring: { journalEntryId?: string; bookingId?: string; inventoryItemId?: string } }>(
 		'/',
 		async (request, reply) => {
 			let query = db.select().from(attachments);
@@ -27,6 +27,11 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 				const bookingId = parseInt(request.query.bookingId);
 				if (!isNaN(bookingId)) {
 					query = query.where(eq(attachments.bookingId, bookingId)) as any;
+				}
+			} else if (request.query.inventoryItemId) {
+				const inventoryItemId = parseInt(request.query.inventoryItemId);
+				if (!isNaN(inventoryItemId)) {
+					query = query.where(eq(attachments.inventoryItemId, inventoryItemId)) as any;
 				}
 			}
 
@@ -110,25 +115,27 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 		}
 	});
 
-	// POST /api/attachments - Upload attachment (for journal entry or booking)
-	fastify.post<{ Querystring: { journalEntryId?: string; bookingId?: string } }>(
+	// POST /api/attachments - Upload attachment
+	fastify.post<{ Querystring: { journalEntryId?: string; bookingId?: string; inventoryItemId?: string } }>(
 		'/',
 		async (request, reply) => {
 			const journalEntryId = request.query.journalEntryId
 				? parseInt(request.query.journalEntryId)
 				: null;
 			const bookingId = request.query.bookingId ? parseInt(request.query.bookingId) : null;
+			const inventoryItemId = request.query.inventoryItemId ? parseInt(request.query.inventoryItemId) : null;
 
-			if (!journalEntryId && !bookingId) {
+			if (!journalEntryId && !bookingId && !inventoryItemId) {
 				return reply.status(400).send({
 					error: 'Bad Request',
-					message: 'Either journalEntryId or bookingId must be provided'
+					message: 'Either journalEntryId, bookingId, or inventoryItemId must be provided'
 				});
 			}
-			if (journalEntryId && bookingId) {
+			const providedCount = [journalEntryId, bookingId, inventoryItemId].filter(id => id !== null).length;
+			if (providedCount > 1) {
 				return reply.status(400).send({
 					error: 'Bad Request',
-					message: 'Provide either journalEntryId or bookingId, not both'
+					message: 'Provide only one of journalEntryId, bookingId, or inventoryItemId'
 				});
 			}
 
@@ -152,8 +159,8 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 					});
 				}
 				ownerPrefix = `j${journalEntryId}`;
-			} else {
-				if (isNaN(bookingId!)) {
+			} else if (bookingId) {
+				if (isNaN(bookingId)) {
 					return reply.status(400).send({
 						error: 'Bad Request',
 						message: 'Invalid booking ID'
@@ -162,7 +169,7 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 				const booking = await db
 					.select()
 					.from(bookings)
-					.where(eq(bookings.id, bookingId!))
+					.where(eq(bookings.id, bookingId))
 					.limit(1);
 				if (booking.length === 0) {
 					return reply.status(404).send({
@@ -171,6 +178,25 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 					});
 				}
 				ownerPrefix = `b${bookingId}`;
+			} else {
+				if (isNaN(inventoryItemId!)) {
+					return reply.status(400).send({
+						error: 'Bad Request',
+						message: 'Invalid inventory item ID'
+					});
+				}
+				const inventoryItem = await db
+					.select()
+					.from(inventoryItems)
+					.where(eq(inventoryItems.id, inventoryItemId!))
+					.limit(1);
+				if (inventoryItem.length === 0) {
+					return reply.status(404).send({
+						error: 'Not Found',
+						message: `Inventory item ${inventoryItemId} not found`
+					});
+				}
+				ownerPrefix = `i${inventoryItemId}`;
 			}
 
 			// Get uploaded file
@@ -218,6 +244,7 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 				.values({
 					journalEntryId,
 					bookingId,
+					inventoryItemId,
 					filename: originalFilename,
 					storedFilename,
 					mimeType: data.mimetype,
