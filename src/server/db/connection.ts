@@ -40,72 +40,6 @@ sqlite.run('PRAGMA foreign_keys = ON');
 export const db = drizzle(sqlite, { schema });
 
 // ========================================
-// Database Triggers
-// ========================================
-
-// Prevent same account on debit and credit
-sqlite.run(`
-	CREATE TRIGGER IF NOT EXISTS prevent_same_account_debit_credit
-	BEFORE INSERT ON journal_entries
-	WHEN NEW.debit_account_id = NEW.credit_account_id
-	BEGIN
-		SELECT RAISE(ABORT, 'Debit and credit accounts must be different');
-	END;
-`);
-
-// Ensure amount is positive (allow $0 only when linked to an inventory item disposition)
-sqlite.run(`DROP TRIGGER IF EXISTS ensure_positive_amount`);
-sqlite.run(`
-	CREATE TRIGGER ensure_positive_amount
-	BEFORE INSERT ON journal_entries
-	WHEN NEW.amount <= 0 AND NEW.inventory_item_id IS NULL
-	BEGIN
-		SELECT RAISE(ABORT, 'Amount must be positive');
-	END;
-`);
-
-// Update timestamp triggers for currencies
-sqlite.run(`
-	CREATE TRIGGER IF NOT EXISTS update_currencies_timestamp
-	AFTER UPDATE ON currencies
-	FOR EACH ROW
-	BEGIN
-		UPDATE currencies SET updated_at = unixepoch() WHERE code = NEW.code;
-	END;
-`);
-
-// Update timestamp triggers for gl_accounts
-sqlite.run(`
-	CREATE TRIGGER IF NOT EXISTS update_gl_accounts_timestamp
-	AFTER UPDATE ON gl_accounts
-	FOR EACH ROW
-	BEGIN
-		UPDATE gl_accounts SET updated_at = unixepoch() WHERE id = NEW.id;
-	END;
-`);
-
-// Update timestamp triggers for subledger_accounts
-sqlite.run(`
-	CREATE TRIGGER IF NOT EXISTS update_subledger_accounts_timestamp
-	AFTER UPDATE ON subledger_accounts
-	FOR EACH ROW
-	BEGIN
-		UPDATE subledger_accounts SET updated_at = unixepoch() WHERE id = NEW.id;
-	END;
-`);
-
-// Update timestamp triggers for journal_entries
-sqlite.run(`
-	CREATE TRIGGER IF NOT EXISTS update_journal_entries_timestamp
-	AFTER UPDATE ON journal_entries
-	FOR EACH ROW
-	BEGIN
-		UPDATE journal_entries SET updated_at = unixepoch() WHERE id = NEW.id;
-	END;
-`);
-
-
-// ========================================
 // Utility Functions
 // ========================================
 
@@ -1005,6 +939,66 @@ if (!checkIntegrity()) {
 	console.log('✓ Database integrity check passed');
 }
 
+// ========================================
+// Database Triggers (run after migrations to ensure schema exists)
+// ========================================
+function setupTriggers() {
+	sqlite.run(`
+		CREATE TRIGGER IF NOT EXISTS prevent_same_account_debit_credit
+		BEFORE INSERT ON journal_entries
+		WHEN NEW.debit_account_id = NEW.credit_account_id
+		BEGIN
+			SELECT RAISE(ABORT, 'Debit and credit accounts must be different');
+		END;
+	`);
+
+	sqlite.run(`DROP TRIGGER IF EXISTS ensure_positive_amount`);
+	sqlite.run(`
+		CREATE TRIGGER ensure_positive_amount
+		BEFORE INSERT ON journal_entries
+		WHEN NEW.amount <= 0 AND NEW.inventory_item_id IS NULL
+		BEGIN
+			SELECT RAISE(ABORT, 'Amount must be positive');
+		END;
+	`);
+
+	sqlite.run(`
+		CREATE TRIGGER IF NOT EXISTS update_currencies_timestamp
+		AFTER UPDATE ON currencies
+		FOR EACH ROW
+		BEGIN
+			UPDATE currencies SET updated_at = unixepoch() WHERE code = NEW.code;
+		END;
+	`);
+
+	sqlite.run(`
+		CREATE TRIGGER IF NOT EXISTS update_gl_accounts_timestamp
+		AFTER UPDATE ON gl_accounts
+		FOR EACH ROW
+		BEGIN
+			UPDATE gl_accounts SET updated_at = unixepoch() WHERE id = NEW.id;
+		END;
+	`);
+
+	sqlite.run(`
+		CREATE TRIGGER IF NOT EXISTS update_subledger_accounts_timestamp
+		AFTER UPDATE ON subledger_accounts
+		FOR EACH ROW
+		BEGIN
+			UPDATE subledger_accounts SET updated_at = unixepoch() WHERE id = NEW.id;
+		END;
+	`);
+
+	sqlite.run(`
+		CREATE TRIGGER IF NOT EXISTS update_journal_entries_timestamp
+		AFTER UPDATE ON journal_entries
+		FOR EACH ROW
+		BEGIN
+			UPDATE journal_entries SET updated_at = unixepoch() WHERE id = NEW.id;
+		END;
+	`);
+}
+
 // Run migrations
 migrateAuditLogs();
 migrateVendors();
@@ -1018,6 +1012,8 @@ migrateAppSettings();
 migrateBookings();
 migrateAttachmentsBookings();
 migrateAttachmentsInventoryItem();
+
+setupTriggers();
 
 export { sqlite };
 export default db;

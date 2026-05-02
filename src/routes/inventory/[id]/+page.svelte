@@ -356,18 +356,25 @@
 	let showDetailModal = $state(false);
 	let detailItem = $state<InventoryItem | null>(null);
 	let linkedEntries = $state<JournalEntry[]>([]);
+	let detailAttachments = $state<Attachment[]>([]);
 
 	async function openDetailModal(item: InventoryItem) {
 		detailItem = item;
 		linkedEntries = [];
+		detailAttachments = [];
 		showDetailModal = true;
-		// Fetch linked journal entries in background
+		// Fetch linked data in background
 		try {
-			linkedEntries = await journalEntriesAPI.list({ inventoryItemId: item.id });
+			const [entries, attachments] = await Promise.all([
+				journalEntriesAPI.list({ inventoryItemId: item.id }),
+				attachmentsAPI.list({ inventoryItemId: item.id })
+			]);
+			linkedEntries = entries;
+			detailAttachments = attachments;
 		} catch (_) { /* non-critical */ }
 	}
 
-	function closeDetailModal() { showDetailModal = false; detailItem = null; linkedEntries = []; }
+	function closeDetailModal() { showDetailModal = false; detailItem = null; linkedEntries = []; detailAttachments = []; }
 
 	async function handleToggleQuantity(item: InventoryItem) {
 		if (!category) return;
@@ -683,6 +690,28 @@
 					</div>
 				{/each}
 			</div>
+
+			<!-- Pictures -->
+			{#if detailAttachments.length > 0}
+				<div class="mb-4">
+					<div class="text-xs text-base-content/50 mb-2">Pictures</div>
+					<div class="flex flex-wrap gap-2">
+						{#each detailAttachments as att}
+							<div class="w-20 h-20 rounded border border-base-300 overflow-hidden bg-base-200 flex items-center justify-center">
+								{#if att.mimeType.startsWith('image/')}
+									<a href={attachmentsAPI.getDownloadUrl(att.id)} target="_blank" rel="noopener noreferrer" class="w-full h-full">
+										<img src={attachmentsAPI.getDownloadUrl(att.id)} alt={att.filename} class="w-full h-full object-cover hover:opacity-80 transition-opacity" />
+									</a>
+								{:else}
+									<a href={attachmentsAPI.getDownloadUrl(att.id)} target="_blank" rel="noopener noreferrer" class="text-xs break-all p-1 text-center hover:underline w-full h-full flex items-center justify-center">
+										{att.filename}
+									</a>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
 
 			<div class="divider my-2"></div>
 
