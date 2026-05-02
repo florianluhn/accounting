@@ -323,7 +323,7 @@
 				result = result.filter(i => i.dispositionType === 'gift');
 			}
 		}
-		return result;
+		return [...result].sort((a, b) => a.name.localeCompare(b.name));
 	});
 
 	// Selected raw material item info for alloc form
