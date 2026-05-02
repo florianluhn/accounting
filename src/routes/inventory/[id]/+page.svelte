@@ -743,7 +743,7 @@
 			{/if}
 
 			<div class="modal-action">
-				<button class="btn btn-ghost btn-sm" onclick={() => { closeDetailModal(); openEdit(detailItem!); }}>Edit Item</button>
+				<button class="btn btn-ghost btn-sm" onclick={() => { const item = detailItem!; closeDetailModal(); openEdit(item); }}>Edit Item</button>
 				<button class="btn" onclick={closeDetailModal}>Close</button>
 			</div>
 		</div>

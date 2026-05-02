@@ -955,6 +955,23 @@ function migrateAttachmentsBookings(): void {
 	}
 }
 
+function migrateAttachmentsInventoryItem(): void {
+	try {
+		const cols = sqlite.exec('PRAGMA table_info(attachments)');
+		if (cols.length > 0) {
+			const colNames = cols[0].values.map((c: any) => c[1]);
+			if (!colNames.includes('inventory_item_id')) {
+				sqlite.run('ALTER TABLE attachments ADD COLUMN inventory_item_id INTEGER REFERENCES inventory_items(id) ON DELETE CASCADE');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_attachments_inventory_item ON attachments(inventory_item_id)');
+				console.log('✓ Added inventory_item_id to attachments');
+			}
+		}
+	} catch (error) {
+		console.error('Failed to migrate attachments for inventory items:', error);
+		throw error;
+	}
+}
+
 function migrateAppSettings(): void {
 	try {
 		sqlite.run(`
@@ -1000,6 +1017,7 @@ migrateInventoryItemQuantity();
 migrateAppSettings();
 migrateBookings();
 migrateAttachmentsBookings();
+migrateAttachmentsInventoryItem();
 
 export { sqlite };
 export default db;
