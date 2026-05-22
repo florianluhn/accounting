@@ -1303,13 +1303,13 @@ export const bookingsAPI = {
 	},
 
 	downloadCSV() {
-		window.location.href = `${API_URL}/api/bookings/export/csv`;
+		window.location.href = `${getApiBaseUrl()}/api/bookings/export/csv`;
 	},
 	async uploadCSV(file: File) {
 		const formData = new FormData();
 		formData.append('file', file);
 
-		const response = await fetch(`${API_URL}/api/bookings/import/csv`, {
+		const response = await fetch(`${getApiBaseUrl()}/api/bookings/import/csv`, {
 			method: 'POST',
 			body: formData
 		});
