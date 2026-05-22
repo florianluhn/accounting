@@ -93,7 +93,7 @@ function firstYearConvention(
 		case 'half_year':
 			// 50% of annual depreciation, spread over remaining months of the year
 			// Under half-year convention the asset is treated as placed mid-year
-			return { factor: 0.5, monthsInFirstYear: 12 };
+			return { factor: 0.5, monthsInFirstYear: 12 - placedInServiceMonth + 1 };
 
 		case 'mid_month': {
 			// placedInServiceMonth is 1-indexed (Jan=1)
