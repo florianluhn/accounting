@@ -107,7 +107,7 @@ async function getPostedMonths(assetId: number): Promise<string[]> {
 	// Convert each to 'YYYY-MM'
 	return rows.map(r => {
 		const d = r.entryDate instanceof Date ? r.entryDate : new Date(r.entryDate);
-		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+		return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 	});
 }
 

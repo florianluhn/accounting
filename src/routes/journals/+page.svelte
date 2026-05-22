@@ -732,7 +732,7 @@
 							{#each filteredEntries as entry}
 								<tr>
 									<td>{formatDate(entry.entryDate)}</td>
-									<td>
+									<td class="max-w-xs sm:max-w-sm md:max-w-md whitespace-normal break-words">
 										<div class="font-medium">{entry.description}</div>
 										{#if entry.comment}
 											<div class="text-sm text-base-content/70">{entry.comment}</div>
