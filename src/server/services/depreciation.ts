@@ -195,6 +195,68 @@ export function generateSchedule(
 	if (depreciableBase <= 0 || usefulLifeMonths <= 0 || cost <= 0) return [];
 
 	const { year: startYear, month: startMonth } = parseISODate(activationDate);
+
+	if (method === 'SL') {
+		const monthlyAmount = depreciableBase / usefulLifeMonths;
+		const entries: DepreciationScheduleEntry[] = [];
+		let accumulated = 0;
+		let monthOffset = 0;
+		
+		let firstMonthFactor = 1.0;
+		if (convention === 'mid_month') firstMonthFactor = 0.5;
+		// For half-year SL, it's typically just start in mid-year or take 0.5 in month 1.
+		// We'll keep it simple: if half_year, we can use 0.5 for the first active month.
+		else if (convention === 'half_year') firstMonthFactor = 0.5;
+		
+		let totalMonthsDepreciated = 0;
+		
+		while (accumulated < depreciableBase && totalMonthsDepreciated < usefulLifeMonths) {
+			const { year: my, month: mm } = addMonths(startYear, startMonth, monthOffset);
+			
+			let fractionToTake = 1.0;
+			if (monthOffset === 0) {
+				fractionToTake = firstMonthFactor;
+			} else {
+				const monthsLeft = usefulLifeMonths - totalMonthsDepreciated;
+				if (monthsLeft < 1.0) {
+					fractionToTake = monthsLeft;
+				}
+			}
+			
+			let amount = round2(monthlyAmount * fractionToTake);
+			if (accumulated + amount > depreciableBase) {
+				amount = round2(depreciableBase - accumulated);
+			}
+			
+			if (amount > 0) {
+				accumulated = round2(accumulated + amount);
+				entries.push({
+					month: formatYearMonth(my, mm),
+					monthlyAmount: amount,
+					accumulatedAmount: accumulated,
+					remainingValue: round2(cost - accumulated),
+				});
+			}
+			
+			totalMonthsDepreciated += fractionToTake;
+			monthOffset++;
+		}
+		
+		// Final adjustment: ensure total exactly equals depreciableBase
+		if (entries.length > 0) {
+			const diff = round2(depreciableBase - accumulated);
+			if (diff > 0) {
+				const last = entries[entries.length - 1];
+				last.monthlyAmount = round2(last.monthlyAmount + diff);
+				accumulated = round2(accumulated + diff);
+				last.accumulatedAmount = round2(depreciableBase);
+				last.remainingValue = round2(salvageValue);
+			}
+		}
+		
+		return entries;
+	}
+
 	const usefulLifeYears = Math.ceil(usefulLifeMonths / 12);
 
 	// Compute raw annual depreciation values (before convention adjustment)
