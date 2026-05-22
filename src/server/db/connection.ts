@@ -906,6 +906,101 @@ function migrateAttachmentsInventoryItem(): void {
 	}
 }
 
+function migrateFixedAssets(): void {
+	try {
+		// Create fixed_assets table
+		const tableCheck = sqlite.exec(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name='fixed_assets'"
+		);
+		if (tableCheck.length === 0 || tableCheck[0].values.length === 0) {
+			console.log('Creating fixed_assets table...');
+			sqlite.run(`
+				CREATE TABLE IF NOT EXISTS fixed_assets (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					name TEXT NOT NULL,
+					description TEXT,
+					asset_account_id INTEGER NOT NULL REFERENCES subledger_accounts(id) ON DELETE RESTRICT,
+					expense_account_id INTEGER NOT NULL REFERENCES subledger_accounts(id) ON DELETE RESTRICT,
+					depreciation_method TEXT NOT NULL,
+					convention TEXT NOT NULL,
+					useful_life_months INTEGER NOT NULL,
+					salvage_value REAL NOT NULL DEFAULT 0,
+					activation_date TEXT,
+					created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+					updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+				)
+			`);
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_fixed_assets_name ON fixed_assets(name)');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_fixed_assets_asset_account ON fixed_assets(asset_account_id)');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_fixed_assets_expense_account ON fixed_assets(expense_account_id)');
+			sqlite.run(`
+				CREATE TRIGGER IF NOT EXISTS update_fixed_assets_timestamp
+				AFTER UPDATE ON fixed_assets
+				FOR EACH ROW
+				BEGIN
+					UPDATE fixed_assets SET updated_at = unixepoch() WHERE id = NEW.id;
+				END;
+			`);
+			console.log('✓ fixed_assets table created');
+		} else {
+			console.log('✓ fixed_assets table already exists');
+		}
+
+		// Add fixed_asset_id and is_depreciation columns to journal_entries
+		const jeCols = sqlite.exec('PRAGMA table_info(journal_entries)');
+		if (jeCols.length > 0) {
+			const colNames = jeCols[0].values.map((c: any) => c[1]);
+			if (!colNames.includes('fixed_asset_id')) {
+				sqlite.run('ALTER TABLE journal_entries ADD COLUMN fixed_asset_id INTEGER');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_journal_entries_fixed_asset ON journal_entries(fixed_asset_id)');
+				console.log('✓ Added fixed_asset_id to journal_entries');
+			}
+			if (!colNames.includes('is_depreciation')) {
+				sqlite.run('ALTER TABLE journal_entries ADD COLUMN is_depreciation INTEGER NOT NULL DEFAULT 0');
+				console.log('✓ Added is_depreciation to journal_entries');
+			}
+		}
+
+		// Update audit_logs CHECK constraint to include 'fixed_asset'
+		const auditCheck = sqlite.exec(
+			"SELECT sql FROM sqlite_master WHERE type='table' AND name='audit_logs'"
+		);
+		if (auditCheck.length > 0 && auditCheck[0].values.length > 0) {
+			const createSql = auditCheck[0].values[0][0] as string;
+			if (!createSql.includes("'fixed_asset'")) {
+				console.log('Updating audit_logs to support fixed_asset resource type...');
+				sqlite.run(`
+					CREATE TABLE IF NOT EXISTS audit_logs_new (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						operation TEXT NOT NULL CHECK(operation IN ('CREATE', 'UPDATE', 'DELETE')),
+						resource_type TEXT NOT NULL CHECK(resource_type IN ('currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment', 'vendor', 'customer', 'time_entry', 'inventory_category', 'inventory_item', 'fixed_asset')),
+						resource_id TEXT NOT NULL,
+						source TEXT NOT NULL DEFAULT 'Web UI' CHECK(source IN ('Web UI', 'CSV Import', 'API')),
+						batch_id TEXT,
+						batch_summary TEXT,
+						old_data TEXT,
+						new_data TEXT,
+						timestamp INTEGER NOT NULL DEFAULT (unixepoch()),
+						description TEXT
+					)
+				`);
+				sqlite.run('INSERT INTO audit_logs_new SELECT * FROM audit_logs');
+				sqlite.run('DROP TABLE audit_logs');
+				sqlite.run('ALTER TABLE audit_logs_new RENAME TO audit_logs');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type, resource_id)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_operation ON audit_logs(operation)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_source ON audit_logs(source)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_batch ON audit_logs(batch_id)');
+				console.log('✓ audit_logs updated to support fixed_asset resource type');
+			}
+		}
+	} catch (error) {
+		console.error('Failed to migrate fixed assets:', error);
+		throw error;
+	}
+}
+
 function migrateAppSettings(): void {
 	try {
 		sqlite.run(`
@@ -919,7 +1014,8 @@ function migrateAppSettings(): void {
 			vendors: 'true',
 			customers: 'true',
 			inventory: 'true',
-			timeTracking: 'true'
+			timeTracking: 'true',
+			fixedAssets: 'true'
 		};
 		for (const [key, value] of Object.entries(defaults)) {
 			sqlite.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('${key}', '${value}')`);
@@ -1012,6 +1108,7 @@ migrateAppSettings();
 migrateBookings();
 migrateAttachmentsBookings();
 migrateAttachmentsInventoryItem();
+migrateFixedAssets();
 
 setupTriggers();
 

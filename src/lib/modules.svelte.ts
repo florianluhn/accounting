@@ -7,6 +7,7 @@ export interface ModuleSettings {
 	inventory: boolean;
 	timeTracking: boolean;
 	bookings: boolean;
+	fixedAssets: boolean;
 }
 
 export const modules = $state<ModuleSettings>({
@@ -14,7 +15,8 @@ export const modules = $state<ModuleSettings>({
 	customers: true,
 	inventory: true,
 	timeTracking: true,
-	bookings: true
+	bookings: true,
+	fixedAssets: true
 });
 
 export function applyModuleSettings(settings: Partial<ModuleSettings>) {
@@ -23,4 +25,5 @@ export function applyModuleSettings(settings: Partial<ModuleSettings>) {
 	if (settings.inventory !== undefined) modules.inventory = settings.inventory;
 	if (settings.timeTracking !== undefined) modules.timeTracking = settings.timeTracking;
 	if (settings.bookings !== undefined) modules.bookings = settings.bookings;
+	if (settings.fixedAssets !== undefined) modules.fixedAssets = settings.fixedAssets;
 }

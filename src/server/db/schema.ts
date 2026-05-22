@@ -116,6 +116,8 @@ export const journalEntries = sqliteTable(
 		customerId: integer('customer_id').references(() => customers.id, { onDelete: 'set null' }),
 		inventoryItemId: integer('inventory_item_id'), // optional link to a finished good item
 		inventoryLinkType: text('inventory_link_type'), // 'sale' | 'own_use'
+		fixedAssetId: integer('fixed_asset_id'), // optional link to a fixed asset
+		isDepreciation: integer('is_depreciation', { mode: 'boolean' }).notNull().default(false), // true if this is an auto-posted depreciation entry
 		createdAt: integer('created_at', { mode: 'timestamp' })
 			.notNull()
 			.default(sql`(unixepoch())`),
@@ -131,7 +133,8 @@ export const journalEntries = sqliteTable(
 		currencyIdx: index('idx_journal_entries_currency').on(table.currencyCode),
 		vendorIdx: index('idx_journal_entries_vendor').on(table.vendorId),
 		customerIdx: index('idx_journal_entries_customer').on(table.customerId),
-		inventoryItemIdx: index('idx_journal_entries_inventory_item').on(table.inventoryItemId)
+		inventoryItemIdx: index('idx_journal_entries_inventory_item').on(table.inventoryItemId),
+		fixedAssetIdx: index('idx_journal_entries_fixed_asset').on(table.fixedAssetId)
 	})
 );
 
@@ -384,6 +387,48 @@ export type InventoryItem = typeof inventoryItems.$inferSelect;
 export type NewInventoryItem = typeof inventoryItems.$inferInsert;
 export type MaterialAllocation = typeof materialAllocations.$inferSelect;
 export type NewMaterialAllocation = typeof materialAllocations.$inferInsert;
+
+// ========================================
+// Fixed Assets Table
+// ========================================
+export const fixedAssets = sqliteTable(
+	'fixed_assets',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		name: text('name').notNull(),
+		description: text('description'),
+		// Subledger account to credit when posting depreciation (accumulated depreciation / asset contra)
+		assetAccountId: integer('asset_account_id')
+			.notNull()
+			.references(() => subledgerAccounts.id, { onDelete: 'restrict' }),
+		// Subledger account to debit when posting depreciation (depreciation expense)
+		expenseAccountId: integer('expense_account_id')
+			.notNull()
+			.references(() => subledgerAccounts.id, { onDelete: 'restrict' }),
+		// Depreciation settings
+		depreciationMethod: text('depreciation_method').notNull(), // 'SL' | '200DB' | '150DB'
+		convention: text('convention').notNull(), // 'half_year' | 'mid_month' | 'mid_quarter'
+		usefulLifeMonths: integer('useful_life_months').notNull(), // e.g. 60 = 5 years
+		salvageValue: real('salvage_value').notNull().default(0),
+		// Date the asset was placed in service (ISO date string, null = not yet activated)
+		activationDate: text('activation_date'),
+		// Timestamps
+		createdAt: integer('created_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer('updated_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`)
+	},
+	(table) => ({
+		nameIdx: index('idx_fixed_assets_name').on(table.name),
+		assetAccIdx: index('idx_fixed_assets_asset_account').on(table.assetAccountId),
+		expenseAccIdx: index('idx_fixed_assets_expense_account').on(table.expenseAccountId)
+	})
+);
+
+export type FixedAsset = typeof fixedAssets.$inferSelect;
+export type NewFixedAsset = typeof fixedAssets.$inferInsert;
 
 // ========================================
 // App Settings Table (key-value)

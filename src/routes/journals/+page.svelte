@@ -7,13 +7,15 @@
 		vendorsAPI,
 		customersAPI,
 		inventoryAPI,
+		fixedAssetsAPI,
 		type JournalEntry,
 		type SubledgerAccount,
 		type Currency,
 		type Attachment,
 		type Vendor,
 		type Customer,
-		type InventoryItem
+		type InventoryItem,
+		type FixedAsset
 	} from '$lib/api';
 	import { modules } from '$lib/modules.svelte';
 
@@ -23,6 +25,7 @@
 	let vendors = $state<Vendor[]>([]);
 	let customers = $state<Customer[]>([]);
 	let finishedGoodItems = $state<(InventoryItem & { categoryName: string })[]>([]);
+	let fixedAssets = $state<FixedAsset[]>([]);
 	let entryAttachments = $state<Map<number, Attachment[]>>(new Map());
 	let loading = $state(true);
 	let error = $state('');
@@ -45,7 +48,8 @@
 		vendorId: 0,
 		customerId: 0,
 		inventoryItemId: 0,
-		inventoryLinkType: '' as '' | 'sale' | 'own_use' | 'gift'
+		inventoryLinkType: '' as '' | 'sale' | 'own_use' | 'gift',
+		fixedAssetId: 0
 	});
 	let selectedFiles = $state<File[]>([]);
 	let extraAmounts = $state<string[]>([]);
@@ -82,7 +86,8 @@
 			loadCurrencies(),
 			loadVendors(),
 			loadCustomers(),
-			loadFinishedGoodItems()
+			loadFinishedGoodItems(),
+			loadFixedAssets()
 		]);
 	}
 
@@ -90,6 +95,16 @@
 		try {
 			customers = await customersAPI.list();
 			customers.sort((a, b) => a.lastName.localeCompare(b.lastName));
+		} catch (e) {
+			// non-critical
+		}
+	}
+
+	async function loadFixedAssets() {
+		try {
+			if (modules.fixedAssets) {
+				fixedAssets = await fixedAssetsAPI.list();
+			}
 		} catch (e) {
 			// non-critical
 		}
@@ -236,7 +251,8 @@
 			vendorId: 0,
 			customerId: 0,
 			inventoryItemId: 0,
-			inventoryLinkType: '' as '' | 'sale' | 'own_use' | 'gift'
+			inventoryLinkType: '' as '' | 'sale' | 'own_use' | 'gift',
+			fixedAssetId: 0
 		};
 		editingEntry = null;
 		selectedFiles = [];
@@ -261,7 +277,8 @@
 			vendorId: entry.vendorId || 0,
 			customerId: entry.customerId || 0,
 			inventoryItemId: entry.inventoryItemId || 0,
-			inventoryLinkType: (entry.inventoryLinkType as '' | 'sale' | 'own_use' | 'gift') || ''
+			inventoryLinkType: (entry.inventoryLinkType as '' | 'sale' | 'own_use' | 'gift') || '',
+			fixedAssetId: entry.fixedAssetId || 0
 		};
 		editingEntry = entry;
 		extraAmounts = [];
@@ -322,7 +339,9 @@
 				vendorId: formData.vendorId || null,
 				customerId: formData.customerId || null,
 				inventoryItemId: formData.inventoryItemId || null,
-				inventoryLinkType: formData.inventoryItemId && formData.inventoryLinkType ? formData.inventoryLinkType : null
+				inventoryLinkType: formData.inventoryItemId && formData.inventoryLinkType ? formData.inventoryLinkType : null,
+				fixedAssetId: formData.fixedAssetId || null,
+				isDepreciation: false // Always false here, depreciation is posted via fixed assets directly
 			};
 
 			let firstEntryId: number;
@@ -476,6 +495,19 @@
 		const month = String(d.getUTCMonth() + 1).padStart(2, '0');
 		const day = String(d.getUTCDate()).padStart(2, '0');
 		return `${month}/${day}/${year}`;
+	}
+
+	// Helper to check if an account is an Asset account
+	function isAssetAccount(accountId: number): boolean {
+		if (!accountId) return false;
+		const subledger = subledgerAccounts.find(s => s.id === accountId);
+		if (!subledger) return false;
+		// Check if it starts with '1' (common asset convention) or we could fetch GL account type.
+		// Since we don't have the GL account types directly in this component state easily,
+		// we can assume '1xxx' accounts are assets, or better yet, just show the dropdown
+		// whenever any account is selected but make it optional.
+		// Actually, let's just make it available if the module is enabled.
+		return true; 
 	}
 
 	function formatCurrency(amount: number, currencyCode: string): string {
@@ -778,6 +810,11 @@
 												{entry.inventoryLinkType === 'own_use' ? 'Own Use' : entry.inventoryLinkType === 'gift' ? 'Gift' : entry.inventoryLinkType === 'sale' ? 'Sold' : 'Linked'}: {entry.inventoryItemName || '#' + entry.inventoryItemId}
 											</span>
 										{/if}
+										{#if entry.fixedAssetId}
+											<span class="badge badge-info badge-sm mt-1 block w-fit">
+												Asset: #{entry.fixedAssetId}
+											</span>
+										{/if}
 									</td>
 									<td>
 										<div class="flex gap-2">
@@ -1029,6 +1066,22 @@
 							{/each}
 						</select>
 					</div>
+					{/if}
+
+					<!-- Fixed Asset link -->
+					{#if modules.fixedAssets && fixedAssets.length > 0}
+						<div class="form-control col-span-2">
+							<label class="label">
+								<span class="label-text">Fixed Asset (Optional)</span>
+								<span class="label-text-alt text-xs text-base-content/50">Link this entry to an asset</span>
+							</label>
+							<select class="select select-bordered" bind:value={formData.fixedAssetId}>
+								<option value={0}>No asset linked</option>
+								{#each fixedAssets as asset}
+									<option value={asset.id}>{asset.name}</option>
+								{/each}
+							</select>
+						</div>
 					{/if}
 
 					<!-- Finished Good Item link -->

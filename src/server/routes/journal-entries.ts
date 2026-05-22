@@ -51,7 +51,9 @@ const createJournalEntrySchema = z.object({
 	vendorId: z.number().int().positive().nullable().optional(),
 	customerId: z.number().int().positive().nullable().optional(),
 	inventoryItemId: z.number().int().positive().nullable().optional(),
-	inventoryLinkType: z.enum(['sale', 'own_use', 'gift']).nullable().optional()
+	inventoryLinkType: z.enum(['sale', 'own_use', 'gift']).nullable().optional(),
+	fixedAssetId: z.number().int().positive().nullable().optional(),
+	isDepreciation: z.boolean().optional()
 }).refine((data) => data.debitAccountId !== data.creditAccountId, {
 	message: 'Debit and credit accounts must be different',
 	path: ['creditAccountId']
@@ -72,7 +74,9 @@ const updateJournalEntrySchema = z.object({
 	vendorId: z.number().int().positive().nullable().optional(),
 	customerId: z.number().int().positive().nullable().optional(),
 	inventoryItemId: z.number().int().positive().nullable().optional(),
-	inventoryLinkType: z.enum(['sale', 'own_use', 'gift']).nullable().optional()
+	inventoryLinkType: z.enum(['sale', 'own_use', 'gift']).nullable().optional(),
+	fixedAssetId: z.number().int().positive().nullable().optional(),
+	isDepreciation: z.boolean().optional()
 });
 
 export default async function journalEntriesRoutes(fastify: FastifyInstance) {
@@ -88,6 +92,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			vendorId?: string;
 			customerId?: string;
 			inventoryItemId?: string;
+			fixedAssetId?: string;
 		}
 	}>('/', async (request, reply) => {
 		let query = db.select({
@@ -108,6 +113,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			inventoryItemId: journalEntries.inventoryItemId,
 			inventoryLinkType: journalEntries.inventoryLinkType,
 			inventoryItemName: inventoryItems.name,
+			fixedAssetId: journalEntries.fixedAssetId,
+			isDepreciation: journalEntries.isDepreciation,
 			createdAt: journalEntries.createdAt,
 			updatedAt: journalEntries.updatedAt
 		}).from(journalEntries)
@@ -172,6 +179,13 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			const inventoryItemId = parseInt(request.query.inventoryItemId);
 			if (!isNaN(inventoryItemId)) {
 				conditions.push(eq(journalEntries.inventoryItemId, inventoryItemId));
+			}
+		}
+
+		if (request.query.fixedAssetId) {
+			const fixedAssetId = parseInt(request.query.fixedAssetId);
+			if (!isNaN(fixedAssetId)) {
+				conditions.push(eq(journalEntries.fixedAssetId, fixedAssetId));
 			}
 		}
 
@@ -271,7 +285,9 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 					amountInUSD,
 					customerId: validatedData.customerId ?? null,
 					inventoryItemId: validatedData.inventoryItemId ?? null,
-					inventoryLinkType: linkType
+					inventoryLinkType: linkType,
+					fixedAssetId: validatedData.fixedAssetId ?? null,
+					isDepreciation: validatedData.isDepreciation ?? false
 				})
 				.returning();
 

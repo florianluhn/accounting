@@ -32,6 +32,7 @@
 		{ href: '/vendors', label: 'Vendors', icon: '🏢', module: 'vendors' },
 		{ href: '/customers', label: 'Customers', icon: '👥', module: 'customers' },
 		{ href: '/inventory', label: 'Inventory', icon: '📦', module: 'inventory' },
+		{ href: '/assets', label: 'Fixed Assets', icon: '🏗️', module: 'fixedAssets' },
 		{ href: '/timetracking', label: 'Time Tracking', icon: '🕐', module: 'timeTracking' },
 		{ href: '/bookings', label: 'Bookings', icon: '🏨', module: 'bookings' },
 		{ href: '/reports', label: 'Reports', icon: '📈', module: null },

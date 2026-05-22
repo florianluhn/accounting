@@ -422,6 +422,8 @@ export interface JournalEntry {
 	inventoryItemId?: number | null;
 	inventoryLinkType?: 'sale' | 'own_use' | 'gift' | null;
 	inventoryItemName?: string | null;
+	fixedAssetId?: number | null;
+	isDepreciation?: boolean;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -436,6 +438,7 @@ export const journalEntriesAPI = {
 		currencyCode?: string;
 		customerId?: number;
 		inventoryItemId?: number;
+		fixedAssetId?: number;
 	}): Promise<JournalEntry[]> {
 		const query = new URLSearchParams();
 		if (params?.startDate) query.set('startDate', params.startDate.toISOString());
@@ -446,6 +449,7 @@ export const journalEntriesAPI = {
 		if (params?.currencyCode) query.set('currencyCode', params.currencyCode);
 		if (params?.customerId) query.set('customerId', String(params.customerId));
 		if (params?.inventoryItemId) query.set('inventoryItemId', String(params.inventoryItemId));
+		if (params?.fixedAssetId) query.set('fixedAssetId', String(params.fixedAssetId));
 
 		const queryString = query.toString();
 		return apiFetch(`/api/journal-entries${queryString ? `?${queryString}` : ''}`);
@@ -1322,5 +1326,108 @@ export const bookingsAPI = {
 	// Sync to website
 	async syncAvailability(): Promise<{ count: number; path: string }> {
 		return apiFetch('/api/bookings/sync-availability', { method: 'POST' });
+	}
+};
+
+// ========================================
+// Fixed Assets API
+// ========================================
+
+export interface FixedAsset {
+	id: number;
+	name: string;
+	description: string | null;
+	assetAccountId: number;
+	assetAccountName: string;
+	expenseAccountId: number;
+	expenseAccountName: string;
+	depreciationMethod: 'SL' | '200DB' | '150DB';
+	convention: 'half_year' | 'mid_month' | 'mid_quarter';
+	usefulLifeMonths: number;
+	salvageValue: number;
+	activationDate: string | null;
+	initialValue: number;
+	accumulatedDepreciation: number;
+	remainingValue: number;
+	isFullyDepreciated: boolean;
+	lastDepreciationDate: string | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface DepreciationScheduleEntry {
+	month: string;
+	monthlyAmount: number;
+	accumulatedAmount: number;
+	remainingValue: number;
+	posted: boolean;
+}
+
+export type CreateFixedAssetPayload = {
+	name: string;
+	description?: string | null;
+	assetAccountId: number;
+	expenseAccountId: number;
+	depreciationMethod: 'SL' | '200DB' | '150DB';
+	convention: 'half_year' | 'mid_month' | 'mid_quarter';
+	usefulLifeMonths: number;
+	salvageValue?: number;
+	activationDate?: string | null;
+};
+
+export type UpdateFixedAssetPayload = Partial<CreateFixedAssetPayload>;
+
+export const fixedAssetsAPI = {
+	async list(): Promise<FixedAsset[]> {
+		return apiFetch('/api/fixed-assets');
+	},
+
+	async get(id: number): Promise<FixedAsset> {
+		return apiFetch(`/api/fixed-assets/${id}`);
+	},
+
+	async create(data: CreateFixedAssetPayload): Promise<FixedAsset> {
+		return apiFetch('/api/fixed-assets', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+
+	async update(id: number, data: UpdateFixedAssetPayload): Promise<FixedAsset> {
+		return apiFetch(`/api/fixed-assets/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify(data)
+		});
+	},
+
+	async delete(id: number): Promise<void> {
+		return apiFetch(`/api/fixed-assets/${id}`, {
+			method: 'DELETE'
+		});
+	},
+
+	async getSchedule(id: number): Promise<DepreciationScheduleEntry[]> {
+		return apiFetch(`/api/fixed-assets/${id}/schedule`);
+	},
+
+	async depreciate(id: number, month: string): Promise<JournalEntry> {
+		return apiFetch(`/api/fixed-assets/${id}/depreciate`, {
+			method: 'POST',
+			body: JSON.stringify({ month })
+		});
+	},
+
+	async depreciateAll(month: string): Promise<{ posted: number; skipped: number; errors: string[] }> {
+		return apiFetch('/api/fixed-assets/depreciate-all', {
+			method: 'POST',
+			body: JSON.stringify({ month })
+		});
+	},
+
+	async depreciatePast(id: number, throughMonth: string): Promise<{ posted: number; entries: JournalEntry[] }> {
+		return apiFetch(`/api/fixed-assets/${id}/depreciate-past`, {
+			method: 'POST',
+			body: JSON.stringify({ throughMonth })
+		});
 	}
 };
