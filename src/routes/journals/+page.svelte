@@ -715,70 +715,41 @@
 				</div>
 			{:else}
 				<div class="overflow-x-auto">
-					<table class="table table-zebra">
+					<table class="table table-zebra table-fixed w-full min-w-[1000px]">
 						<thead>
 							<tr>
-								<th>Date</th>
-								<th>Description</th>
-								<th>Debit Account</th>
-								<th>Credit Account</th>
-								<th>Amount</th>
-								<th>Category</th>
-								<th>Vendor / Customer</th>
-								<th>Actions</th>
+								<th class="w-[10%]">Date</th>
+								<th class="w-[22%]">Description</th>
+								<th class="w-[16%]">Debit Account</th>
+								<th class="w-[16%]">Credit Account</th>
+								<th class="w-[10%]">Amount</th>
+								<th class="w-[8%]">Category</th>
+								<th class="w-[10%]">Vendor / Customer</th>
+								<th class="w-[8%]">Actions</th>
 							</tr>
 						</thead>
 						<tbody>
 							{#each filteredEntries as entry}
 								<tr>
-									<td>{formatDate(entry.entryDate)}</td>
-									<td class="whitespace-normal align-top">
-										<div class="font-medium max-w-xs sm:max-w-sm md:max-w-md break-words">{entry.description}</div>
+									<td class="align-top">{formatDate(entry.entryDate)}</td>
+									<td class="whitespace-normal align-top break-words">
+										<div class="font-medium">{entry.description}</div>
 										{#if entry.comment}
-											<div class="text-sm text-base-content/70 max-w-xs sm:max-w-sm md:max-w-md break-words">{entry.comment}</div>
+											<div class="text-sm text-base-content/70 mt-1">{entry.comment}</div>
 										{/if}
 										{#if entryAttachments.get(entry.id)?.length}
 											<div class="mt-2 flex flex-wrap gap-2">
 												{#each entryAttachments.get(entry.id) || [] as attachment}
-													<div class="flex items-center gap-1 bg-base-200 px-2 py-1 rounded text-xs">
-														<svg
-															xmlns="http://www.w3.org/2000/svg"
-															class="h-3 w-3"
-															fill="none"
-															viewBox="0 0 24 24"
-															stroke="currentColor"
-														>
-															<path
-																stroke-linecap="round"
-																stroke-linejoin="round"
-																stroke-width="2"
-																d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
-															/>
+													<div class="flex items-center gap-1 bg-base-200 px-2 py-1 rounded text-xs truncate max-w-full">
+														<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
 														</svg>
-														<a
-															href={attachmentsAPI.getDownloadUrl(attachment.id)}
-															class="link link-hover"
-															target="_blank"
-														>
+														<a href={attachmentsAPI.getDownloadUrl(attachment.id)} class="link link-hover truncate" target="_blank" title={attachment.filename}>
 															{attachment.filename}
 														</a>
-														<button
-															class="btn btn-ghost btn-xs btn-circle"
-															onclick={() => handleDeleteAttachment(attachment.id, entry.id)}
-														>
-															<svg
-																xmlns="http://www.w3.org/2000/svg"
-																class="h-3 w-3"
-																fill="none"
-																viewBox="0 0 24 24"
-																stroke="currentColor"
-															>
-																<path
-																	stroke-linecap="round"
-																	stroke-linejoin="round"
-																	stroke-width="2"
-																	d="M6 18L18 6M6 6l12 12"
-																/>
+														<button class="btn btn-ghost btn-xs btn-circle shrink-0" onclick={() => handleDeleteAttachment(attachment.id, entry.id)}>
+															<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
 															</svg>
 														</button>
 													</div>
@@ -786,55 +757,46 @@
 											</div>
 										{/if}
 									</td>
-									<td class="text-sm align-top">
-										<div class="max-w-[150px] sm:max-w-[200px] whitespace-normal break-words">
-											{getAccountName(entry.debitAccountId)}
-										</div>
+									<td class="text-sm align-top whitespace-normal break-words">
+										{getAccountName(entry.debitAccountId)}
 									</td>
-									<td class="text-sm align-top">
-										<div class="max-w-[150px] sm:max-w-[200px] whitespace-normal break-words">
-											{getAccountName(entry.creditAccountId)}
-										</div>
+									<td class="text-sm align-top whitespace-normal break-words">
+										{getAccountName(entry.creditAccountId)}
 									</td>
-									<td class="font-mono font-bold align-top whitespace-nowrap">{formatCurrency(entry.amount, entry.currencyCode)}</td>
-									<td class="align-top">
+									<td class="font-mono font-bold align-top break-words">{formatCurrency(entry.amount, entry.currencyCode)}</td>
+									<td class="align-top whitespace-normal break-words">
 										{#if entry.category}
 											<span class="badge badge-outline">{entry.category}</span>
 										{/if}
 									</td>
-									<td class="align-top">
-										<div class="max-w-[150px] whitespace-normal break-words">
-											{#if entry.vendorId}
-												<a href="/vendors/{entry.vendorId}" class="link link-hover text-sm">
-													{getVendorName(entry.vendorId)}
-												</a>
-											{/if}
-											{#if entry.customerId}
-												<a href="/customers/{entry.customerId}" class="link link-hover text-sm block">
-													{entry.customerName} {entry.customerLastName}
-												</a>
-											{/if}
-											{#if entry.inventoryItemId}
-												<span class="badge {entry.inventoryLinkType === 'own_use' ? 'badge-warning' : entry.inventoryLinkType === 'gift' ? 'badge-secondary' : entry.inventoryLinkType === 'sale' ? 'badge-success' : 'badge-ghost'} badge-sm mt-1 block w-fit">
-													{entry.inventoryLinkType === 'own_use' ? 'Own Use' : entry.inventoryLinkType === 'gift' ? 'Gift' : entry.inventoryLinkType === 'sale' ? 'Sold' : 'Linked'}: {entry.inventoryItemName || '#' + entry.inventoryItemId}
-												</span>
-											{/if}
-											{#if entry.fixedAssetId}
-												<span class="badge badge-info badge-sm mt-1 block w-fit">
-													Asset: #{entry.fixedAssetId}
-												</span>
-											{/if}
-										</div>
+									<td class="align-top whitespace-normal break-words">
+										{#if entry.vendorId}
+											<a href="/vendors/{entry.vendorId}" class="link link-hover text-sm block">
+												{getVendorName(entry.vendorId)}
+											</a>
+										{/if}
+										{#if entry.customerId}
+											<a href="/customers/{entry.customerId}" class="link link-hover text-sm block mt-1">
+												{entry.customerName} {entry.customerLastName}
+											</a>
+										{/if}
+										{#if entry.inventoryItemId}
+											<span class="badge {entry.inventoryLinkType === 'own_use' ? 'badge-warning' : entry.inventoryLinkType === 'gift' ? 'badge-secondary' : entry.inventoryLinkType === 'sale' ? 'badge-success' : 'badge-ghost'} badge-sm mt-1 block w-fit max-w-full truncate" title="{entry.inventoryLinkType === 'own_use' ? 'Own Use' : entry.inventoryLinkType === 'gift' ? 'Gift' : entry.inventoryLinkType === 'sale' ? 'Sold' : 'Linked'}: {entry.inventoryItemName || '#' + entry.inventoryItemId}">
+												{entry.inventoryLinkType === 'own_use' ? 'Own Use' : entry.inventoryLinkType === 'gift' ? 'Gift' : entry.inventoryLinkType === 'sale' ? 'Sold' : 'Linked'}: {entry.inventoryItemName || '#' + entry.inventoryItemId}
+											</span>
+										{/if}
+										{#if entry.fixedAssetId}
+											<span class="badge badge-info badge-sm mt-1 block w-fit">
+												Asset: #{entry.fixedAssetId}
+											</span>
+										{/if}
 									</td>
-									<td>
-										<div class="flex gap-2">
-											<button class="btn btn-sm btn-ghost" onclick={() => openEditModal(entry)}>
+									<td class="align-top">
+										<div class="flex flex-col gap-1">
+											<button class="btn btn-xs btn-ghost justify-start" onclick={() => openEditModal(entry)}>
 												Edit
 											</button>
-											<button
-												class="btn btn-sm btn-ghost text-error"
-												onclick={() => handleDelete(entry.id)}
-											>
+											<button class="btn btn-xs btn-ghost text-error justify-start" onclick={() => handleDelete(entry.id)}>
 												Delete
 											</button>
 										</div>
