@@ -131,7 +131,8 @@ function computeAnnualDepreciations(
 	method: Method,
 	cost: number,
 	salvageValue: number,
-	usefulLifeYears: number
+	usefulLifeYears: number,
+	firstYearFactor: number
 ): number[] {
 	const depreciableBase = cost - salvageValue;
 	if (depreciableBase <= 0 || usefulLifeYears <= 0) return [];
@@ -147,27 +148,32 @@ function computeAnnualDepreciations(
 	const annuals: number[] = [];
 	let bookValue = cost;
 
-	for (let year = 0; year < usefulLifeYears; year++) {
-		const remainingLife = usefulLifeYears - year;
+	// Year 1 (tax year 1)
+	let depr = bookValue * rate * firstYearFactor;
+	let actual = Math.min(depr, bookValue - salvageValue);
+	annuals.push(actual);
+	bookValue -= actual;
+
+	// Year 2 to usefulLifeYears
+	for (let year = 1; year < usefulLifeYears; year++) {
+		const remainingLife = usefulLifeYears - year + (1 - firstYearFactor);
 		const dbDepr = bookValue * rate;
 		const slDepr = (bookValue - salvageValue) / remainingLife;
 
 		if (slDepr >= dbDepr) {
-			// Switch to SL for this and all remaining years
-			for (let y = year; y < usefulLifeYears; y++) {
-				const rl = usefulLifeYears - y;
-				const sl = (bookValue - salvageValue) / rl;
-				annuals.push(sl);
-				bookValue -= sl;
-			}
-			break;
+			actual = Math.min(slDepr, bookValue - salvageValue);
+			annuals.push(actual);
+			bookValue -= actual;
 		} else {
-			// Ensure we don't depreciate below salvage
-			const maxDepr = bookValue - salvageValue;
-			const actual = Math.min(dbDepr, maxDepr);
+			actual = Math.min(dbDepr, bookValue - salvageValue);
 			annuals.push(actual);
 			bookValue -= actual;
 		}
+	}
+
+	// Final partial year
+	if (bookValue - salvageValue > 0.001) {
+		annuals.push(bookValue - salvageValue);
 	}
 
 	return annuals;
@@ -257,101 +263,57 @@ export function generateSchedule(
 		return entries;
 	}
 
-	const usefulLifeYears = Math.ceil(usefulLifeMonths / 12);
-
-	// Compute raw annual depreciation values (before convention adjustment)
-	const rawAnnuals = computeAnnualDepreciations(method, cost, salvageValue, usefulLifeYears);
-	if (rawAnnuals.length === 0) return [];
-
+	// DB methods
 	const { factor: firstYearFactor, monthsInFirstYear } = firstYearConvention(convention, startMonth);
+	
+	const usefulLifeYears = Math.ceil(usefulLifeMonths / 12);
+	const rawAnnuals = computeAnnualDepreciations(method, cost, salvageValue, usefulLifeYears, firstYearFactor);
 
-	// Build the schedule year by year, then month by month
 	const entries: DepreciationScheduleEntry[] = [];
 	let accumulated = 0;
+	let monthOffset = 0;
 
-	// --- First year (partial) ---
-	const firstYearDepr = rawAnnuals[0] * firstYearFactor;
-	const firstYearMonthly = firstYearDepr / monthsInFirstYear;
-
-	for (let i = 0; i < monthsInFirstYear; i++) {
-		const { year: my, month: mm } = addMonths(startYear, startMonth, i);
-		let amount = round2(firstYearMonthly);
-
-		// Don't exceed depreciable base
-		if (accumulated + amount > depreciableBase) {
-			amount = round2(depreciableBase - accumulated);
+	for (let i = 0; i < rawAnnuals.length; i++) {
+		const taxYearAmount = rawAnnuals[i];
+		let monthsInTaxYear = 12;
+		
+		if (i === 0) {
+			monthsInTaxYear = monthsInFirstYear;
+		} else if (i === rawAnnuals.length - 1) {
+			// The last tax year takes whatever months are left to reach usefulLifeMonths
+			monthsInTaxYear = usefulLifeMonths - monthOffset;
 		}
-		if (amount <= 0) break;
 
-		accumulated = round2(accumulated + amount);
-		entries.push({
-			month: formatYearMonth(my, mm),
-			monthlyAmount: amount,
-			accumulatedAmount: accumulated,
-			remainingValue: round2(cost - accumulated),
-		});
-	}
+		if (monthsInTaxYear <= 0) break;
 
-	// --- Full middle years ---
-	// The "second depreciation year" starts at activation anniversary
-	for (let yearIdx = 1; yearIdx < rawAnnuals.length; yearIdx++) {
-		const yearStartOffset = monthsInFirstYear + (yearIdx - 1) * 12;
-		const annual = rawAnnuals[yearIdx];
-		const monthly = annual / 12;
+		const monthlyAmount = taxYearAmount / monthsInTaxYear;
 
-		for (let m = 0; m < 12; m++) {
-			const { year: my, month: mm } = addMonths(startYear, startMonth, yearStartOffset + m);
-			let amount = round2(monthly);
+		for (let m = 0; m < monthsInTaxYear; m++) {
+			const { year: my, month: mm } = addMonths(startYear, startMonth, monthOffset);
+			let amount = round2(monthlyAmount);
 
 			if (accumulated + amount > depreciableBase) {
 				amount = round2(depreciableBase - accumulated);
 			}
-			if (amount <= 0) break;
 
-			accumulated = round2(accumulated + amount);
-			entries.push({
-				month: formatYearMonth(my, mm),
-				monthlyAmount: amount,
-				accumulatedAmount: accumulated,
-				remainingValue: round2(cost - accumulated),
-			});
-		}
-
-		if (accumulated >= depreciableBase) break;
-	}
-
-	// --- Last year remainder (convention gives back what was not taken in first year) ---
-	// Under half-year / mid-month / mid-quarter, the untaken portion from the
-	// first year extends into a final partial year beyond the normal life.
-	const lastYearDepr = rawAnnuals[rawAnnuals.length - 1] * (1 - firstYearFactor);
-	if (round2(depreciableBase - accumulated) > 0 && lastYearDepr > 0) {
-		const lastYearMonthsCount = 12 - monthsInFirstYear || 12;
-		const lastYearMonthly = lastYearDepr / lastYearMonthsCount;
-		const lastYearStartOffset = monthsInFirstYear + (rawAnnuals.length - 1) * 12;
-
-		for (let m = 0; m < lastYearMonthsCount; m++) {
-			const { year: my, month: mm } = addMonths(startYear, startMonth, lastYearStartOffset + m);
-			let amount = round2(lastYearMonthly);
-
-			if (accumulated + amount > depreciableBase) {
-				amount = round2(depreciableBase - accumulated);
+			if (amount > 0) {
+				accumulated = round2(accumulated + amount);
+				entries.push({
+					month: formatYearMonth(my, mm),
+					monthlyAmount: amount,
+					accumulatedAmount: accumulated,
+					remainingValue: round2(cost - accumulated),
+				});
 			}
-			if (amount <= 0) break;
 
-			accumulated = round2(accumulated + amount);
-			entries.push({
-				month: formatYearMonth(my, mm),
-				monthlyAmount: amount,
-				accumulatedAmount: accumulated,
-				remainingValue: round2(cost - accumulated),
-			});
+			monthOffset++;
 		}
 	}
-
-	// --- Final adjustment: ensure total exactly equals depreciableBase ---
+	
+	// Final adjustment: ensure total exactly equals depreciableBase
 	if (entries.length > 0) {
 		const diff = round2(depreciableBase - accumulated);
-		if (diff !== 0) {
+		if (diff > 0) {
 			const last = entries[entries.length - 1];
 			last.monthlyAmount = round2(last.monthlyAmount + diff);
 			accumulated = round2(accumulated + diff);
