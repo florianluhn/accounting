@@ -1012,6 +1012,7 @@ export interface AppSettings {
 	inventory: boolean;
 	timeTracking: boolean;
 	bookings: boolean;
+	fixedAssets: boolean;
 }
 
 export const settingsAPI = {

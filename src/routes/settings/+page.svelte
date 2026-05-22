@@ -132,7 +132,8 @@
 				customers: modules.customers,
 				inventory: modules.inventory,
 				timeTracking: modules.timeTracking,
-				bookings: modules.bookings
+				bookings: modules.bookings,
+				fixedAssets: modules.fixedAssets
 			});
 			applyModuleSettings(updated);
 		} catch (e) {
@@ -381,6 +382,13 @@
 						<div class="text-xs text-base-content/50">Overnight booking management</div>
 					</div>
 					<input type="checkbox" class="toggle toggle-primary" bind:checked={modules.bookings} onchange={saveModuleSettings} />
+				</label>
+				<label class="flex items-center justify-between p-3 bg-base-200 rounded-box cursor-pointer">
+					<div>
+						<div class="font-medium">Assets</div>
+						<div class="text-xs text-base-content/50">Fixed assets management</div>
+					</div>
+					<input type="checkbox" class="toggle toggle-primary" bind:checked={modules.fixedAssets} onchange={saveModuleSettings} />
 				</label>
 			</div>
 			{#if modulesSaving}

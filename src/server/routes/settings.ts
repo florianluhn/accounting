@@ -3,7 +3,7 @@ import db, { saveDatabase } from '../db/connection.js';
 import { appSettings } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
-const SETTING_KEYS = ['vendors', 'customers', 'inventory', 'timeTracking', 'bookings'] as const;
+const SETTING_KEYS = ['vendors', 'customers', 'inventory', 'timeTracking', 'bookings', 'fixedAssets'] as const;
 
 async function getAllSettings() {
 	const rows = await db.select().from(appSettings);
@@ -16,7 +16,8 @@ async function getAllSettings() {
 		customers: map.customers ?? true,
 		inventory: map.inventory ?? true,
 		timeTracking: map.timeTracking ?? true,
-		bookings: map.bookings ?? true
+		bookings: map.bookings ?? true,
+		fixedAssets: map.fixedAssets ?? true
 	};
 }
 
