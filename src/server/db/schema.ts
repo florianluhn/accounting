@@ -406,7 +406,7 @@ export const fixedAssets = sqliteTable(
 			.notNull()
 			.references(() => subledgerAccounts.id, { onDelete: 'restrict' }),
 		// Depreciation settings
-		depreciationMethod: text('depreciation_method').notNull(), // 'SL' | '200DB' | '150DB'
+		depreciationMethod: text('depreciation_method').notNull(), // 'SL' | '200DB' | '150DB' | 'Immediate'
 		convention: text('convention').notNull(), // 'half_year' | 'mid_month' | 'mid_quarter'
 		usefulLifeMonths: integer('useful_life_months').notNull(), // e.g. 60 = 5 years
 		salvageValue: real('salvage_value').notNull().default(0),

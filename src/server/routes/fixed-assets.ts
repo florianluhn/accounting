@@ -13,7 +13,7 @@ const createAssetSchema = z.object({
 	description: z.string().max(1000).optional().nullable(),
 	assetAccountId: z.number().int().positive(),
 	expenseAccountId: z.number().int().positive(),
-	depreciationMethod: z.enum(['SL', '200DB', '150DB']),
+	depreciationMethod: z.enum(['SL', '200DB', '150DB', 'Immediate']),
 	convention: z.enum(['half_year', 'mid_month', 'mid_quarter']),
 	usefulLifeMonths: z.number().int().positive(),
 	salvageValue: z.number().min(0).default(0),
@@ -326,7 +326,7 @@ export default async function fixedAssetsRoutes(fastify: FastifyInstance) {
 		const agg = await computeAssetAggregates(asset.id);
 
 		const schedule = generateSchedule(
-			asset.depreciationMethod as 'SL' | '200DB' | '150DB',
+			asset.depreciationMethod as 'SL' | '200DB' | '150DB' | 'Immediate',
 			asset.convention as 'half_year' | 'mid_month' | 'mid_quarter',
 			agg.initialValue,
 			asset.salvageValue,
@@ -377,7 +377,7 @@ export default async function fixedAssetsRoutes(fastify: FastifyInstance) {
 		const agg = await computeAssetAggregates(asset.id);
 
 		const schedule = generateSchedule(
-			asset.depreciationMethod as 'SL' | '200DB' | '150DB',
+			asset.depreciationMethod as 'SL' | '200DB' | '150DB' | 'Immediate',
 			asset.convention as 'half_year' | 'mid_month' | 'mid_quarter',
 			agg.initialValue,
 			asset.salvageValue,
@@ -452,7 +452,7 @@ export default async function fixedAssetsRoutes(fastify: FastifyInstance) {
 
 				// Generate schedule and find the month
 				const schedule = generateSchedule(
-					asset.depreciationMethod as 'SL' | '200DB' | '150DB',
+					asset.depreciationMethod as 'SL' | '200DB' | '150DB' | 'Immediate',
 					asset.convention as 'half_year' | 'mid_month' | 'mid_quarter',
 					agg.initialValue,
 					asset.salvageValue,
@@ -526,7 +526,7 @@ export default async function fixedAssetsRoutes(fastify: FastifyInstance) {
 		const agg = await computeAssetAggregates(asset.id);
 
 		const schedule = generateSchedule(
-			asset.depreciationMethod as 'SL' | '200DB' | '150DB',
+			asset.depreciationMethod as 'SL' | '200DB' | '150DB' | 'Immediate',
 			asset.convention as 'half_year' | 'mid_month' | 'mid_quarter',
 			agg.initialValue,
 			asset.salvageValue,

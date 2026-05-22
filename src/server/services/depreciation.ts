@@ -5,7 +5,7 @@ export interface DepreciationScheduleEntry {
 	remainingValue: number;
 }
 
-type Method = 'SL' | '200DB' | '150DB';
+type Method = 'SL' | '200DB' | '150DB' | 'Immediate';
 type Convention = 'half_year' | 'mid_month' | 'mid_quarter';
 
 // ---------------------------------------------------------------------------
@@ -201,6 +201,15 @@ export function generateSchedule(
 	if (depreciableBase <= 0 || usefulLifeMonths <= 0 || cost <= 0) return [];
 
 	const { year: startYear, month: startMonth } = parseISODate(activationDate);
+
+	if (method === 'Immediate') {
+		return [{
+			month: formatYearMonth(startYear, startMonth),
+			monthlyAmount: round2(depreciableBase),
+			accumulatedAmount: round2(depreciableBase),
+			remainingValue: round2(salvageValue),
+		}];
+	}
 
 	if (method === 'SL') {
 		const monthlyAmount = depreciableBase / usefulLifeMonths;

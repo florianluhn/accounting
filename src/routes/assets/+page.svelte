@@ -46,7 +46,7 @@
 		description: '',
 		assetAccountId: 0,
 		expenseAccountId: 0,
-		depreciationMethod: 'SL' as 'SL' | '200DB' | '150DB',
+		depreciationMethod: 'SL' as 'SL' | '200DB' | '150DB' | 'Immediate',
 		convention: 'half_year' as 'half_year' | 'mid_month' | 'mid_quarter',
 		usefulLifeMonths: 60,
 		salvageValue: 0,
@@ -402,6 +402,7 @@
 							<option value="SL">Straight-Line (SL)</option>
 							<option value="200DB">200% Declining Balance (200DB)</option>
 							<option value="150DB">150% Declining Balance (150DB)</option>
+							<option value="Immediate">Immediate / 100% Bonus (Section 179)</option>
 						</select>
 					</div>
 

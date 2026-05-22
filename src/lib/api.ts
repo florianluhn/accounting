@@ -1342,7 +1342,7 @@ export interface FixedAsset {
 	assetAccountName: string;
 	expenseAccountId: number;
 	expenseAccountName: string;
-	depreciationMethod: 'SL' | '200DB' | '150DB';
+	depreciationMethod: 'SL' | '200DB' | '150DB' | 'Immediate';
 	convention: 'half_year' | 'mid_month' | 'mid_quarter';
 	usefulLifeMonths: number;
 	salvageValue: number;
@@ -1369,7 +1369,7 @@ export type CreateFixedAssetPayload = {
 	description?: string | null;
 	assetAccountId: number;
 	expenseAccountId: number;
-	depreciationMethod: 'SL' | '200DB' | '150DB';
+	depreciationMethod: 'SL' | '200DB' | '150DB' | 'Immediate';
 	convention: 'half_year' | 'mid_month' | 'mid_quarter';
 	usefulLifeMonths: number;
 	salvageValue?: number;
