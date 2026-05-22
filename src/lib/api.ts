@@ -1302,6 +1302,26 @@ export const bookingsAPI = {
 		return apiFetch(`/api/bookings/${id}`, { method: 'DELETE' });
 	},
 
+	downloadCSV() {
+		window.location.href = `${API_URL}/api/bookings/export/csv`;
+	},
+	async uploadCSV(file: File) {
+		const formData = new FormData();
+		formData.append('file', file);
+
+		const response = await fetch(`${API_URL}/api/bookings/import/csv`, {
+			method: 'POST',
+			body: formData
+		});
+
+		if (!response.ok) {
+			const errorData = await response.json();
+			throw new Error(JSON.stringify(errorData));
+		}
+
+		return response.json();
+	},
+
 	// Config
 	async getConfig(): Promise<BookingConfig> {
 		return apiFetch('/api/bookings/config');

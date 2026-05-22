@@ -47,6 +47,10 @@
 	let selectedFiles = $state<File[]>([]);
 	let uploadingFiles = $state(false);
 
+	let fileInput: HTMLInputElement;
+	let uploadingCsv = $state(false);
+	let csvResults = $state<any>(null);
+
 	$effect(() => {
 		loadAll();
 	});
@@ -197,6 +201,30 @@
 			if (editingBooking) await loadAttachments(editingBooking.id);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to delete attachment';
+		}
+	}
+
+	async function handleUploadCSV(e: Event) {
+		const target = e.target as HTMLInputElement;
+		const file = target.files?.[0];
+		if (!file) return;
+
+		uploadingCsv = true;
+		error = '';
+		csvResults = null;
+
+		try {
+			csvResults = await bookingsAPI.uploadCSV(file);
+			await loadAll();
+		} catch (err: any) {
+			try {
+				csvResults = JSON.parse(err.message);
+			} catch {
+				error = err.message || 'Failed to import CSV';
+			}
+		} finally {
+			uploadingCsv = false;
+			if (fileInput) fileInput.value = '';
 		}
 	}
 
@@ -535,7 +563,40 @@
 		</div>
 	{/if}
 
-	<div class="mb-6 flex justify-end gap-2">
+	{#if csvResults}
+		<div class="alert {csvResults.failed > 0 ? 'alert-error' : 'alert-success'} mb-6 items-start">
+			<div class="flex-1">
+				<h3 class="font-bold">CSV Import Results</h3>
+				<p>Successfully imported: {csvResults.success}</p>
+				{#if csvResults.failed > 0}
+					<p class="font-bold mt-2">Failed rows: {csvResults.failed}</p>
+					<ul class="list-disc list-inside mt-2 text-sm max-h-40 overflow-y-auto bg-base-200 p-2 rounded text-base-content">
+						{#each csvResults.errors as err}
+							<li>{err}</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+			<button class="btn btn-ghost btn-sm" onclick={() => csvResults = null}>Dismiss</button>
+		</div>
+	{/if}
+
+	<div class="mb-6 flex flex-wrap justify-end gap-2">
+		<button class="btn btn-outline" onclick={() => bookingsAPI.downloadCSV()}>
+			<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+			Download CSV
+		</button>
+
+		<input type="file" accept=".csv" class="hidden" bind:this={fileInput} onchange={handleUploadCSV} />
+		<button class="btn btn-outline" onclick={() => fileInput.click()} disabled={uploadingCsv}>
+			{#if uploadingCsv}
+				<span class="loading loading-spinner loading-xs"></span>
+			{:else}
+				<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+			{/if}
+			Upload CSV
+		</button>
+
 		<button class="btn btn-outline" onclick={syncToWebsite} disabled={syncing}>
 			{#if syncing}
 				<span class="loading loading-spinner loading-xs"></span>

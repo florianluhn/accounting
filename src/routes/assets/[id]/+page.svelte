@@ -25,6 +25,14 @@
 		mid_quarter: 'Mid-Quarter'
 	};
 
+	function formatDate(date: string | Date): string {
+		const d = new Date(date);
+		const year = d.getUTCFullYear();
+		const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+		const day = String(d.getUTCDate()).padStart(2, '0');
+		return `${month}/${day}/${year}`;
+	}
+
 	function todayMonth() {
 		const d = new Date();
 		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -214,7 +222,7 @@
 				<div class="stat-title text-xs">Accumulated Depreciation</div>
 				<div class="stat-value text-xl text-warning">{fmt(asset.accumulatedDepreciation)}</div>
 				{#if asset.lastDepreciationDate}
-					<div class="stat-desc">last: {new Date(asset.lastDepreciationDate).toLocaleDateString()}</div>
+					<div class="stat-desc">last: {formatDate(asset.lastDepreciationDate)}</div>
 				{/if}
 			</div>
 			<div class="stat bg-base-100 shadow rounded-xl p-4">
@@ -331,7 +339,7 @@
 							<tbody>
 								{#each entries as entry}
 									<tr>
-										<td class="text-sm">{new Date(entry.entryDate).toLocaleDateString()}</td>
+										<td class="text-sm">{formatDate(entry.entryDate)}</td>
 										<td class="text-sm max-w-xs truncate">{entry.description}</td>
 										<td class="text-xs text-base-content/60">{entry.debitAccountId}</td>
 										<td class="text-xs text-base-content/60">{entry.creditAccountId}</td>
