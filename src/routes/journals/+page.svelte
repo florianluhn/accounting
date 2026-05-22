@@ -732,10 +732,10 @@
 							{#each filteredEntries as entry}
 								<tr>
 									<td>{formatDate(entry.entryDate)}</td>
-									<td class="max-w-xs sm:max-w-sm md:max-w-md whitespace-normal break-words">
-										<div class="font-medium">{entry.description}</div>
+									<td class="whitespace-normal align-top">
+										<div class="font-medium max-w-xs sm:max-w-sm md:max-w-md break-words">{entry.description}</div>
 										{#if entry.comment}
-											<div class="text-sm text-base-content/70">{entry.comment}</div>
+											<div class="text-sm text-base-content/70 max-w-xs sm:max-w-sm md:max-w-md break-words">{entry.comment}</div>
 										{/if}
 										{#if entryAttachments.get(entry.id)?.length}
 											<div class="mt-2 flex flex-wrap gap-2">
@@ -786,35 +786,45 @@
 											</div>
 										{/if}
 									</td>
-									<td class="text-sm">{getAccountName(entry.debitAccountId)}</td>
-									<td class="text-sm">{getAccountName(entry.creditAccountId)}</td>
-									<td class="font-mono font-bold">{formatCurrency(entry.amount, entry.currencyCode)}</td>
-									<td>
+									<td class="text-sm align-top">
+										<div class="max-w-[150px] sm:max-w-[200px] whitespace-normal break-words">
+											{getAccountName(entry.debitAccountId)}
+										</div>
+									</td>
+									<td class="text-sm align-top">
+										<div class="max-w-[150px] sm:max-w-[200px] whitespace-normal break-words">
+											{getAccountName(entry.creditAccountId)}
+										</div>
+									</td>
+									<td class="font-mono font-bold align-top whitespace-nowrap">{formatCurrency(entry.amount, entry.currencyCode)}</td>
+									<td class="align-top">
 										{#if entry.category}
 											<span class="badge badge-outline">{entry.category}</span>
 										{/if}
 									</td>
-									<td>
-										{#if entry.vendorId}
-											<a href="/vendors/{entry.vendorId}" class="link link-hover text-sm">
-												{getVendorName(entry.vendorId)}
-											</a>
-										{/if}
-										{#if entry.customerId}
-											<a href="/customers/{entry.customerId}" class="link link-hover text-sm block">
-												{entry.customerName} {entry.customerLastName}
-											</a>
-										{/if}
-										{#if entry.inventoryItemId}
-											<span class="badge {entry.inventoryLinkType === 'own_use' ? 'badge-warning' : entry.inventoryLinkType === 'gift' ? 'badge-secondary' : entry.inventoryLinkType === 'sale' ? 'badge-success' : 'badge-ghost'} badge-sm mt-1 block w-fit">
-												{entry.inventoryLinkType === 'own_use' ? 'Own Use' : entry.inventoryLinkType === 'gift' ? 'Gift' : entry.inventoryLinkType === 'sale' ? 'Sold' : 'Linked'}: {entry.inventoryItemName || '#' + entry.inventoryItemId}
-											</span>
-										{/if}
-										{#if entry.fixedAssetId}
-											<span class="badge badge-info badge-sm mt-1 block w-fit">
-												Asset: #{entry.fixedAssetId}
-											</span>
-										{/if}
+									<td class="align-top">
+										<div class="max-w-[150px] whitespace-normal break-words">
+											{#if entry.vendorId}
+												<a href="/vendors/{entry.vendorId}" class="link link-hover text-sm">
+													{getVendorName(entry.vendorId)}
+												</a>
+											{/if}
+											{#if entry.customerId}
+												<a href="/customers/{entry.customerId}" class="link link-hover text-sm block">
+													{entry.customerName} {entry.customerLastName}
+												</a>
+											{/if}
+											{#if entry.inventoryItemId}
+												<span class="badge {entry.inventoryLinkType === 'own_use' ? 'badge-warning' : entry.inventoryLinkType === 'gift' ? 'badge-secondary' : entry.inventoryLinkType === 'sale' ? 'badge-success' : 'badge-ghost'} badge-sm mt-1 block w-fit">
+													{entry.inventoryLinkType === 'own_use' ? 'Own Use' : entry.inventoryLinkType === 'gift' ? 'Gift' : entry.inventoryLinkType === 'sale' ? 'Sold' : 'Linked'}: {entry.inventoryItemName || '#' + entry.inventoryItemId}
+												</span>
+											{/if}
+											{#if entry.fixedAssetId}
+												<span class="badge badge-info badge-sm mt-1 block w-fit">
+													Asset: #{entry.fixedAssetId}
+												</span>
+											{/if}
+										</div>
 									</td>
 									<td>
 										<div class="flex gap-2">
