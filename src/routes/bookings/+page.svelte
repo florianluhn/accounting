@@ -23,6 +23,7 @@
 
 	let showModal = $state(false);
 	let editingBooking = $state<Booking | null>(null);
+	let searchQuery = $state('');
 
 	// Form state — all $state so edits survive re-renders
 	let customerId = $state(0);
@@ -420,6 +421,21 @@
 		return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
 	}
 
+	function isBookingActiveToday(b: Booking): boolean {
+		const today = todayStr();
+		return b.checkInDate <= today && b.checkOutDate > today;
+	}
+
+	let filteredBookings = $derived.by(() => {
+		if (!searchQuery.trim()) return bookings;
+		const query = searchQuery.toLowerCase();
+		return bookings.filter(b => 
+			customerLabel(b).toLowerCase().includes(query) ||
+			(b.platformName || '').toLowerCase().includes(query) ||
+			(b.comment || '').toLowerCase().includes(query)
+		);
+	});
+
 	type DayCell =
 		| { date: string; kind: 'booked'; platformId: number; bookingId: number; customer: string; platformName: string }
 		| { date: string; kind: 'past' }
@@ -718,10 +734,18 @@
 									<div class="w-4 h-4"></div>
 								{/each}
 								{#each days as day (day.date)}
+									<!-- svelte-ignore a11y_click_events_have_key_events -->
+									<!-- svelte-ignore a11y_no_static_element_interactions -->
 									<div
-										class="w-4 h-4 rounded-sm cursor-pointer"
+										class="w-4 h-4 rounded-sm {day.kind === 'booked' ? 'cursor-pointer hover:opacity-75' : ''}"
 										style="background-color: {dayColor(day)};"
 										title={dayTitle(day)}
+										onclick={() => {
+											if (day.kind === 'booked') {
+												const b = bookings.find(x => x.id === day.bookingId);
+												if (b) openEdit(b);
+											}
+										}}
 									></div>
 								{/each}
 							</div>
@@ -743,6 +767,10 @@
 					<span>No bookings yet. Create your first one to get started.</span>
 				</div>
 			{:else}
+				<div class="flex items-center justify-between mb-4">
+					<h2 class="card-title">All Bookings</h2>
+					<input type="text" placeholder="Search bookings..." class="input input-bordered w-full max-w-xs" bind:value={searchQuery} />
+				</div>
 				<div class="overflow-x-auto">
 					<table class="table table-zebra">
 						<thead>
@@ -760,8 +788,8 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each bookings as b (b.id)}
-								<tr>
+							{#each filteredBookings as b (b.id)}
+								<tr style={isBookingActiveToday(b) ? 'background-color: oklch(var(--p) / 0.15); font-weight: 600;' : ''}>
 									<td>{customerLabel(b)}</td>
 									<td>{b.platformName || `#${b.platformId}`}</td>
 									<td>{formatDate(b.checkInDate)}</td>
