@@ -153,12 +153,12 @@
 		if (!platformFeeOverride) platformFee = computedPlatformFee.toFixed(2);
 	});
 
-	function resetForm() {
+	function resetForm(defaultDate?: string) {
 		customerId = 0;
 		platformId = platforms[0]?.id || 0;
 		const today = new Date().toISOString().split('T')[0];
-		checkInDate = today;
-		checkOutDate = today;
+		checkInDate = defaultDate || today;
+		checkOutDate = defaultDate || today;
 		totalPaid = '';
 		comment = '';
 		salesTaxOverride = false;
@@ -229,7 +229,7 @@
 		}
 	}
 
-	function openCreate() {
+	function openCreate(e?: string | Event) {
 		if (customers.length === 0) {
 			error = 'Please create at least one customer before adding a booking.';
 			return;
@@ -239,7 +239,7 @@
 			return;
 		}
 		editingBooking = null;
-		resetForm();
+		resetForm(typeof e === 'string' ? e : undefined);
 		showModal = true;
 	}
 
@@ -737,13 +737,15 @@
 									<!-- svelte-ignore a11y_click_events_have_key_events -->
 									<!-- svelte-ignore a11y_no_static_element_interactions -->
 									<div
-										class="w-4 h-4 rounded-sm {day.kind === 'booked' ? 'cursor-pointer hover:opacity-75' : ''}"
+										class="w-4 h-4 rounded-sm cursor-pointer hover:opacity-75"
 										style="background-color: {dayColor(day)};"
 										title={dayTitle(day)}
 										onclick={() => {
 											if (day.kind === 'booked') {
 												const b = bookings.find(x => x.id === day.bookingId);
 												if (b) openEdit(b);
+											} else {
+												openCreate(day.date);
 											}
 										}}
 									></div>
