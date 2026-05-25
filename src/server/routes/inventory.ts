@@ -634,10 +634,15 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 		}
 
 		const remaining = rawItem.remainingQuantity ?? 0;
-		if (data.quantityUsed > remaining + 0.0001) {
+		// Round the remaining quantity to 2 decimals to match the dropdown presentation
+		// and allow users to type the rounded number without it being rejected.
+		const roundedRemaining = Math.round(remaining * 100) / 100;
+		const allowedMax = Math.max(remaining, roundedRemaining);
+		
+		if (data.quantityUsed > allowedMax + 0.0001) {
 			return reply.status(400).send({
 				error: 'Bad Request',
-				message: `Only ${remaining} ${rawCategory.quantityField ?? 'units'} remaining on this item`
+				message: `Only ${remaining.toLocaleString('en-US', { maximumFractionDigits: 4 })} ${rawCategory.quantityField ?? 'units'} remaining on this item`
 			});
 		}
 
