@@ -155,6 +155,10 @@
 		formData.debitAccountId = account.id;
 		debitAccountSearch = getAccountDisplay(account.id);
 		showDebitDropdown = false;
+		// Auto-set currency to match the selected account's currency
+		if (account.currencyCode) {
+			formData.currencyCode = account.currencyCode;
+		}
 	}
 
 	// Select credit account
@@ -162,6 +166,10 @@
 		formData.creditAccountId = account.id;
 		creditAccountSearch = getAccountDisplay(account.id);
 		showCreditDropdown = false;
+		// Auto-set currency to match the selected account's currency (if debit not already set)
+		if (account.currencyCode && !formData.debitAccountId) {
+			formData.currencyCode = account.currencyCode;
+		}
 	}
 
 	function formatCurrency(amount: number): string {
