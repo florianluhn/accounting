@@ -22,6 +22,15 @@ interface AccountBalance {
 	balance: number;
 }
 
+interface GLAccountGroup {
+	glAccountId: number;
+	glAccountNumber: string;
+	glAccountName: string;
+	glAccountType: string;
+	totalBalance: number;
+	subledgerAccounts: AccountBalance[];
+}
+
 export default async function reportsRoutes(fastify: FastifyInstance) {
 	// Helper function to calculate account balances
 	async function calculateBalances(
@@ -115,6 +124,40 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		return balances;
 	}
 
+	// Helper function to group account balances by GL account
+	function groupByGLAccount(balances: AccountBalance[]): GLAccountGroup[] {
+		const glMap = new Map<number, GLAccountGroup>();
+
+		for (const balance of balances) {
+			let group = glMap.get(balance.glAccountId);
+			if (!group) {
+				group = {
+					glAccountId: balance.glAccountId,
+					glAccountNumber: balance.glAccountNumber,
+					glAccountName: balance.glAccountName,
+					glAccountType: balance.glAccountType,
+					totalBalance: 0,
+					subledgerAccounts: []
+				};
+				glMap.set(balance.glAccountId, group);
+			}
+			group.totalBalance += balance.balance;
+			group.subledgerAccounts.push(balance);
+		}
+
+		// Sort groups by GL account number, and subledger accounts within each group
+		const groups = Array.from(glMap.values()).sort((a, b) =>
+			a.glAccountNumber.localeCompare(b.glAccountNumber, undefined, { numeric: true })
+		);
+		for (const group of groups) {
+			group.subledgerAccounts.sort((a, b) =>
+				a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true })
+			);
+		}
+
+		return groups;
+	}
+
 	// GET /api/reports/balance-sheet - Balance Sheet Report
 	fastify.get<{ Querystring: z.infer<typeof dateRangeSchema> }>(
 		'/balance-sheet',
@@ -124,23 +167,21 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			// Balance sheet shows balances as of a specific date
 			const balances = await calculateBalances(undefined, endDate, currencyCode);
 
-			// Group by GL account type and sort by account number
-			const assets = balances
-				.filter((b) =>
-					['Asset', 'Cash', 'Accounts Receivable'].includes(b.glAccountType)
-				)
-				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true }));
-			const liabilities = balances
-				.filter((b) => b.glAccountType === 'Accounts Payable')
-				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true }));
-			const equity = balances
-				.filter((b) => b.glAccountType === 'Equity')
-				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true }));
+			// Group by GL account type then by GL account
+			const assetBalances = balances.filter((b) =>
+				['Asset', 'Cash', 'Accounts Receivable'].includes(b.glAccountType)
+			);
+			const liabilityBalances = balances.filter((b) => b.glAccountType === 'Accounts Payable');
+			const equityBalances = balances.filter((b) => b.glAccountType === 'Equity');
+
+			const assets = groupByGLAccount(assetBalances);
+			const liabilities = groupByGLAccount(liabilityBalances);
+			const equity = groupByGLAccount(equityBalances);
 
 			// Calculate totals
-			const totalAssets = assets.reduce((sum, a) => sum + a.balance, 0);
-			const totalLiabilities = liabilities.reduce((sum, a) => sum + a.balance, 0);
-			const totalEquity = equity.reduce((sum, a) => sum + a.balance, 0);
+			const totalAssets = assets.reduce((sum, g) => sum + g.totalBalance, 0);
+			const totalLiabilities = liabilities.reduce((sum, g) => sum + g.totalBalance, 0);
+			const totalEquity = equity.reduce((sum, g) => sum + g.totalBalance, 0);
 
 			// Calculate retained earnings (from Profit and Loss accounts)
 			// Retained Earnings = Revenue (Profit) - Expenses (Loss)
@@ -181,17 +222,16 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			// P&L shows performance over a period
 			const balances = await calculateBalances(startDate, endDate, currencyCode);
 
-			// Filter for Profit and Loss accounts and sort by account number
-			const revenue = balances
-				.filter((b) => b.glAccountType === 'Profit')
-				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true }));
-			const expenses = balances
-				.filter((b) => b.glAccountType === 'Loss')
-				.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true }));
+			// Filter for Profit and Loss accounts, then group by GL account
+			const revenueBalances = balances.filter((b) => b.glAccountType === 'Profit');
+			const expenseBalances = balances.filter((b) => b.glAccountType === 'Loss');
+
+			const revenue = groupByGLAccount(revenueBalances);
+			const expenses = groupByGLAccount(expenseBalances);
 
 			// Calculate totals
-			const totalRevenue = revenue.reduce((sum, a) => sum + a.balance, 0);
-			const totalExpenses = expenses.reduce((sum, a) => sum + a.balance, 0);
+			const totalRevenue = revenue.reduce((sum, g) => sum + g.totalBalance, 0);
+			const totalExpenses = expenses.reduce((sum, g) => sum + g.totalBalance, 0);
 			const netIncome = totalRevenue - totalExpenses;
 
 			return {
@@ -210,6 +250,148 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			};
 		}
 	);
+
+	// GET /api/reports/subledger-categories/:id - Category breakdown for a subledger account
+	fastify.get<{
+		Params: { id: string };
+		Querystring: { startDate?: string; endDate?: string };
+	}>('/subledger-categories/:id', async (request, reply) => {
+		const accountId = parseInt(request.params.id);
+
+		if (isNaN(accountId)) {
+			return reply.status(400).send({
+				error: 'Bad Request',
+				message: 'Invalid account ID'
+			});
+		}
+
+		// Get account info
+		const account = await db
+			.select({
+				id: subledgerAccounts.id,
+				glAccountType: glAccounts.type
+			})
+			.from(subledgerAccounts)
+			.innerJoin(glAccounts, eq(subledgerAccounts.glAccountId, glAccounts.id))
+			.where(eq(subledgerAccounts.id, accountId))
+			.limit(1);
+
+		if (account.length === 0) {
+			return reply.status(404).send({
+				error: 'Not Found',
+				message: `Account ${accountId} not found`
+			});
+		}
+
+		const glAccountType = account[0].glAccountType;
+		const isDebitNormal = ['Asset', 'Cash', 'Accounts Receivable', 'Loss'].includes(glAccountType);
+
+		// Build conditions for date range
+		const conditions: any[] = [
+			sql`(${journalEntries.debitAccountId} = ${accountId} OR ${journalEntries.creditAccountId} = ${accountId})`
+		];
+
+		if (request.query.startDate) {
+			const startDate = new Date(request.query.startDate);
+			if (!isNaN(startDate.getTime())) {
+				startDate.setUTCHours(0, 0, 0, 0);
+				conditions.push(gte(journalEntries.entryDate, startDate));
+			}
+		}
+
+		if (request.query.endDate) {
+			const endDate = new Date(request.query.endDate);
+			if (!isNaN(endDate.getTime())) {
+				endDate.setUTCHours(23, 59, 59, 999);
+				conditions.push(lte(journalEntries.entryDate, endDate));
+			}
+		}
+
+		const entries = await db
+			.select()
+			.from(journalEntries)
+			.where(and(...conditions));
+
+		// Group entries by category and calculate balances
+		const categoryMap = new Map<string, number>();
+
+		for (const entry of entries) {
+			const category = entry.category || 'Uncategorized';
+			let amount = 0;
+
+			if (entry.debitAccountId === accountId) {
+				amount = isDebitNormal ? entry.amountInUSD : -entry.amountInUSD;
+			}
+			if (entry.creditAccountId === accountId) {
+				amount = isDebitNormal ? -entry.amountInUSD : entry.amountInUSD;
+			}
+
+			categoryMap.set(category, (categoryMap.get(category) || 0) + amount);
+		}
+
+		const categories = Array.from(categoryMap.entries())
+			.map(([category, balance]) => ({ category, balance }))
+			.sort((a, b) => {
+				// Uncategorized goes last
+				if (a.category === 'Uncategorized') return 1;
+				if (b.category === 'Uncategorized') return -1;
+				return a.category.localeCompare(b.category);
+			});
+
+		return { categories };
+	});
+
+	// GET /api/reports/category-entries/:id - Journal entries for a subledger account filtered by category
+	fastify.get<{
+		Params: { id: string };
+		Querystring: { startDate?: string; endDate?: string; category?: string };
+	}>('/category-entries/:id', async (request, reply) => {
+		const accountId = parseInt(request.params.id);
+		const categoryFilter = request.query.category;
+
+		if (isNaN(accountId)) {
+			return reply.status(400).send({
+				error: 'Bad Request',
+				message: 'Invalid account ID'
+			});
+		}
+
+		// Build conditions
+		const conditions: any[] = [
+			sql`(${journalEntries.debitAccountId} = ${accountId} OR ${journalEntries.creditAccountId} = ${accountId})`
+		];
+
+		// Filter by category
+		if (categoryFilter === 'Uncategorized') {
+			conditions.push(sql`${journalEntries.category} IS NULL`);
+		} else if (categoryFilter) {
+			conditions.push(eq(journalEntries.category, categoryFilter));
+		}
+
+		if (request.query.startDate) {
+			const startDate = new Date(request.query.startDate);
+			if (!isNaN(startDate.getTime())) {
+				startDate.setUTCHours(0, 0, 0, 0);
+				conditions.push(gte(journalEntries.entryDate, startDate));
+			}
+		}
+
+		if (request.query.endDate) {
+			const endDate = new Date(request.query.endDate);
+			if (!isNaN(endDate.getTime())) {
+				endDate.setUTCHours(23, 59, 59, 999);
+				conditions.push(lte(journalEntries.entryDate, endDate));
+			}
+		}
+
+		const entries = await db
+			.select()
+			.from(journalEntries)
+			.where(and(...conditions))
+			.orderBy(desc(journalEntries.entryDate));
+
+		return { entries };
+	});
 
 	// GET /api/reports/trial-balance - Trial Balance Report
 	fastify.get<{ Querystring: z.infer<typeof dateRangeSchema> }>(

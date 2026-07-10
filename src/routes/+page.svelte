@@ -8,7 +8,8 @@
 		type ProfitLossReport,
 		type JournalEntry,
 		type SubledgerAccount,
-		type Currency
+		type Currency,
+		type CategoryBreakdown
 	} from '$lib/api';
 
 	let balanceSheet = $state<BalanceSheetReport | null>(null);
@@ -19,6 +20,22 @@
 	let loading = $state(true);
 	let error = $state('');
 	let selectedCurrency = $state('USD');
+
+	// P&L drill-down state
+	let expandedGLAccounts = $state<Set<number>>(new Set());
+	let expandedSubledgers = $state<Set<number>>(new Set());
+	let subledgerCategories = $state<Map<number, CategoryBreakdown[]>>(new Map());
+	let loadingCategories = $state<Set<number>>(new Set());
+
+	// Journal entries modal state
+	let showEntriesModal = $state(false);
+	let modalEntries = $state<JournalEntry[]>([]);
+	let modalTitle = $state('');
+	let loadingEntries = $state(false);
+
+	// Date range for current month (used for P&L drill-down)
+	let plStartDate = $state<Date>(new Date());
+	let plEndDate = $state<Date>(new Date());
 
 	$effect(() => {
 		loadData();
@@ -66,6 +83,8 @@
 			const now = new Date();
 			const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
 			const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+			plStartDate = startOfMonth;
+			plEndDate = endOfToday;
 			profitLoss = await reportsAPI.profitLoss({ startDate: startOfMonth, endDate: endOfToday, currencyCode: selectedCurrency });
 		} catch (e) {
 			console.error('Error loading profit & loss:', e);
@@ -100,6 +119,10 @@
 	}
 
 	async function handleCurrencyChange() {
+		// Reset drill-down state
+		expandedGLAccounts = new Set();
+		expandedSubledgers = new Set();
+		subledgerCategories = new Map();
 		await Promise.all([loadBalanceSheet(), loadProfitLoss()]);
 	}
 
@@ -113,10 +136,93 @@
 		return account ? `${account.accountNumber} - ${account.name}` : 'Unknown';
 	}
 
+	function formatDate(date: Date | string): string {
+		const d = new Date(date);
+		const year = d.getUTCFullYear();
+		const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+		const day = String(d.getUTCDate()).padStart(2, '0');
+		return `${month}/${day}/${year}`;
+	}
+
+	function toggleGLAccount(glAccountId: number) {
+		const next = new Set(expandedGLAccounts);
+		if (next.has(glAccountId)) {
+			next.delete(glAccountId);
+		} else {
+			next.add(glAccountId);
+		}
+		expandedGLAccounts = next;
+	}
+
+	async function toggleSubledger(accountId: number) {
+		const next = new Set(expandedSubledgers);
+		if (next.has(accountId)) {
+			next.delete(accountId);
+			expandedSubledgers = next;
+		} else {
+			next.add(accountId);
+			expandedSubledgers = next;
+
+			// Load categories if not yet loaded
+			if (!subledgerCategories.has(accountId)) {
+				const loadingNext = new Set(loadingCategories);
+				loadingNext.add(accountId);
+				loadingCategories = loadingNext;
+
+				try {
+					const result = await reportsAPI.subledgerCategories(accountId, {
+						startDate: plStartDate,
+						endDate: plEndDate
+					});
+					const catMap = new Map(subledgerCategories);
+					catMap.set(accountId, result.categories);
+					subledgerCategories = catMap;
+				} catch (e) {
+					console.error('Error loading categories:', e);
+				} finally {
+					const loadingDone = new Set(loadingCategories);
+					loadingDone.delete(accountId);
+					loadingCategories = loadingDone;
+				}
+			}
+		}
+	}
+
+	async function showCategoryEntries(accountId: number, accountName: string, category: string) {
+		loadingEntries = true;
+		showEntriesModal = true;
+		modalTitle = `${accountName} — ${category}`;
+		modalEntries = [];
+
+		try {
+			const result = await reportsAPI.categoryEntries(accountId, {
+				startDate: plStartDate,
+				endDate: plEndDate,
+				category
+			});
+			modalEntries = result.entries;
+		} catch (e) {
+			console.error('Error loading category entries:', e);
+		} finally {
+			loadingEntries = false;
+		}
+	}
+
+	function closeModal() {
+		showEntriesModal = false;
+		modalEntries = [];
+		modalTitle = '';
+	}
+
 	let totalAssets = $derived(balanceSheet?.assets.total || 0);
 	let totalLiabilities = $derived(balanceSheet?.liabilities.total || 0);
 	let totalEquity = $derived(balanceSheet?.equity.total || 0);
 	let journalEntriesCount = $derived(journalEntries.length);
+
+	// Count subledger accounts across all GL groups for stat descriptions
+	function countSubledgerAccounts(groups: { subledgerAccounts: any[] }[]): number {
+		return groups.reduce((sum, g) => sum + g.subledgerAccounts.length, 0);
+	}
 </script>
 
 <div class="max-w-7xl mx-auto">
@@ -213,12 +319,63 @@
 							<span class="text-success">Revenue</span>
 						</h3>
 						{#if profitLoss.revenue.accounts.length > 0}
-							<div class="space-y-2">
-								{#each profitLoss.revenue.accounts as account}
-									<div class="flex justify-between items-center py-1 border-b border-base-300">
-										<span class="text-sm">{account.accountNumber} - {account.accountName}</span>
-										<span class="font-mono text-sm">{formatCurrency(account.balance)}</span>
-									</div>
+							<div class="space-y-1">
+								{#each profitLoss.revenue.accounts as glGroup}
+									<!-- GL Account Row -->
+									<button
+										class="flex justify-between items-center w-full py-1.5 px-2 rounded hover:bg-base-200 transition-colors cursor-pointer text-left"
+										onclick={() => toggleGLAccount(glGroup.glAccountId)}
+									>
+										<span class="flex items-center gap-2">
+											<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 transition-transform {expandedGLAccounts.has(glGroup.glAccountId) ? 'rotate-90' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+											</svg>
+											<span class="font-semibold text-sm">{glGroup.glAccountNumber} - {glGroup.glAccountName}</span>
+										</span>
+										<span class="font-mono text-sm font-semibold">{formatCurrency(glGroup.totalBalance)}</span>
+									</button>
+									{#if expandedGLAccounts.has(glGroup.glAccountId)}
+										<div class="ml-7 border-l-2 border-base-300 pl-3">
+											{#each glGroup.subledgerAccounts as account}
+												<button
+													class="flex justify-between items-center w-full py-1 text-sm text-base-content/80 hover:bg-base-200 rounded px-2 cursor-pointer text-left"
+													onclick={() => toggleSubledger(account.accountId)}
+												>
+													<span class="flex items-center gap-1.5">
+														<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 transition-transform {expandedSubledgers.has(account.accountId) ? 'rotate-90' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+														</svg>
+														<span>{account.accountNumber} - {account.accountName}</span>
+													</span>
+													<span class="font-mono text-sm">{formatCurrency(account.balance)}</span>
+												</button>
+												{#if expandedSubledgers.has(account.accountId)}
+													<div class="ml-6 border-l-2 border-base-300/50 pl-3 mb-1">
+														{#if loadingCategories.has(account.accountId)}
+															<div class="py-1 text-xs text-base-content/60">
+																<span class="loading loading-spinner loading-xs"></span> Loading...
+															</div>
+														{:else if subledgerCategories.has(account.accountId)}
+															{#each subledgerCategories.get(account.accountId) || [] as cat}
+																<div class="flex justify-between items-center py-0.5 text-xs text-base-content/70">
+																	<span class="italic">{cat.category}</span>
+																	<button
+																		class="font-mono hover:text-primary hover:underline cursor-pointer"
+																		onclick={() => showCategoryEntries(account.accountId, `${account.accountNumber} - ${account.accountName}`, cat.category)}
+																	>
+																		{formatCurrency(cat.balance)}
+																	</button>
+																</div>
+															{/each}
+															{#if (subledgerCategories.get(account.accountId) || []).length === 0}
+																<p class="text-xs text-base-content/50 py-1">No entries</p>
+															{/if}
+														{/if}
+													</div>
+												{/if}
+											{/each}
+										</div>
+									{/if}
 								{/each}
 								<div class="flex justify-between items-center pt-2 font-bold">
 									<span>Total Revenue</span>
@@ -236,12 +393,62 @@
 							<span class="text-error">Expenses</span>
 						</h3>
 						{#if profitLoss.expenses.accounts.length > 0}
-							<div class="space-y-2">
-								{#each profitLoss.expenses.accounts as account}
-									<div class="flex justify-between items-center py-1 border-b border-base-300">
-										<span class="text-sm">{account.accountNumber} - {account.accountName}</span>
-										<span class="font-mono text-sm">{formatCurrency(account.balance)}</span>
-									</div>
+							<div class="space-y-1">
+								{#each profitLoss.expenses.accounts as glGroup}
+									<button
+										class="flex justify-between items-center w-full py-1.5 px-2 rounded hover:bg-base-200 transition-colors cursor-pointer text-left"
+										onclick={() => toggleGLAccount(glGroup.glAccountId)}
+									>
+										<span class="flex items-center gap-2">
+											<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 transition-transform {expandedGLAccounts.has(glGroup.glAccountId) ? 'rotate-90' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+											</svg>
+											<span class="font-semibold text-sm">{glGroup.glAccountNumber} - {glGroup.glAccountName}</span>
+										</span>
+										<span class="font-mono text-sm font-semibold">{formatCurrency(glGroup.totalBalance)}</span>
+									</button>
+									{#if expandedGLAccounts.has(glGroup.glAccountId)}
+										<div class="ml-7 border-l-2 border-base-300 pl-3">
+											{#each glGroup.subledgerAccounts as account}
+												<button
+													class="flex justify-between items-center w-full py-1 text-sm text-base-content/80 hover:bg-base-200 rounded px-2 cursor-pointer text-left"
+													onclick={() => toggleSubledger(account.accountId)}
+												>
+													<span class="flex items-center gap-1.5">
+														<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 transition-transform {expandedSubledgers.has(account.accountId) ? 'rotate-90' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+														</svg>
+														<span>{account.accountNumber} - {account.accountName}</span>
+													</span>
+													<span class="font-mono text-sm">{formatCurrency(account.balance)}</span>
+												</button>
+												{#if expandedSubledgers.has(account.accountId)}
+													<div class="ml-6 border-l-2 border-base-300/50 pl-3 mb-1">
+														{#if loadingCategories.has(account.accountId)}
+															<div class="py-1 text-xs text-base-content/60">
+																<span class="loading loading-spinner loading-xs"></span> Loading...
+															</div>
+														{:else if subledgerCategories.has(account.accountId)}
+															{#each subledgerCategories.get(account.accountId) || [] as cat}
+																<div class="flex justify-between items-center py-0.5 text-xs text-base-content/70">
+																	<span class="italic">{cat.category}</span>
+																	<button
+																		class="font-mono hover:text-primary hover:underline cursor-pointer"
+																		onclick={() => showCategoryEntries(account.accountId, `${account.accountNumber} - ${account.accountName}`, cat.category)}
+																	>
+																		{formatCurrency(cat.balance)}
+																	</button>
+																</div>
+															{/each}
+															{#if (subledgerCategories.get(account.accountId) || []).length === 0}
+																<p class="text-xs text-base-content/50 py-1">No entries</p>
+															{/if}
+														{/if}
+													</div>
+												{/if}
+											{/each}
+										</div>
+									{/if}
 								{/each}
 								<div class="flex justify-between items-center pt-2 font-bold">
 									<span>Total Expenses</span>
@@ -283,7 +490,7 @@
 				<div class="stat-value text-primary">{formatCurrency(totalAssets)}</div>
 				<div class="stat-desc">
 					{#if balanceSheet?.assets.accounts.length}
-						{balanceSheet.assets.accounts.length} account{balanceSheet.assets.accounts.length !== 1 ? 's' : ''}
+						{countSubledgerAccounts(balanceSheet.assets.accounts)} account{countSubledgerAccounts(balanceSheet.assets.accounts) !== 1 ? 's' : ''}
 					{:else}
 						No asset accounts yet
 					{/if}
@@ -295,7 +502,7 @@
 				<div class="stat-value text-secondary">{formatCurrency(totalLiabilities)}</div>
 				<div class="stat-desc">
 					{#if balanceSheet?.liabilities.accounts.length}
-						{balanceSheet.liabilities.accounts.length} account{balanceSheet.liabilities.accounts.length !== 1 ? 's' : ''}
+						{countSubledgerAccounts(balanceSheet.liabilities.accounts)} account{countSubledgerAccounts(balanceSheet.liabilities.accounts) !== 1 ? 's' : ''}
 					{:else}
 						No liability accounts yet
 					{/if}
@@ -307,7 +514,7 @@
 				<div class="stat-value text-accent">{formatCurrency(totalEquity)}</div>
 				<div class="stat-desc">
 					{#if balanceSheet?.equity.accounts.length}
-						{balanceSheet.equity.accounts.length} account{balanceSheet.equity.accounts.length !== 1 ? 's' : ''}
+						{countSubledgerAccounts(balanceSheet.equity.accounts)} account{countSubledgerAccounts(balanceSheet.equity.accounts) !== 1 ? 's' : ''}
 					{:else}
 						No equity accounts yet
 					{/if}
@@ -346,3 +553,51 @@
 		{/if}
 	{/if}
 </div>
+
+<!-- Journal Entries Modal -->
+{#if showEntriesModal}
+	<div class="modal modal-open">
+		<div class="modal-box max-w-4xl">
+			<h3 class="font-bold text-lg mb-4">{modalTitle}</h3>
+			<p class="text-sm text-base-content/60 mb-4">{getCurrentMonthName()}</p>
+
+			{#if loadingEntries}
+				<div class="flex justify-center py-8">
+					<span class="loading loading-spinner loading-lg"></span>
+				</div>
+			{:else if modalEntries.length === 0}
+				<p class="text-base-content/60 text-center py-4">No journal entries found</p>
+			{:else}
+				<div class="overflow-x-auto max-h-96">
+					<table class="table table-sm">
+						<thead>
+							<tr>
+								<th>Date</th>
+								<th>Description</th>
+								<th>Debit Account</th>
+								<th>Credit Account</th>
+								<th class="text-right">Amount</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each modalEntries as entry}
+								<tr>
+									<td class="text-xs">{formatDate(entry.entryDate)}</td>
+									<td class="text-xs max-w-48 truncate">{entry.description}</td>
+									<td class="text-xs">{getAccountName(entry.debitAccountId)}</td>
+									<td class="text-xs">{getAccountName(entry.creditAccountId)}</td>
+									<td class="text-right font-mono text-xs">{formatCurrency(entry.amountInUSD)}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+
+			<div class="modal-action">
+				<button class="btn" onclick={closeModal}>Close</button>
+			</div>
+		</div>
+		<div class="modal-backdrop" onclick={closeModal}></div>
+	</div>
+{/if}

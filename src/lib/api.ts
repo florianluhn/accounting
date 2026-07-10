@@ -674,19 +674,33 @@ export interface AccountBalance {
 	balance: number;
 }
 
+export interface GLAccountGroup {
+	glAccountId: number;
+	glAccountNumber: string;
+	glAccountName: string;
+	glAccountType: string;
+	totalBalance: number;
+	subledgerAccounts: AccountBalance[];
+}
+
+export interface CategoryBreakdown {
+	category: string;
+	balance: number;
+}
+
 export interface BalanceSheetReport {
 	asOfDate: Date;
 	currencyCode: string;
 	assets: {
-		accounts: AccountBalance[];
+		accounts: GLAccountGroup[];
 		total: number;
 	};
 	liabilities: {
-		accounts: AccountBalance[];
+		accounts: GLAccountGroup[];
 		total: number;
 	};
 	equity: {
-		accounts: AccountBalance[];
+		accounts: GLAccountGroup[];
 		retainedEarnings: number;
 		total: number;
 	};
@@ -699,11 +713,11 @@ export interface ProfitLossReport {
 	endDate: Date;
 	currencyCode: string;
 	revenue: {
-		accounts: AccountBalance[];
+		accounts: GLAccountGroup[];
 		total: number;
 	};
 	expenses: {
-		accounts: AccountBalance[];
+		accounts: GLAccountGroup[];
 		total: number;
 	};
 	netIncome: number;
@@ -776,6 +790,31 @@ export const reportsAPI = {
 
 		const queryString = query.toString();
 		return apiFetch(`/api/reports/account-ledger/${accountId}${queryString ? `?${queryString}` : ''}`);
+	},
+
+	async subledgerCategories(
+		accountId: number,
+		params?: { startDate?: Date; endDate?: Date }
+	): Promise<{ categories: CategoryBreakdown[] }> {
+		const query = new URLSearchParams();
+		if (params?.startDate) query.set('startDate', params.startDate.toISOString());
+		if (params?.endDate) query.set('endDate', params.endDate.toISOString());
+
+		const queryString = query.toString();
+		return apiFetch(`/api/reports/subledger-categories/${accountId}${queryString ? `?${queryString}` : ''}`);
+	},
+
+	async categoryEntries(
+		accountId: number,
+		params?: { startDate?: Date; endDate?: Date; category?: string }
+	): Promise<{ entries: JournalEntry[] }> {
+		const query = new URLSearchParams();
+		if (params?.startDate) query.set('startDate', params.startDate.toISOString());
+		if (params?.endDate) query.set('endDate', params.endDate.toISOString());
+		if (params?.category) query.set('category', params.category);
+
+		const queryString = query.toString();
+		return apiFetch(`/api/reports/category-entries/${accountId}${queryString ? `?${queryString}` : ''}`);
 	}
 };
 
