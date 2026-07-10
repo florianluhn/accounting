@@ -644,7 +644,7 @@
 				{editingCurrency ? 'Edit Currency' : 'Add New Currency'}
 			</h3>
 
-			<form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
+			<form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }} novalidate>
 				<div class="form-control mb-4">
 					<label class="label">
 						<span class="label-text">Currency Code (3 letters)</span>
