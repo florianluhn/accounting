@@ -181,6 +181,14 @@
 	async function handleSubmit() {
 		try {
 			error = '';
+			
+			const code = formData.code.trim().toUpperCase();
+			if (!code.match(/^[A-Z]{3}$/)) {
+				error = 'Currency code must be exactly 3 letters (e.g. USD, EUR)';
+				return;
+			}
+			formData.code = code;
+
 			if (editingCurrency) {
 				await currenciesAPI.update(editingCurrency.code, formData);
 			} else {
@@ -643,10 +651,9 @@
 					</label>
 					<input
 						type="text"
-						class="input input-bordered"
+						class="input input-bordered uppercase"
 						bind:value={formData.code}
-						maxlength="3"
-						pattern="[A-Z]{3}"
+						maxlength="5"
 						required
 						disabled={!!editingCurrency}
 					/>
