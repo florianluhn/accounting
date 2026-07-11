@@ -318,7 +318,7 @@
 									<td class="font-mono font-bold">{currency.code}</td>
 									<td>{currency.name}</td>
 									<td class="font-bold">{currency.symbol}</td>
-									<td>{currency.exchangeRate.toFixed(4)}</td>
+									<td>{currency.exchangeRate.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</td>
 									<td>
 										{#if currency.isDefault}
 											<span class="badge badge-primary">Default</span>
@@ -481,7 +481,7 @@
 								<div class="flex-1">
 									<div class="font-medium">{platform.name}</div>
 									<div class="text-xs text-base-content/60 mt-1">
-										Fee: {(platform.platformFeeRate ?? 0).toFixed(3)}%
+										Fee: {(platform.platformFeeRate ?? 0).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}%
 										{#if platform.withholdsTaxes}
 											· <span class="badge badge-sm badge-info">Withholds Taxes</span>
 										{/if}

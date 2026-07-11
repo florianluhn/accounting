@@ -336,7 +336,7 @@
 	}
 
 	function formatMoney(v: number): string {
-		return `$${v.toFixed(2)}`;
+		return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 	}
 
 	function formatDate(d: string): string {
@@ -647,7 +647,7 @@
 				<div class="stats stats-vertical lg:stats-horizontal shadow w-full mb-6">
 					<div class="stat">
 						<div class="stat-title">Utilization</div>
-						<div class="stat-value text-primary">{yearData.utilization.toFixed(1)}%</div>
+						<div class="stat-value text-primary">{yearData.utilization.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</div>
 						<div class="stat-desc">{yearData.booked} of {yearData.total} nights booked</div>
 					</div>
 					<div class="stat">

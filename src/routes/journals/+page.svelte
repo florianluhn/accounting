@@ -520,7 +520,7 @@
 
 	function formatCurrency(amount: number, currencyCode: string): string {
 		const currency = currencies.find(c => c.code === currencyCode);
-		return `${currency?.symbol || currencyCode} ${amount.toFixed(2)}`;
+		return `${currency?.symbol || currencyCode} ${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 	}
 
 	// Detect when debit and credit accounts use different currencies

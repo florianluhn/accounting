@@ -752,7 +752,7 @@
 									<span class="truncate max-w-[200px]">{entry.description}</span>
 								</div>
 								<div class="flex items-center gap-2 text-base-content/70 shrink-0">
-									<span class="font-mono">${entry.amount.toFixed(2)}</span>
+									<span class="font-mono">${entry.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
 									<span class="text-xs">{new Date(entry.entryDate).toLocaleDateString()}</span>
 								</div>
 							</div>

@@ -125,7 +125,7 @@
 
 	function formatCurrency(amount: number): string {
 		const currency = currencies.find(c => c.code === selectedCurrency);
-		return `${currency?.symbol || selectedCurrency} ${amount.toFixed(2)}`;
+		return `${currency?.symbol || selectedCurrency} ${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 	}
 
 	function formatDate(date: Date | string): string {
