@@ -133,7 +133,8 @@
 				inventory: modules.inventory,
 				timeTracking: modules.timeTracking,
 				bookings: modules.bookings,
-				fixedAssets: modules.fixedAssets
+				fixedAssets: modules.fixedAssets,
+				budgets: modules.budgets
 			});
 			applyModuleSettings(updated);
 		} catch (e) {
@@ -397,6 +398,13 @@
 						<div class="text-xs text-base-content/50">Fixed assets management</div>
 					</div>
 					<input type="checkbox" class="toggle toggle-primary" bind:checked={modules.fixedAssets} onchange={saveModuleSettings} />
+				</label>
+				<label class="flex items-center justify-between p-3 bg-base-200 rounded-box cursor-pointer">
+					<div>
+						<div class="font-medium">Budgets</div>
+						<div class="text-xs text-base-content/50">Annual budgeting per account</div>
+					</div>
+					<input type="checkbox" class="toggle toggle-primary" bind:checked={modules.budgets} onchange={saveModuleSettings} />
 				</label>
 			</div>
 			{#if modulesSaving}

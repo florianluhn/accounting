@@ -661,6 +661,49 @@ export const attachmentsAPI = {
 };
 
 // ========================================
+// Budgets API
+// ========================================
+export interface Budget {
+	id: number;
+	subledgerAccountId: number;
+	year: number;
+	amount: number;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+export const budgetsAPI = {
+	async list(params?: { year?: number; subledgerAccountId?: number }): Promise<Budget[]> {
+		const query = new URLSearchParams();
+		if (params?.year) query.set('year', String(params.year));
+		if (params?.subledgerAccountId) query.set('subledgerAccountId', String(params.subledgerAccountId));
+
+		const queryString = query.toString();
+		return apiFetch(`/api/budgets${queryString ? `?${queryString}` : ''}`);
+	},
+
+	async create(data: { subledgerAccountId: number; year: number; amount: number }): Promise<Budget> {
+		return apiFetch('/api/budgets', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+
+	async update(id: number, data: { amount: number }): Promise<Budget> {
+		return apiFetch(`/api/budgets/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify(data)
+		});
+	},
+
+	async delete(id: number): Promise<void> {
+		return apiFetch(`/api/budgets/${id}`, {
+			method: 'DELETE'
+		});
+	}
+};
+
+// ========================================
 // Reports API
 // ========================================
 export interface AccountBalance {
@@ -672,6 +715,7 @@ export interface AccountBalance {
 	glAccountName: string;
 	glAccountType: string;
 	balance: number;
+	budget?: number;
 }
 
 export interface GLAccountGroup {
@@ -1052,6 +1096,7 @@ export interface AppSettings {
 	timeTracking: boolean;
 	bookings: boolean;
 	fixedAssets: boolean;
+	budgets: boolean;
 }
 
 export const settingsAPI = {

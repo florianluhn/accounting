@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db from '../db/connection.js';
-import { journalEntries, subledgerAccounts, glAccounts, currencies } from '../db/schema.js';
+import { journalEntries, subledgerAccounts, glAccounts, currencies, budgets } from '../db/schema.js';
 import { eq, and, lte, gte, sql, desc } from 'drizzle-orm';
 
 // Validation schemas
@@ -20,6 +20,7 @@ interface AccountBalance {
 	glAccountName: string;
 	glAccountType: string;
 	balance: number;
+	budget?: number;
 }
 
 interface GLAccountGroup {
@@ -117,7 +118,8 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				glAccountNumber: account.glAccountNumber,
 				glAccountName: account.glAccountName,
 				glAccountType: account.glAccountType,
-				balance
+				balance,
+				budget: 0
 			};
 		});
 
@@ -221,6 +223,23 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 
 			// P&L shows performance over a period
 			const balances = await calculateBalances(startDate, endDate, currencyCode);
+
+			// Fetch budgets for the year of endDate
+			const year = (endDate || new Date()).getUTCFullYear();
+			const yearBudgets = await db
+				.select()
+				.from(budgets)
+				.where(eq(budgets.year, year));
+
+			const budgetMap = new Map<number, number>();
+			for (const b of yearBudgets) {
+				budgetMap.set(b.subledgerAccountId, b.amount);
+			}
+
+			// Add budget to each balance
+			for (const balance of balances) {
+				balance.budget = budgetMap.get(balance.accountId) || 0;
+			}
 
 			// Filter for Profit and Loss accounts, then group by GL account
 			const revenueBalances = balances.filter((b) => b.glAccountType === 'Profit');

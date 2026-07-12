@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { modules } from '$lib/modules.svelte';
 	import {
 		reportsAPI,
 		currenciesAPI,
@@ -342,7 +343,28 @@
 												</svg>
 												<span class="font-semibold text-sm">{glGroup.glAccountNumber} - {glGroup.glAccountName}</span>
 											</span>
-											<span class="font-mono font-semibold text-sm">{formatCurrency(glGroup.totalBalance)}</span>
+											
+										<div class="flex gap-4 text-right items-center">
+											{#if modules.budgets}
+												<div class="w-24 flex flex-col">
+													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Actual</span>
+													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(glGroup.totalBalance)}</span>
+												</div>
+												<div class="w-24 flex flex-col">
+													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Budget</span>
+													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}</span>
+												</div>
+												<div class="w-24 flex flex-col">
+													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Variance</span>
+													<span class="font-mono font-semibold text-sm leading-none" class:text-success={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0} class:text-error={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0}>
+														{formatCurrency(glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}
+													</span>
+												</div>
+											{#else}
+												<span class="font-mono font-semibold text-sm">{formatCurrency(glGroup.totalBalance)}</span>
+											{/if}
+										</div>
+
 										</button>
 										<!-- Expanded Subledger Accounts -->
 										{#if expandedGLAccounts.has(glGroup.glAccountId)}
@@ -350,7 +372,25 @@
 												{#each glGroup.subledgerAccounts as account}
 													<div class="flex justify-between items-center py-1.5 text-sm text-base-content/80">
 														<span>{account.accountNumber} - {account.accountName}</span>
-														<span class="font-mono">{formatCurrency(account.balance)}</span>
+														
+													<div class="flex gap-4 text-right items-center">
+														{#if modules.budgets}
+															<div class="w-24 text-right">
+																<span class="font-mono">{formatCurrency(account.balance)}</span>
+															</div>
+															<div class="w-24 text-right">
+																<span class="font-mono text-base-content/70">{formatCurrency(account.budget || 0)}</span>
+															</div>
+															<div class="w-24 text-right">
+																<span class="font-mono" class:text-success={account.balance - (account.budget || 0) > 0} class:text-error={account.balance - (account.budget || 0) < 0}>
+																	{formatCurrency(account.balance - (account.budget || 0))}
+																</span>
+															</div>
+														{#else}
+															<span class="font-mono">{formatCurrency(account.balance)}</span>
+														{/if}
+													</div>
+
 													</div>
 												{/each}
 											</div>
@@ -386,14 +426,53 @@
 												</svg>
 												<span class="font-semibold text-sm">{glGroup.glAccountNumber} - {glGroup.glAccountName}</span>
 											</span>
-											<span class="font-mono font-semibold text-sm">{formatCurrency(glGroup.totalBalance)}</span>
+											
+										<div class="flex gap-4 text-right items-center">
+											{#if modules.budgets}
+												<div class="w-24 flex flex-col">
+													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Actual</span>
+													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(glGroup.totalBalance)}</span>
+												</div>
+												<div class="w-24 flex flex-col">
+													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Budget</span>
+													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}</span>
+												</div>
+												<div class="w-24 flex flex-col">
+													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Variance</span>
+													<span class="font-mono font-semibold text-sm leading-none" class:text-success={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0} class:text-error={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0}>
+														{formatCurrency(glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}
+													</span>
+												</div>
+											{#else}
+												<span class="font-mono font-semibold text-sm">{formatCurrency(glGroup.totalBalance)}</span>
+											{/if}
+										</div>
+
 										</button>
 										{#if expandedGLAccounts.has(glGroup.glAccountId)}
 											<div class="ml-8 border-l-2 border-base-300 pl-3">
 												{#each glGroup.subledgerAccounts as account}
 													<div class="flex justify-between items-center py-1.5 text-sm text-base-content/80">
 														<span>{account.accountNumber} - {account.accountName}</span>
-														<span class="font-mono">{formatCurrency(account.balance)}</span>
+														
+													<div class="flex gap-4 text-right items-center">
+														{#if modules.budgets}
+															<div class="w-24 text-right">
+																<span class="font-mono">{formatCurrency(account.balance)}</span>
+															</div>
+															<div class="w-24 text-right">
+																<span class="font-mono text-base-content/70">{formatCurrency(account.budget || 0)}</span>
+															</div>
+															<div class="w-24 text-right">
+																<span class="font-mono" class:text-success={account.balance - (account.budget || 0) > 0} class:text-error={account.balance - (account.budget || 0) < 0}>
+																	{formatCurrency(account.balance - (account.budget || 0))}
+																</span>
+															</div>
+														{#else}
+															<span class="font-mono">{formatCurrency(account.balance)}</span>
+														{/if}
+													</div>
+
 													</div>
 												{/each}
 											</div>
@@ -424,14 +503,53 @@
 												</svg>
 												<span class="font-semibold text-sm">{glGroup.glAccountNumber} - {glGroup.glAccountName}</span>
 											</span>
-											<span class="font-mono font-semibold text-sm">{formatCurrency(glGroup.totalBalance)}</span>
+											
+										<div class="flex gap-4 text-right items-center">
+											{#if modules.budgets}
+												<div class="w-24 flex flex-col">
+													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Actual</span>
+													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(glGroup.totalBalance)}</span>
+												</div>
+												<div class="w-24 flex flex-col">
+													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Budget</span>
+													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}</span>
+												</div>
+												<div class="w-24 flex flex-col">
+													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Variance</span>
+													<span class="font-mono font-semibold text-sm leading-none" class:text-success={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0} class:text-error={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0}>
+														{formatCurrency(glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}
+													</span>
+												</div>
+											{#else}
+												<span class="font-mono font-semibold text-sm">{formatCurrency(glGroup.totalBalance)}</span>
+											{/if}
+										</div>
+
 										</button>
 										{#if expandedGLAccounts.has(glGroup.glAccountId)}
 											<div class="ml-8 border-l-2 border-base-300 pl-3">
 												{#each glGroup.subledgerAccounts as account}
 													<div class="flex justify-between items-center py-1.5 text-sm text-base-content/80">
 														<span>{account.accountNumber} - {account.accountName}</span>
-														<span class="font-mono">{formatCurrency(account.balance)}</span>
+														
+													<div class="flex gap-4 text-right items-center">
+														{#if modules.budgets}
+															<div class="w-24 text-right">
+																<span class="font-mono">{formatCurrency(account.balance)}</span>
+															</div>
+															<div class="w-24 text-right">
+																<span class="font-mono text-base-content/70">{formatCurrency(account.budget || 0)}</span>
+															</div>
+															<div class="w-24 text-right">
+																<span class="font-mono" class:text-success={account.balance - (account.budget || 0) > 0} class:text-error={account.balance - (account.budget || 0) < 0}>
+																	{formatCurrency(account.balance - (account.budget || 0))}
+																</span>
+															</div>
+														{#else}
+															<span class="font-mono">{formatCurrency(account.balance)}</span>
+														{/if}
+													</div>
+
 													</div>
 												{/each}
 											</div>
@@ -498,8 +616,46 @@
 							{/if}
 						</div>
 					</div>
+
 				</div>
 			</div>
+
+			<!-- Budget vs Actual Graphs -->
+			{#if modules.budgets}
+				<div class="card bg-base-100 shadow-xl mb-6 mt-6">
+					<div class="card-body">
+						<h3 class="text-xl font-bold mb-4">Budget vs Actual Graphs</h3>
+						<div class="space-y-6">
+							{#each [...profitLoss.revenue.accounts, ...profitLoss.expenses.accounts] as glGroup}
+								{#each glGroup.subledgerAccounts as account}
+									{#if account.balance > 0 || (account.budget && account.budget > 0)}
+										{@const budget = account.budget || 0}
+										{@const actual = account.balance}
+										{@const maxVal = Math.max(budget, actual) || 1}
+										{@const budgetPct = (budget / maxVal) * 100}
+										{@const actualPct = (actual / maxVal) * 100}
+										<div>
+											<div class="flex justify-between text-sm mb-1">
+												<span class="font-semibold">{account.accountNumber} - {account.accountName}</span>
+												<span class="text-base-content/70">
+													Actual: <span class="font-mono font-medium text-base-content">{formatCurrency(actual)}</span> / 
+													Budget: <span class="font-mono">{formatCurrency(budget)}</span>
+												</span>
+											</div>
+											<div class="w-full bg-base-200 rounded-full h-2.5 mb-1 relative overflow-hidden">
+												<!-- Budget background bar -->
+												<div class="bg-primary/20 h-2.5 rounded-full absolute top-0 left-0" style="width: {budgetPct}%"></div>
+												<!-- Actual foreground bar -->
+												<div class="h-2.5 rounded-full absolute top-0 left-0 {actual > budget && budget > 0 ? 'bg-error' : 'bg-primary'}" style="width: {actualPct}%"></div>
+											</div>
+										</div>
+									{/if}
+								{/each}
+							{/each}
+						</div>
+					</div>
+				</div>
+			{/if}
 		{:else}
 			<div class="card bg-base-100 shadow-xl">
 				<div class="card-body">
@@ -556,7 +712,28 @@
 											</svg>
 											<span class="font-semibold text-sm">{glGroup.glAccountNumber} - {glGroup.glAccountName}</span>
 										</span>
-										<span class="font-mono font-semibold text-sm">{formatCurrency(glGroup.totalBalance)}</span>
+										
+										<div class="flex gap-4 text-right items-center">
+											{#if modules.budgets}
+												<div class="w-24 flex flex-col">
+													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Actual</span>
+													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(glGroup.totalBalance)}</span>
+												</div>
+												<div class="w-24 flex flex-col">
+													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Budget</span>
+													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}</span>
+												</div>
+												<div class="w-24 flex flex-col">
+													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Variance</span>
+													<span class="font-mono font-semibold text-sm leading-none" class:text-success={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0} class:text-error={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0}>
+														{formatCurrency(glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}
+													</span>
+												</div>
+											{#else}
+												<span class="font-mono font-semibold text-sm">{formatCurrency(glGroup.totalBalance)}</span>
+											{/if}
+										</div>
+
 									</button>
 									<!-- Expanded: Subledger accounts with category drill-down -->
 									{#if expandedGLAccounts.has(glGroup.glAccountId)}
@@ -573,7 +750,25 @@
 														</svg>
 														<span>{account.accountNumber} - {account.accountName}</span>
 													</span>
-													<span class="font-mono">{formatCurrency(account.balance)}</span>
+													
+													<div class="flex gap-4 text-right items-center">
+														{#if modules.budgets}
+															<div class="w-24 text-right">
+																<span class="font-mono">{formatCurrency(account.balance)}</span>
+															</div>
+															<div class="w-24 text-right">
+																<span class="font-mono text-base-content/70">{formatCurrency(account.budget || 0)}</span>
+															</div>
+															<div class="w-24 text-right">
+																<span class="font-mono" class:text-success={account.balance - (account.budget || 0) > 0} class:text-error={account.balance - (account.budget || 0) < 0}>
+																	{formatCurrency(account.balance - (account.budget || 0))}
+																</span>
+															</div>
+														{#else}
+															<span class="font-mono">{formatCurrency(account.balance)}</span>
+														{/if}
+													</div>
+
 												</button>
 												<!-- Expanded: Categories -->
 												{#if expandedSubledgers.has(account.accountId)}
@@ -609,7 +804,17 @@
 						<div class="divider"></div>
 						<div class="flex justify-between font-bold">
 							<span>Total Revenue</span>
-							<span class="font-mono">{formatCurrency(profitLoss.revenue.total)}</span>
+							
+							<div class="flex gap-4 text-right">
+								{#if modules.budgets}
+									<div class="w-24 font-mono">{formatCurrency(profitLoss.revenue.total)}</div>
+									<div class="w-24 font-mono text-base-content/70">{formatCurrency(profitLoss.revenue.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0))}</div>
+									<div class="w-24 font-mono" class:text-success={profitLoss.revenue.total - profitLoss.revenue.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0) > 0} class:text-error={profitLoss.revenue.total - profitLoss.revenue.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0) < 0}>{formatCurrency(profitLoss.revenue.total - profitLoss.revenue.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0))}</div>
+								{#else}
+									<span class="font-mono">{formatCurrency(profitLoss.revenue.total)}</span>
+								{/if}
+							</div>
+
 						</div>
 					</div>
 
@@ -631,7 +836,28 @@
 											</svg>
 											<span class="font-semibold text-sm">{glGroup.glAccountNumber} - {glGroup.glAccountName}</span>
 										</span>
-										<span class="font-mono font-semibold text-sm">{formatCurrency(glGroup.totalBalance)}</span>
+										
+										<div class="flex gap-4 text-right items-center">
+											{#if modules.budgets}
+												<div class="w-24 flex flex-col">
+													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Actual</span>
+													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(glGroup.totalBalance)}</span>
+												</div>
+												<div class="w-24 flex flex-col">
+													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Budget</span>
+													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}</span>
+												</div>
+												<div class="w-24 flex flex-col">
+													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Variance</span>
+													<span class="font-mono font-semibold text-sm leading-none" class:text-success={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0} class:text-error={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0}>
+														{formatCurrency(glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}
+													</span>
+												</div>
+											{#else}
+												<span class="font-mono font-semibold text-sm">{formatCurrency(glGroup.totalBalance)}</span>
+											{/if}
+										</div>
+
 									</button>
 									{#if expandedGLAccounts.has(glGroup.glAccountId)}
 										<div class="ml-8 border-l-2 border-base-300 pl-3">
@@ -646,7 +872,25 @@
 														</svg>
 														<span>{account.accountNumber} - {account.accountName}</span>
 													</span>
-													<span class="font-mono">{formatCurrency(account.balance)}</span>
+													
+													<div class="flex gap-4 text-right items-center">
+														{#if modules.budgets}
+															<div class="w-24 text-right">
+																<span class="font-mono">{formatCurrency(account.balance)}</span>
+															</div>
+															<div class="w-24 text-right">
+																<span class="font-mono text-base-content/70">{formatCurrency(account.budget || 0)}</span>
+															</div>
+															<div class="w-24 text-right">
+																<span class="font-mono" class:text-success={account.balance - (account.budget || 0) > 0} class:text-error={account.balance - (account.budget || 0) < 0}>
+																	{formatCurrency(account.balance - (account.budget || 0))}
+																</span>
+															</div>
+														{#else}
+															<span class="font-mono">{formatCurrency(account.balance)}</span>
+														{/if}
+													</div>
+
 												</button>
 												{#if expandedSubledgers.has(account.accountId)}
 													<div class="ml-7 border-l-2 border-base-300/50 pl-3 mb-1">
@@ -681,7 +925,17 @@
 						<div class="divider"></div>
 						<div class="flex justify-between font-bold">
 							<span>Total Expenses</span>
-							<span class="font-mono">{formatCurrency(profitLoss.expenses.total)}</span>
+							
+							<div class="flex gap-4 text-right">
+								{#if modules.budgets}
+									<div class="w-24 font-mono">{formatCurrency(profitLoss.expenses.total)}</div>
+									<div class="w-24 font-mono text-base-content/70">{formatCurrency(profitLoss.expenses.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0))}</div>
+									<div class="w-24 font-mono" class:text-success={profitLoss.expenses.total - profitLoss.expenses.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0) > 0} class:text-error={profitLoss.expenses.total - profitLoss.expenses.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0) < 0}>{formatCurrency(profitLoss.expenses.total - profitLoss.expenses.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0))}</div>
+								{#else}
+									<span class="font-mono">{formatCurrency(profitLoss.expenses.total)}</span>
+								{/if}
+							</div>
+
 						</div>
 					</div>
 

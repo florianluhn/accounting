@@ -286,6 +286,32 @@ export const timeEntries = sqliteTable(
 );
 
 // ========================================
+// Budgets Table
+// ========================================
+export const budgets = sqliteTable(
+	'budgets',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		subledgerAccountId: integer('subledger_account_id')
+			.notNull()
+			.references(() => subledgerAccounts.id, { onDelete: 'cascade' }),
+		year: integer('year').notNull(),
+		amount: real('amount').notNull().default(0), // Budget amount in USD
+		createdAt: integer('created_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer('updated_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`)
+	},
+	(table) => ({
+		uniqueBudget: unique('unique_budget_account_year').on(table.subledgerAccountId, table.year),
+		accountIdx: index('idx_budgets_account').on(table.subledgerAccountId),
+		yearIdx: index('idx_budgets_year').on(table.year)
+	})
+);
+
+// ========================================
 // Inventory Categories Table
 // ========================================
 export const inventoryCategories = sqliteTable(
@@ -559,3 +585,6 @@ export type NewTimeEntry = typeof timeEntries.$inferInsert;
 
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type NewAuditLog = typeof auditLogs.$inferInsert;
+
+export type Budget = typeof budgets.$inferSelect;
+export type NewBudget = typeof budgets.$inferInsert;

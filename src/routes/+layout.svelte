@@ -35,6 +35,7 @@
 		{ href: '/assets', label: 'Fixed Assets', icon: '🏗️', module: 'fixedAssets' },
 		{ href: '/timetracking', label: 'Time Tracking', icon: '🕐', module: 'timeTracking' },
 		{ href: '/bookings', label: 'Bookings', icon: '🏨', module: 'bookings' },
+		{ href: '/budgets', label: 'Budgets', icon: '🎯', module: 'budgets' },
 		{ href: '/reports', label: 'Reports', icon: '📈', module: null },
 		{ href: '/audit', label: 'Audit Trail', icon: '🔍', module: null },
 		{ href: '/settings', label: 'Settings', icon: '⚙️', module: null }
