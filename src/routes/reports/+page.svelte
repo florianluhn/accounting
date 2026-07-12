@@ -346,6 +346,7 @@
 											
 										<div class="flex gap-4 text-right items-center">
 											{#if modules.budgets}
+\n\t\t\t\t\n
 												<div class="w-24 flex flex-col">
 													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Actual</span>
 													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(glGroup.totalBalance)}</span>
@@ -356,7 +357,7 @@
 												</div>
 												<div class="w-24 flex flex-col">
 													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Variance</span>
-													<span class="font-mono font-semibold text-sm leading-none" class:text-success={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0} class:text-error={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0}>
+													<span class="font-mono font-semibold text-sm leading-none" class:text-success={(glGroup.glAccountType === 'Revenue' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0) || (glGroup.glAccountType === 'Expense' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0)} class:text-error={(glGroup.glAccountType === 'Expense' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0) || (glGroup.glAccountType === 'Revenue' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0)}>
 														{formatCurrency(glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}
 													</span>
 												</div>
@@ -382,7 +383,7 @@
 																<span class="font-mono text-base-content/70">{formatCurrency(account.budget || 0)}</span>
 															</div>
 															<div class="w-24 text-right">
-																<span class="font-mono" class:text-success={account.balance - (account.budget || 0) > 0} class:text-error={account.balance - (account.budget || 0) < 0}>
+																<span class="font-mono" class:text-success={(account.glAccountType === 'Revenue' && account.balance - (account.budget || 0) > 0) || (account.glAccountType === 'Expense' && account.balance - (account.budget || 0) < 0)} class:text-error={(account.glAccountType === 'Expense' && account.balance - (account.budget || 0) > 0) || (account.glAccountType === 'Revenue' && account.balance - (account.budget || 0) < 0)}>
 																	{formatCurrency(account.balance - (account.budget || 0))}
 																</span>
 															</div>
@@ -439,7 +440,7 @@
 												</div>
 												<div class="w-24 flex flex-col">
 													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Variance</span>
-													<span class="font-mono font-semibold text-sm leading-none" class:text-success={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0} class:text-error={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0}>
+													<span class="font-mono font-semibold text-sm leading-none" class:text-success={(glGroup.glAccountType === 'Revenue' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0) || (glGroup.glAccountType === 'Expense' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0)} class:text-error={(glGroup.glAccountType === 'Expense' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0) || (glGroup.glAccountType === 'Revenue' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0)}>
 														{formatCurrency(glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}
 													</span>
 												</div>
@@ -464,7 +465,7 @@
 																<span class="font-mono text-base-content/70">{formatCurrency(account.budget || 0)}</span>
 															</div>
 															<div class="w-24 text-right">
-																<span class="font-mono" class:text-success={account.balance - (account.budget || 0) > 0} class:text-error={account.balance - (account.budget || 0) < 0}>
+																<span class="font-mono" class:text-success={(account.glAccountType === 'Revenue' && account.balance - (account.budget || 0) > 0) || (account.glAccountType === 'Expense' && account.balance - (account.budget || 0) < 0)} class:text-error={(account.glAccountType === 'Expense' && account.balance - (account.budget || 0) > 0) || (account.glAccountType === 'Revenue' && account.balance - (account.budget || 0) < 0)}>
 																	{formatCurrency(account.balance - (account.budget || 0))}
 																</span>
 															</div>
@@ -516,7 +517,7 @@
 												</div>
 												<div class="w-24 flex flex-col">
 													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Variance</span>
-													<span class="font-mono font-semibold text-sm leading-none" class:text-success={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0} class:text-error={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0}>
+													<span class="font-mono font-semibold text-sm leading-none" class:text-success={(glGroup.glAccountType === 'Revenue' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0) || (glGroup.glAccountType === 'Expense' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0)} class:text-error={(glGroup.glAccountType === 'Expense' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0) || (glGroup.glAccountType === 'Revenue' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0)}>
 														{formatCurrency(glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}
 													</span>
 												</div>
@@ -541,7 +542,7 @@
 																<span class="font-mono text-base-content/70">{formatCurrency(account.budget || 0)}</span>
 															</div>
 															<div class="w-24 text-right">
-																<span class="font-mono" class:text-success={account.balance - (account.budget || 0) > 0} class:text-error={account.balance - (account.budget || 0) < 0}>
+																<span class="font-mono" class:text-success={(account.glAccountType === 'Revenue' && account.balance - (account.budget || 0) > 0) || (account.glAccountType === 'Expense' && account.balance - (account.budget || 0) < 0)} class:text-error={(account.glAccountType === 'Expense' && account.balance - (account.budget || 0) > 0) || (account.glAccountType === 'Revenue' && account.balance - (account.budget || 0) < 0)}>
 																	{formatCurrency(account.balance - (account.budget || 0))}
 																</span>
 															</div>
@@ -687,7 +688,7 @@
 												</div>
 												<div class="w-24 flex flex-col">
 													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Variance</span>
-													<span class="font-mono font-semibold text-sm leading-none" class:text-success={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0} class:text-error={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0}>
+													<span class="font-mono font-semibold text-sm leading-none" class:text-success={(glGroup.glAccountType === 'Revenue' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0) || (glGroup.glAccountType === 'Expense' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0)} class:text-error={(glGroup.glAccountType === 'Expense' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0) || (glGroup.glAccountType === 'Revenue' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0)}>
 														{formatCurrency(glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}
 													</span>
 												</div>
@@ -722,7 +723,7 @@
 																<span class="font-mono text-base-content/70">{formatCurrency(account.budget || 0)}</span>
 															</div>
 															<div class="w-24 text-right">
-																<span class="font-mono" class:text-success={account.balance - (account.budget || 0) > 0} class:text-error={account.balance - (account.budget || 0) < 0}>
+																<span class="font-mono" class:text-success={(account.glAccountType === 'Revenue' && account.balance - (account.budget || 0) > 0) || (account.glAccountType === 'Expense' && account.balance - (account.budget || 0) < 0)} class:text-error={(account.glAccountType === 'Expense' && account.balance - (account.budget || 0) > 0) || (account.glAccountType === 'Revenue' && account.balance - (account.budget || 0) < 0)}>
 																	{formatCurrency(account.balance - (account.budget || 0))}
 																</span>
 															</div>
@@ -811,7 +812,7 @@
 												</div>
 												<div class="w-24 flex flex-col">
 													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Variance</span>
-													<span class="font-mono font-semibold text-sm leading-none" class:text-success={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0} class:text-error={glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0}>
+													<span class="font-mono font-semibold text-sm leading-none" class:text-success={(glGroup.glAccountType === 'Revenue' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0) || (glGroup.glAccountType === 'Expense' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0)} class:text-error={(glGroup.glAccountType === 'Expense' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0) || (glGroup.glAccountType === 'Revenue' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0)}>
 														{formatCurrency(glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}
 													</span>
 												</div>
@@ -844,7 +845,7 @@
 																<span class="font-mono text-base-content/70">{formatCurrency(account.budget || 0)}</span>
 															</div>
 															<div class="w-24 text-right">
-																<span class="font-mono" class:text-success={account.balance - (account.budget || 0) > 0} class:text-error={account.balance - (account.budget || 0) < 0}>
+																<span class="font-mono" class:text-success={(account.glAccountType === 'Revenue' && account.balance - (account.budget || 0) > 0) || (account.glAccountType === 'Expense' && account.balance - (account.budget || 0) < 0)} class:text-error={(account.glAccountType === 'Expense' && account.balance - (account.budget || 0) > 0) || (account.glAccountType === 'Revenue' && account.balance - (account.budget || 0) < 0)}>
 																	{formatCurrency(account.balance - (account.budget || 0))}
 																</span>
 															</div>
@@ -892,7 +893,7 @@
 								{#if modules.budgets}
 									<div class="w-24 font-mono">{formatCurrency(profitLoss.expenses.total)}</div>
 									<div class="w-24 font-mono text-base-content/70">{formatCurrency(profitLoss.expenses.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0))}</div>
-									<div class="w-24 font-mono" class:text-success={profitLoss.expenses.total - profitLoss.expenses.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0) > 0} class:text-error={profitLoss.expenses.total - profitLoss.expenses.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0) < 0}>{formatCurrency(profitLoss.expenses.total - profitLoss.expenses.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0))}</div>
+									<div class="w-24 font-mono" class:text-success={profitLoss.expenses.total - profitLoss.expenses.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0) < 0} class:text-error={profitLoss.expenses.total - profitLoss.expenses.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0) > 0}>{formatCurrency(profitLoss.expenses.total - profitLoss.expenses.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0))}</div>
 								{:else}
 									<span class="font-mono">{formatCurrency(profitLoss.expenses.total)}</span>
 								{/if}
@@ -913,36 +914,46 @@
 
 			<!-- Budget vs Actual Graphs -->
 			{#if modules.budgets}
-				<div class="card bg-base-100 shadow-xl mb-6 mt-6">
+				{@const allAccounts = [...profitLoss.revenue.accounts, ...profitLoss.expenses.accounts].flatMap(g => g.subledgerAccounts).filter(a => a.balance > 0 || (a.budget && a.budget > 0))}
+				{@const maxAmount = Math.max(...allAccounts.flatMap(a => [a.balance, a.budget || 0])) || 1}
+
+				<div class="card bg-base-100 shadow-xl mb-6 mt-6 overflow-hidden">
 					<div class="card-body">
-						<h3 class="text-xl font-bold mb-4">Budget vs Actual Graphs</h3>
-						<div class="space-y-6">
-							{#each [...profitLoss.revenue.accounts, ...profitLoss.expenses.accounts] as glGroup}
-								{#each glGroup.subledgerAccounts as account}
-									{#if account.balance > 0 || (account.budget && account.budget > 0)}
-										{@const budget = account.budget || 0}
-										{@const actual = account.balance}
-										{@const maxVal = Math.max(budget, actual) || 1}
-										{@const budgetPct = (budget / maxVal) * 100}
-										{@const actualPct = (actual / maxVal) * 100}
-										<div>
-											<div class="flex justify-between text-sm mb-1">
-												<span class="font-semibold">{account.accountNumber} - {account.accountName}</span>
-												<span class="text-base-content/70">
-													Actual: <span class="font-mono font-medium text-base-content">{formatCurrency(actual)}</span> / 
-													Budget: <span class="font-mono">{formatCurrency(budget)}</span>
-												</span>
+						<h3 class="text-xl font-bold mb-6 text-center">Budget vs Actuals</h3>
+						<div class="flex gap-4 justify-center mb-6 text-sm">
+							<div class="flex items-center gap-2"><div class="w-3 h-3 bg-primary/30 rounded-sm"></div> Budget</div>
+							<div class="flex items-center gap-2"><div class="w-3 h-3 bg-primary rounded-sm"></div> Actual (Good)</div>
+							<div class="flex items-center gap-2"><div class="w-3 h-3 bg-error rounded-sm"></div> Actual (Bad Variance)</div>
+						</div>
+						<div class="w-full overflow-x-auto pb-4">
+							<div class="flex items-end gap-6 h-64 min-w-max px-4">
+								{#each allAccounts as account}
+									{@const budget = account.budget || 0}
+									{@const actual = account.balance}
+									{@const budgetHeight = (budget / maxAmount) * 100}
+									{@const actualHeight = (actual / maxAmount) * 100}
+									{@const isExpense = account.glAccountType === 'Expense'}
+									{@const isBadVariance = (isExpense && actual > budget && budget > 0) || (!isExpense && actual < budget && budget > 0)}
+									
+									<div class="flex flex-col items-center gap-2 group w-24">
+										<div class="flex items-end gap-1 h-48 w-full justify-center">
+											<div class="w-8 bg-primary/30 rounded-t-sm transition-all duration-300 relative" style="height: {budgetHeight}%">
+												<div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-base-300 text-xs py-1 px-2 rounded whitespace-nowrap pointer-events-none z-10">
+													B: {formatCurrency(budget)}
+												</div>
 											</div>
-											<div class="w-full bg-base-200 rounded-full h-2.5 mb-1 relative overflow-hidden">
-												<!-- Budget background bar -->
-												<div class="bg-primary/20 h-2.5 rounded-full absolute top-0 left-0" style="width: {budgetPct}%"></div>
-												<!-- Actual foreground bar -->
-												<div class="h-2.5 rounded-full absolute top-0 left-0 {actual > budget && budget > 0 ? 'bg-error' : 'bg-primary'}" style="width: {actualPct}%"></div>
+											<div class="w-8 {isBadVariance ? 'bg-error' : 'bg-primary'} rounded-t-sm transition-all duration-300 relative" style="height: {actualHeight}%">
+												<div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-base-300 text-xs py-1 px-2 rounded whitespace-nowrap pointer-events-none z-10">
+													A: {formatCurrency(actual)}
+												</div>
 											</div>
 										</div>
-									{/if}
+										<div class="text-[10px] text-center leading-tight h-8 flex items-start text-base-content/70">
+											{account.accountName}
+										</div>
+									</div>
 								{/each}
-							{/each}
+							</div>
 						</div>
 					</div>
 				</div>
