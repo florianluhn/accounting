@@ -618,16 +618,7 @@
 					</div>
 
 				</div>
-			</div>
-
-			
-								{/each}
-							{/each}
-						</div>
-					</div>
-				</div>
-			{/if}
-		{:else}
+			</div>{:else}
 			<div class="card bg-base-100 shadow-xl">
 				<div class="card-body">
 					<div class="alert alert-info">
@@ -919,6 +910,7 @@
 				</div>
 			</div>
 
+
 			<!-- Budget vs Actual Graphs -->
 			{#if modules.budgets}
 				<div class="card bg-base-100 shadow-xl mb-6 mt-6">
@@ -949,6 +941,12 @@
 											</div>
 										</div>
 									{/if}
+								{/each}
+							{/each}
+						</div>
+					</div>
+				</div>
+			{/if}
 		{:else}
 			<div class="card bg-base-100 shadow-xl">
 				<div class="card-body">
