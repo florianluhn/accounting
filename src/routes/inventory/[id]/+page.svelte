@@ -429,7 +429,7 @@
 	}
 </script>
 
-<div class="max-w-7xl mx-auto">
+<div class="page-shell">
 	{#if loading}
 		<div class="flex justify-center py-8"><span class="loading loading-spinner loading-lg"></span></div>
 	{:else if error && !category}
@@ -447,7 +447,7 @@
 					</ul>
 				</div>
 				<div class="flex items-center gap-3 mb-1">
-					<h1 class="text-4xl font-bold">{category.name}</h1>
+					<h1 class="page-title">{category.name}</h1>
 					<span class="badge badge-lg {isRawMaterial ? 'badge-warning' : category.categoryType === 'finished_good' ? 'badge-success' : 'badge-ghost'}">
 						{isRawMaterial ? 'Raw Material' : category.categoryType === 'finished_good' ? 'Finished Good' : 'Other'}
 					</span>

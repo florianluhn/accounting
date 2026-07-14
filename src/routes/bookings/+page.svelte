@@ -567,10 +567,11 @@
 	const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 </script>
 
-<div class="max-w-7xl mx-auto">
+<div class="page-shell">
 	<div class="mb-8">
-		<h1 class="text-4xl font-bold mb-2">Bookings</h1>
-		<p class="text-base-content/70">Manage overnight bookings</p>
+		<p class="section-label mb-2">Hospitality</p>
+		<h1 class="page-title">Bookings</h1>
+		<p class="page-subtitle">Overnight stays and platform bookings</p>
 	</div>
 
 	{#if error}

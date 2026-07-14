@@ -230,19 +230,21 @@
 	<meta name="description" content="Manage fixed assets, track depreciation, and post monthly depreciation entries." />
 </svelte:head>
 
-<div class="max-w-7xl mx-auto">
+<div class="page-shell">
 	<!-- Header -->
-	<div class="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+	<div class="page-header">
 		<div>
-			<h1 class="text-3xl font-bold">🏗️ Fixed Assets</h1>
-			<p class="text-base-content/60 mt-1">Track assets, depreciation methods, and posting history</p>
+			<p class="section-label mb-2">Capital</p>
+			<h1 class="page-title">Fixed Assets</h1>
+			<p class="page-subtitle">Assets, depreciation methods, and posting history</p>
 		</div>
-		<div class="flex gap-2">
+		<div class="flex flex-wrap gap-2">
 			<button class="btn btn-outline btn-sm" onclick={openDeprModal}>
-				📅 Post All Depreciation
+				Post all depreciation
 			</button>
 			<button class="btn btn-primary btn-sm" onclick={openCreate}>
-				+ New Asset
+				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+				New asset
 			</button>
 		</div>
 	</div>

@@ -119,11 +119,17 @@
 	<title>Audit Trail</title>
 </svelte:head>
 
-<div class="container mx-auto px-4 py-8 max-w-7xl">
-	<h1 class="text-3xl font-bold mb-6">Audit Trail</h1>
+<div class="page-shell">
+	<div class="page-header">
+		<div>
+			<p class="section-label mb-2">Compliance</p>
+			<h1 class="page-title">Audit Trail</h1>
+			<p class="page-subtitle">System activity and change history</p>
+		</div>
+	</div>
 
 	<!-- Filters Card -->
-	<div class="card bg-base-100 shadow-xl mb-6">
+	<div class="card mb-6">
 		<div class="card-body">
 			<h2 class="card-title">Filters</h2>
 

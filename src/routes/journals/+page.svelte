@@ -545,11 +545,12 @@
 	);
 </script>
 
-<div class="max-w-7xl mx-auto">
+<div class="page-shell">
 	<!-- Header -->
 	<div class="mb-8">
-		<h1 class="text-4xl font-bold mb-2">Journal Entries</h1>
-		<p class="text-base-content/70">Record double-entry transactions</p>
+		<p class="section-label mb-2">Transactions</p>
+		<h1 class="page-title">Journal Entries</h1>
+		<p class="page-subtitle">Record double-entry transactions</p>
 	</div>
 
 	{#if error}

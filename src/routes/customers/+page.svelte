@@ -179,11 +179,12 @@
 	);
 </script>
 
-<div class="max-w-7xl mx-auto">
+<div class="page-shell">
 	<!-- Header -->
 	<div class="mb-8">
-		<h1 class="text-4xl font-bold mb-2">Customers</h1>
-		<p class="text-base-content/70">Manage your customers</p>
+		<p class="section-label mb-2">Receivables</p>
+		<h1 class="page-title">Customers</h1>
+		<p class="page-subtitle">Customer relationships and history</p>
 	</div>
 
 	{#if error}

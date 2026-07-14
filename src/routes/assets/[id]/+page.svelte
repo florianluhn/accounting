@@ -157,7 +157,7 @@
 	<title>{asset?.name ?? 'Fixed Asset'} – Fixed Assets</title>
 </svelte:head>
 
-<div class="max-w-7xl mx-auto">
+<div class="page-shell">
 	<!-- Breadcrumb -->
 	<div class="text-sm breadcrumbs mb-4">
 		<ul>

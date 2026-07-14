@@ -109,8 +109,9 @@
 
 <div class="max-w-4xl mx-auto">
 	<div class="mb-8">
-		<h1 class="text-4xl font-bold mb-2">Budgets</h1>
-		<p class="text-base-content/70">Manage annual budgets for Profit and Loss accounts</p>
+		<p class="section-label mb-2">Planning</p>
+		<h1 class="page-title">Budgets</h1>
+		<p class="page-subtitle">Annual budgets for profit and loss accounts</p>
 	</div>
 
 	{#if error}

@@ -228,11 +228,12 @@
 	}
 </script>
 
-<div class="max-w-7xl mx-auto">
+<div class="page-shell">
 	<!-- Header -->
 	<div class="mb-8">
-		<h1 class="text-4xl font-bold mb-2">Chart of Accounts</h1>
-		<p class="text-base-content/70">Manage your GL accounts and subledger accounts</p>
+		<p class="section-label mb-2">Structure</p>
+		<h1 class="page-title">Chart of Accounts</h1>
+		<p class="page-subtitle">General ledger and subledger accounts</p>
 	</div>
 
 	{#if error}

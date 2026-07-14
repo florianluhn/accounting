@@ -225,31 +225,35 @@
 	}
 </script>
 
-<div class="max-w-7xl mx-auto">
+<div class="page-shell">
 	<!-- Header -->
-	<div class="mb-8">
-		<div class="flex justify-between items-center">
-			<div>
-				<h1 class="text-4xl font-bold mb-2">Dashboard</h1>
-				<p class="text-base-content/70">Overview of your financial accounts</p>
-			</div>
+	<div class="page-header">
+		<div>
+			<p class="section-label mb-2">Overview</p>
+			<h1 class="page-title">Dashboard</h1>
+			<p class="page-subtitle">Your financial position at a glance</p>
+		</div>
+		<div class="flex flex-wrap items-center gap-3">
 			{#if currencies.length > 1}
-				<div class="form-control">
-					<label class="label">
-						<span class="label-text">Currency</span>
-					</label>
-					<select
-						class="select select-bordered"
-						bind:value={selectedCurrency}
-						onchange={handleCurrencyChange}
-					>
-						{#each currencies as currency}
-							<option value={currency.code}>
-								{currency.code} - {currency.name}
-							</option>
-						{/each}
-					</select>
-				</div>
+				<select
+					class="select select-bordered select-sm min-w-[10rem]"
+					bind:value={selectedCurrency}
+					onchange={handleCurrencyChange}
+				>
+					{#each currencies as currency}
+						<option value={currency.code}>
+							{currency.code} — {currency.name}
+						</option>
+					{/each}
+				</select>
+			{/if}
+			{#if subledgerAccounts.length >= 2}
+				<a href="/journals" class="btn btn-primary btn-sm">
+					<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+					</svg>
+					New journal entry
+				</a>
 			{/if}
 		</div>
 	</div>
@@ -273,15 +277,9 @@
 		</div>
 	{/if}
 
-	<!-- New Journal Entry Button -->
-	<div class="card bg-base-100 shadow-xl mb-6">
-		<div class="card-body">
-			<h2 class="card-title text-2xl">Quick Actions</h2>
-			<p class="text-base-content/80 mb-4">
-				Create a new journal entry to record your transactions.
-			</p>
-
-			{#if subledgerAccounts.length < 2}
+	{#if subledgerAccounts.length < 2}
+		<div class="card mb-6">
+			<div class="card-body">
 				<div class="alert alert-warning">
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -296,21 +294,28 @@
 							d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
 						/>
 					</svg>
-					<span>You must create at least 2 subledger accounts before recording journal entries. Visit the <a href="/accounts" class="link">Accounts</a> page to get started.</span>
+					<span>Create at least 2 subledger accounts before recording journal entries. Visit <a href="/accounts" class="link link-primary font-semibold">Accounts</a> to get started.</span>
 				</div>
-			{:else}
-				<a href="/journals" class="btn btn-primary btn-lg">
-					+ New Journal Entry
-				</a>
-			{/if}
+			</div>
 		</div>
-	</div>
+	{/if}
 
 	<!-- P&L Statement for Current Month -->
 	{#if !loading && profitLoss}
-		<div class="card bg-base-100 shadow-xl mb-6">
+		<div class="card mb-6">
 			<div class="card-body">
-				<h2 class="card-title text-2xl mb-4">Profit & Loss Statement - {getCurrentMonthName()}</h2>
+				<div class="flex flex-wrap items-center justify-between gap-3 mb-2">
+					<div>
+						<p class="section-label mb-1">This month</p>
+						<h2 class="card-title text-xl">Profit &amp; Loss — {getCurrentMonthName()}</h2>
+					</div>
+					<a href="/reports" class="btn btn-ghost btn-sm">
+						Full reports
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+						</svg>
+					</a>
+				</div>
 
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 					<!-- Revenue Section -->
@@ -463,13 +468,16 @@
 
 				<!-- Net Income -->
 				<div class="divider"></div>
-				<div class="flex justify-between items-center">
-					<h3 class="font-bold text-xl">Net Income</h3>
+				<div class="flex flex-wrap justify-between items-center gap-4 rounded-2xl border border-base-300/60 bg-base-200/40 px-5 py-4">
+					<div>
+						<p class="section-label mb-1">Result</p>
+						<h3 class="font-display font-bold text-xl tracking-tight">Net Income</h3>
+					</div>
 					<div class="text-right">
-						<div class="text-2xl font-bold font-mono {profitLoss.netIncome >= 0 ? 'text-success' : 'text-error'}">
+						<div class="text-2xl sm:text-3xl font-bold font-mono tracking-tight {profitLoss.netIncome >= 0 ? 'text-success' : 'text-error'}">
 							{formatCurrency(profitLoss.netIncome)}
 						</div>
-						<div class="text-sm text-base-content/60">
+						<div class="text-xs font-semibold uppercase tracking-wider mt-1 {profitLoss.netIncome >= 0 ? 'text-success/80' : 'text-error/80'}">
 							{profitLoss.netIncome >= 0 ? 'Profit' : 'Loss'}
 						</div>
 					</div>
@@ -480,74 +488,113 @@
 
 	<!-- Quick Stats -->
 	{#if loading}
-		<div class="flex justify-center py-8">
-			<span class="loading loading-spinner loading-lg"></span>
+		<div class="flex justify-center py-16">
+			<span class="loading loading-spinner loading-lg text-primary"></span>
 		</div>
 	{:else}
-		<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-			<div class="stat bg-base-100 shadow rounded-lg">
-				<div class="stat-title">Total Assets</div>
-				<div class="stat-value text-primary">{formatCurrency(totalAssets)}</div>
-				<div class="stat-desc">
-					{#if balanceSheet?.assets.accounts.length}
-						{countSubledgerAccounts(balanceSheet.assets.accounts)} account{countSubledgerAccounts(balanceSheet.assets.accounts) !== 1 ? 's' : ''}
-					{:else}
-						No asset accounts yet
-					{/if}
+		<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+			<div class="metric-tile">
+				<div class="flex items-start justify-between gap-3">
+					<div>
+						<p class="stat-title mb-2">Total Assets</p>
+						<p class="stat-value text-2xl text-primary font-mono">{formatCurrency(totalAssets)}</p>
+						<p class="stat-desc mt-2 text-base-content/50">
+							{#if balanceSheet?.assets.accounts.length}
+								{countSubledgerAccounts(balanceSheet.assets.accounts)} account{countSubledgerAccounts(balanceSheet.assets.accounts) !== 1 ? 's' : ''}
+							{:else}
+								No asset accounts yet
+							{/if}
+						</p>
+					</div>
+					<div class="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
+					</div>
 				</div>
 			</div>
 
-			<div class="stat bg-base-100 shadow rounded-lg">
-				<div class="stat-title">Total Liabilities</div>
-				<div class="stat-value text-secondary">{formatCurrency(totalLiabilities)}</div>
-				<div class="stat-desc">
-					{#if balanceSheet?.liabilities.accounts.length}
-						{countSubledgerAccounts(balanceSheet.liabilities.accounts)} account{countSubledgerAccounts(balanceSheet.liabilities.accounts) !== 1 ? 's' : ''}
-					{:else}
-						No liability accounts yet
-					{/if}
+			<div class="metric-tile">
+				<div class="flex items-start justify-between gap-3">
+					<div>
+						<p class="stat-title mb-2">Total Liabilities</p>
+						<p class="stat-value text-2xl text-secondary font-mono">{formatCurrency(totalLiabilities)}</p>
+						<p class="stat-desc mt-2 text-base-content/50">
+							{#if balanceSheet?.liabilities.accounts.length}
+								{countSubledgerAccounts(balanceSheet.liabilities.accounts)} account{countSubledgerAccounts(balanceSheet.liabilities.accounts) !== 1 ? 's' : ''}
+							{:else}
+								No liability accounts yet
+							{/if}
+						</p>
+					</div>
+					<div class="w-10 h-10 rounded-xl bg-secondary/10 text-secondary flex items-center justify-center shrink-0">
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75"><path stroke-linecap="round" stroke-linejoin="round" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg>
+					</div>
 				</div>
 			</div>
 
-			<div class="stat bg-base-100 shadow rounded-lg">
-				<div class="stat-title">Equity</div>
-				<div class="stat-value text-accent">{formatCurrency(totalEquity)}</div>
-				<div class="stat-desc">
-					{#if balanceSheet?.equity.accounts.length}
-						{countSubledgerAccounts(balanceSheet.equity.accounts)} account{countSubledgerAccounts(balanceSheet.equity.accounts) !== 1 ? 's' : ''}
-					{:else}
-						No equity accounts yet
-					{/if}
+			<div class="metric-tile">
+				<div class="flex items-start justify-between gap-3">
+					<div>
+						<p class="stat-title mb-2">Equity</p>
+						<p class="stat-value text-2xl text-accent font-mono">{formatCurrency(totalEquity)}</p>
+						<p class="stat-desc mt-2 text-base-content/50">
+							{#if balanceSheet?.equity.accounts.length}
+								{countSubledgerAccounts(balanceSheet.equity.accounts)} account{countSubledgerAccounts(balanceSheet.equity.accounts) !== 1 ? 's' : ''}
+							{:else}
+								No equity accounts yet
+							{/if}
+						</p>
+					</div>
+					<div class="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center shrink-0">
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+					</div>
 				</div>
 			</div>
 
-			<div class="stat bg-base-100 shadow rounded-lg">
-				<div class="stat-title">Journal Entries</div>
-				<div class="stat-value">{journalEntriesCount}</div>
-				<div class="stat-desc">This month</div>
+			<div class="metric-tile">
+				<div class="flex items-start justify-between gap-3">
+					<div>
+						<p class="stat-title mb-2">Journal Entries</p>
+						<p class="stat-value text-2xl font-mono">{journalEntriesCount}</p>
+						<p class="stat-desc mt-2 text-base-content/50">This month</p>
+					</div>
+					<div class="w-10 h-10 rounded-xl bg-base-200 text-base-content/60 flex items-center justify-center shrink-0">
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+					</div>
+				</div>
 			</div>
 		</div>
 
 		<!-- Balance Sheet Status -->
 		{#if balanceSheet}
-			<div class="mt-6">
-				<div class="card bg-base-100 shadow-xl">
-					<div class="card-body">
-						<h3 class="card-title">Balance Sheet Status</h3>
-						<div class="flex items-center gap-4">
-							{#if balanceSheet.balanced}
-								<div class="badge badge-success badge-lg">Balanced</div>
-								<p class="text-base-content/70">
-									Assets ({formatCurrency(totalAssets)}) = Liabilities ({formatCurrency(totalLiabilities)}) + Equity ({formatCurrency(totalEquity)})
-								</p>
-							{:else}
-								<div class="badge badge-error badge-lg">Unbalanced</div>
-								<p class="text-base-content/70">
-									Your books are not balanced. Please review your accounts and journal entries.
-								</p>
-							{/if}
+			<div class="card">
+				<div class="card-body">
+					<div class="flex flex-wrap items-center justify-between gap-4">
+						<div>
+							<p class="section-label mb-1">Books</p>
+							<h3 class="card-title text-lg">Balance sheet status</h3>
 						</div>
+						{#if balanceSheet.balanced}
+							<span class="badge badge-success badge-lg gap-1.5 px-4">
+								<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+								Balanced
+							</span>
+						{:else}
+							<span class="badge badge-error badge-lg gap-1.5 px-4">Unbalanced</span>
+						{/if}
 					</div>
+					{#if balanceSheet.balanced}
+						<p class="text-sm text-base-content/60 mt-1">
+							Assets <span class="font-mono font-semibold text-base-content">{formatCurrency(totalAssets)}</span>
+							=
+							Liabilities <span class="font-mono font-semibold text-base-content">{formatCurrency(totalLiabilities)}</span>
+							+
+							Equity <span class="font-mono font-semibold text-base-content">{formatCurrency(totalEquity)}</span>
+						</p>
+					{:else}
+						<p class="text-sm text-base-content/60 mt-1">
+							Your books are not balanced. Review accounts and journal entries.
+						</p>
+					{/if}
 				</div>
 			</div>
 		{/if}

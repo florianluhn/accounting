@@ -113,7 +113,7 @@
 	}
 </script>
 
-<div class="max-w-7xl mx-auto">
+<div class="page-shell">
 	{#if loading}
 		<div class="flex justify-center py-8">
 			<span class="loading loading-spinner loading-lg"></span>
@@ -136,7 +136,7 @@
 						<li>{vendor.name}</li>
 					</ul>
 				</div>
-				<h1 class="text-4xl font-bold mb-2">{vendor.name}</h1>
+				<h1 class="page-title">{vendor.name}</h1>
 			</div>
 			<button class="btn btn-primary" onclick={openEditModal}>
 				Edit Vendor
