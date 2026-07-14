@@ -8,6 +8,7 @@
 		type ProfitLossReport,
 		type TrialBalanceReport,
 		type GLAccountGroup,
+		type AccountBalance,
 		type CategoryBreakdown,
 		type JournalEntry,
 		type Currency,
@@ -212,6 +213,58 @@
 		const account = subledgerAccounts.find(a => a.id === id);
 		return account ? `${account.accountNumber} - ${account.name}` : `Account #${id}`;
 	}
+
+	/** Account has an explicit budget amount (budgetless accounts are ignored for variance / graphs). */
+	function hasBudget(account: AccountBalance): boolean {
+		return (account.budget ?? 0) > 0;
+	}
+
+	function budgetedSubledgers(group: GLAccountGroup): AccountBalance[] {
+		return group.subledgerAccounts.filter(hasBudget);
+	}
+
+	function sumBudget(accounts: AccountBalance[]): number {
+		return accounts.reduce((sum, a) => sum + (a.budget || 0), 0);
+	}
+
+	function sumActual(accounts: AccountBalance[]): number {
+		return accounts.reduce((sum, a) => sum + a.balance, 0);
+	}
+
+	/** Variance for budgeted accounts only: actual − budget. */
+	function budgetedVariance(accounts: AccountBalance[]): number {
+		const budgeted = accounts.filter(hasBudget);
+		return sumActual(budgeted) - sumBudget(budgeted);
+	}
+
+	function groupBudgetedVariance(group: GLAccountGroup): number {
+		return budgetedVariance(group.subledgerAccounts);
+	}
+
+	function groupBudgetTotal(group: GLAccountGroup): number {
+		return sumBudget(budgetedSubledgers(group));
+	}
+
+	function sectionBudgetTotal(groups: GLAccountGroup[]): number {
+		return groups.reduce((sum, g) => sum + groupBudgetTotal(g), 0);
+	}
+
+	function sectionBudgetedVariance(groups: GLAccountGroup[]): number {
+		return groups.reduce((sum, g) => sum + groupBudgetedVariance(g), 0);
+	}
+
+	/** Positive variance is good for revenue; negative is good for expense. */
+	function isFavorableVariance(variance: number, accountType: string): boolean {
+		if (variance === 0) return false;
+		if (accountType === 'Expense') return variance < 0;
+		return variance > 0; // Revenue (and others): over budget is favorable
+	}
+
+	function isUnfavorableVariance(variance: number, accountType: string): boolean {
+		if (variance === 0) return false;
+		if (accountType === 'Expense') return variance > 0;
+		return variance < 0;
+	}
 </script>
 
 <div class="max-w-7xl mx-auto">
@@ -346,7 +399,6 @@
 											
 										<div class="flex gap-4 text-right items-center">
 											{#if modules.budgets}
-\n\t\t\t\t\n
 												<div class="w-24 flex flex-col">
 													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Actual</span>
 													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(glGroup.totalBalance)}</span>
@@ -678,19 +730,25 @@
 										
 										<div class="flex gap-4 text-right items-center">
 											{#if modules.budgets}
+												{@const gVar = groupBudgetedVariance(glGroup)}
+												{@const gBud = groupBudgetTotal(glGroup)}
 												<div class="w-24 flex flex-col">
 													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Actual</span>
 													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(glGroup.totalBalance)}</span>
 												</div>
 												<div class="w-24 flex flex-col">
 													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Budget</span>
-													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}</span>
+													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(gBud)}</span>
 												</div>
 												<div class="w-24 flex flex-col">
 													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Variance</span>
-													<span class="font-mono font-semibold text-sm leading-none" class:text-success={(glGroup.glAccountType === 'Revenue' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0) || (glGroup.glAccountType === 'Expense' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0)} class:text-error={(glGroup.glAccountType === 'Expense' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0) || (glGroup.glAccountType === 'Revenue' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0)}>
-														{formatCurrency(glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}
-													</span>
+													{#if gBud > 0}
+														<span class="font-mono font-semibold text-sm leading-none" class:text-success={isFavorableVariance(gVar, glGroup.glAccountType)} class:text-error={isUnfavorableVariance(gVar, glGroup.glAccountType)}>
+															{formatCurrency(gVar)}
+														</span>
+													{:else}
+														<span class="font-mono font-semibold text-sm leading-none text-base-content/40">—</span>
+													{/if}
 												</div>
 											{:else}
 												<span class="font-mono font-semibold text-sm">{formatCurrency(glGroup.totalBalance)}</span>
@@ -716,16 +774,21 @@
 													
 													<div class="flex gap-4 text-right items-center">
 														{#if modules.budgets}
+															{@const aVar = account.balance - (account.budget || 0)}
 															<div class="w-24 text-right">
 																<span class="font-mono">{formatCurrency(account.balance)}</span>
 															</div>
 															<div class="w-24 text-right">
-																<span class="font-mono text-base-content/70">{formatCurrency(account.budget || 0)}</span>
+																<span class="font-mono text-base-content/70">{hasBudget(account) ? formatCurrency(account.budget || 0) : '—'}</span>
 															</div>
 															<div class="w-24 text-right">
-																<span class="font-mono" class:text-success={(account.glAccountType === 'Revenue' && account.balance - (account.budget || 0) > 0) || (account.glAccountType === 'Expense' && account.balance - (account.budget || 0) < 0)} class:text-error={(account.glAccountType === 'Expense' && account.balance - (account.budget || 0) > 0) || (account.glAccountType === 'Revenue' && account.balance - (account.budget || 0) < 0)}>
-																	{formatCurrency(account.balance - (account.budget || 0))}
-																</span>
+																{#if hasBudget(account)}
+																	<span class="font-mono" class:text-success={isFavorableVariance(aVar, account.glAccountType)} class:text-error={isUnfavorableVariance(aVar, account.glAccountType)}>
+																		{formatCurrency(aVar)}
+																	</span>
+																{:else}
+																	<span class="font-mono text-base-content/40">—</span>
+																{/if}
 															</div>
 														{:else}
 															<span class="font-mono">{formatCurrency(account.balance)}</span>
@@ -770,9 +833,11 @@
 							
 							<div class="flex gap-4 text-right">
 								{#if modules.budgets}
+									{@const revBudget = sectionBudgetTotal(profitLoss.revenue.accounts)}
+									{@const revVar = sectionBudgetedVariance(profitLoss.revenue.accounts)}
 									<div class="w-24 font-mono">{formatCurrency(profitLoss.revenue.total)}</div>
-									<div class="w-24 font-mono text-base-content/70">{formatCurrency(profitLoss.revenue.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0))}</div>
-									<div class="w-24 font-mono" class:text-success={profitLoss.revenue.total - profitLoss.revenue.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0) > 0} class:text-error={profitLoss.revenue.total - profitLoss.revenue.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0) < 0}>{formatCurrency(profitLoss.revenue.total - profitLoss.revenue.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0))}</div>
+									<div class="w-24 font-mono text-base-content/70">{formatCurrency(revBudget)}</div>
+									<div class="w-24 font-mono" class:text-success={isFavorableVariance(revVar, 'Revenue')} class:text-error={isUnfavorableVariance(revVar, 'Revenue')}>{formatCurrency(revVar)}</div>
 								{:else}
 									<span class="font-mono">{formatCurrency(profitLoss.revenue.total)}</span>
 								{/if}
@@ -802,19 +867,25 @@
 										
 										<div class="flex gap-4 text-right items-center">
 											{#if modules.budgets}
+												{@const gVar = groupBudgetedVariance(glGroup)}
+												{@const gBud = groupBudgetTotal(glGroup)}
 												<div class="w-24 flex flex-col">
 													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Actual</span>
 													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(glGroup.totalBalance)}</span>
 												</div>
 												<div class="w-24 flex flex-col">
 													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Budget</span>
-													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}</span>
+													<span class="font-mono font-semibold text-sm leading-none">{formatCurrency(gBud)}</span>
 												</div>
 												<div class="w-24 flex flex-col">
 													<span class="text-[10px] text-base-content/50 uppercase leading-none mb-1">Variance</span>
-													<span class="font-mono font-semibold text-sm leading-none" class:text-success={(glGroup.glAccountType === 'Revenue' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0) || (glGroup.glAccountType === 'Expense' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0)} class:text-error={(glGroup.glAccountType === 'Expense' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) > 0) || (glGroup.glAccountType === 'Revenue' && glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0) < 0)}>
-														{formatCurrency(glGroup.totalBalance - glGroup.subledgerAccounts.reduce((sum, a) => sum + (a.budget || 0), 0))}
-													</span>
+													{#if gBud > 0}
+														<span class="font-mono font-semibold text-sm leading-none" class:text-success={isFavorableVariance(gVar, glGroup.glAccountType)} class:text-error={isUnfavorableVariance(gVar, glGroup.glAccountType)}>
+															{formatCurrency(gVar)}
+														</span>
+													{:else}
+														<span class="font-mono font-semibold text-sm leading-none text-base-content/40">—</span>
+													{/if}
 												</div>
 											{:else}
 												<span class="font-mono font-semibold text-sm">{formatCurrency(glGroup.totalBalance)}</span>
@@ -838,16 +909,21 @@
 													
 													<div class="flex gap-4 text-right items-center">
 														{#if modules.budgets}
+															{@const aVar = account.balance - (account.budget || 0)}
 															<div class="w-24 text-right">
 																<span class="font-mono">{formatCurrency(account.balance)}</span>
 															</div>
 															<div class="w-24 text-right">
-																<span class="font-mono text-base-content/70">{formatCurrency(account.budget || 0)}</span>
+																<span class="font-mono text-base-content/70">{hasBudget(account) ? formatCurrency(account.budget || 0) : '—'}</span>
 															</div>
 															<div class="w-24 text-right">
-																<span class="font-mono" class:text-success={(account.glAccountType === 'Revenue' && account.balance - (account.budget || 0) > 0) || (account.glAccountType === 'Expense' && account.balance - (account.budget || 0) < 0)} class:text-error={(account.glAccountType === 'Expense' && account.balance - (account.budget || 0) > 0) || (account.glAccountType === 'Revenue' && account.balance - (account.budget || 0) < 0)}>
-																	{formatCurrency(account.balance - (account.budget || 0))}
-																</span>
+																{#if hasBudget(account)}
+																	<span class="font-mono" class:text-success={isFavorableVariance(aVar, account.glAccountType)} class:text-error={isUnfavorableVariance(aVar, account.glAccountType)}>
+																		{formatCurrency(aVar)}
+																	</span>
+																{:else}
+																	<span class="font-mono text-base-content/40">—</span>
+																{/if}
 															</div>
 														{:else}
 															<span class="font-mono">{formatCurrency(account.balance)}</span>
@@ -891,9 +967,11 @@
 							
 							<div class="flex gap-4 text-right">
 								{#if modules.budgets}
+									{@const expBudget = sectionBudgetTotal(profitLoss.expenses.accounts)}
+									{@const expVar = sectionBudgetedVariance(profitLoss.expenses.accounts)}
 									<div class="w-24 font-mono">{formatCurrency(profitLoss.expenses.total)}</div>
-									<div class="w-24 font-mono text-base-content/70">{formatCurrency(profitLoss.expenses.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0))}</div>
-									<div class="w-24 font-mono" class:text-success={profitLoss.expenses.total - profitLoss.expenses.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0) < 0} class:text-error={profitLoss.expenses.total - profitLoss.expenses.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0) > 0}>{formatCurrency(profitLoss.expenses.total - profitLoss.expenses.accounts.reduce((sum, g) => sum + g.subledgerAccounts.reduce((s, a) => s + (a.budget || 0), 0), 0))}</div>
+									<div class="w-24 font-mono text-base-content/70">{formatCurrency(expBudget)}</div>
+									<div class="w-24 font-mono" class:text-success={isFavorableVariance(expVar, 'Expense')} class:text-error={isUnfavorableVariance(expVar, 'Expense')}>{formatCurrency(expVar)}</div>
 								{:else}
 									<span class="font-mono">{formatCurrency(profitLoss.expenses.total)}</span>
 								{/if}
@@ -912,14 +990,20 @@
 			</div>
 
 
-			<!-- Budget vs Actual Graphs -->
+			<!-- Budget vs Actual Graphs (only accounts with a budget) -->
 			{#if modules.budgets}
-				{@const allAccounts = [...profitLoss.revenue.accounts, ...profitLoss.expenses.accounts].flatMap(g => g.subledgerAccounts).filter(a => a.balance > 0 || (a.budget && a.budget > 0))}
-				{@const maxAmount = Math.max(...allAccounts.flatMap(a => [a.balance, a.budget || 0])) || 1}
+				{@const budgetedAccounts = [...profitLoss.revenue.accounts, ...profitLoss.expenses.accounts]
+					.flatMap(g => g.subledgerAccounts)
+					.filter(hasBudget)}
+				{@const maxAmount = budgetedAccounts.length > 0
+					? Math.max(...budgetedAccounts.flatMap(a => [a.balance, a.budget || 0]), 1)
+					: 1}
 
+				{#if budgetedAccounts.length > 0}
 				<div class="card bg-base-100 shadow-xl mb-6 mt-6 overflow-hidden">
 					<div class="card-body">
 						<h3 class="text-xl font-bold mb-6 text-center">Budget vs Actuals</h3>
+						<p class="text-center text-xs text-base-content/50 -mt-4 mb-4">Only accounts with a budget are shown</p>
 						<div class="flex gap-4 justify-center mb-6 text-sm">
 							<div class="flex items-center gap-2"><div class="w-3 h-3 bg-primary/30 rounded-sm"></div> Budget</div>
 							<div class="flex items-center gap-2"><div class="w-3 h-3 bg-primary rounded-sm"></div> Actual (Good)</div>
@@ -927,13 +1011,13 @@
 						</div>
 						<div class="w-full overflow-x-auto pb-4">
 							<div class="flex items-end gap-6 h-64 min-w-max px-4">
-								{#each allAccounts as account}
+								{#each budgetedAccounts as account}
 									{@const budget = account.budget || 0}
 									{@const actual = account.balance}
 									{@const budgetHeight = (budget / maxAmount) * 100}
 									{@const actualHeight = (actual / maxAmount) * 100}
-									{@const isExpense = account.glAccountType === 'Expense'}
-									{@const isBadVariance = (isExpense && actual > budget && budget > 0) || (!isExpense && actual < budget && budget > 0)}
+									{@const variance = actual - budget}
+									{@const isBadVariance = isUnfavorableVariance(variance, account.glAccountType)}
 									
 									<div class="flex flex-col items-center gap-2 group w-24">
 										<div class="flex items-end gap-1 h-48 w-full justify-center">
@@ -957,6 +1041,7 @@
 						</div>
 					</div>
 				</div>
+				{/if}
 			{/if}
 		{:else}
 			<div class="card bg-base-100 shadow-xl">
