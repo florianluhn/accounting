@@ -511,6 +511,15 @@
 
 				<div class="divider">Value Formula</div>
 
+				{#if formData.categoryType === 'finished_good'}
+					<div class="alert alert-info text-sm mb-6">
+						<span>
+							For finished goods, <strong>Value</strong> is the cost of raw materials assigned to each item (Materials),
+							not this formula. Use a field such as Price for the selling price. The formula below is unused for finished goods.
+						</span>
+					</div>
+				{/if}
+
 				<div class="form-control mb-6">
 					<label class="label">
 						<span class="label-text">Value Formula <span class="text-base-content/50 text-xs">(optional — computes $ value per item for balance sheet)</span></span>
@@ -523,9 +532,14 @@
 						class="input input-bordered font-mono"
 						bind:value={formData.valueFormula}
 						placeholder="e.g. board_feet * price_per_bf"
+						disabled={formData.categoryType === 'finished_good'}
 					/>
 					<label class="label">
-						<span class="label-text-alt text-xs text-base-content/50">This value is stored per item and used for tracking purposes.</span>
+						<span class="label-text-alt text-xs text-base-content/50">
+							{formData.categoryType === 'finished_good'
+								? 'Finished-good value is calculated from material allocations.'
+								: 'This value is stored per item and used for tracking purposes.'}
+						</span>
 					</label>
 				</div>
 

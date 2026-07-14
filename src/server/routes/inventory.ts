@@ -81,6 +81,78 @@ async function recalculateRemaining(rawMaterialItemId: number): Promise<void> {
 		.where(eq(inventoryItems.id, rawMaterialItemId));
 }
 
+/**
+ * Proportional cost of one raw-material allocation:
+ * rawItem.totalValue * (quantityUsed / original quantity).
+ */
+function allocationCost(
+	rawItemTotalValue: number,
+	quantityUsed: number,
+	totalQuantity: number
+): number {
+	if (totalQuantity <= 0) return 0;
+	return rawItemTotalValue * (quantityUsed / totalQuantity);
+}
+
+/**
+ * Recompute and store total_value for a finished good as the sum of
+ * proportional raw-material costs allocated to it.
+ * Selling price (manual field) is unrelated — only material cost is stored here.
+ */
+async function recalculateFinishedGoodValue(finishedGoodItemId: number): Promise<void> {
+	const allocs = await db
+		.select()
+		.from(materialAllocations)
+		.where(eq(materialAllocations.finishedGoodItemId, finishedGoodItemId));
+
+	let totalValue = 0;
+
+	for (const alloc of allocs) {
+		const [rawItem] = await db
+			.select()
+			.from(inventoryItems)
+			.where(eq(inventoryItems.id, alloc.rawMaterialItemId))
+			.limit(1);
+		if (!rawItem) continue;
+
+		const [rawCategory] = await db
+			.select()
+			.from(inventoryCategories)
+			.where(eq(inventoryCategories.id, rawItem.categoryId))
+			.limit(1);
+		if (!rawCategory?.quantityField) continue;
+
+		const fieldValues = JSON.parse(rawItem.fieldValues as string) as Record<string, string | number>;
+		const totalQuantity = Number(fieldValues[rawCategory.quantityField as string] ?? 0);
+		totalValue += allocationCost(rawItem.totalValue, alloc.quantityUsed, totalQuantity);
+	}
+
+	totalValue = Math.round(totalValue * 100000) / 100000;
+
+	await db
+		.update(inventoryItems)
+		.set({ totalValue })
+		.where(eq(inventoryItems.id, finishedGoodItemId));
+}
+
+/**
+ * After a raw material's total value or quantity changes, refresh every
+ * finished good that consumed from it.
+ */
+async function recalculateFinishedGoodsUsingRawMaterial(rawMaterialItemId: number): Promise<void> {
+	const allocs = await db
+		.select({ finishedGoodItemId: materialAllocations.finishedGoodItemId })
+		.from(materialAllocations)
+		.where(eq(materialAllocations.rawMaterialItemId, rawMaterialItemId));
+
+	const seen = new Set<number>();
+	for (const a of allocs) {
+		if (seen.has(a.finishedGoodItemId)) continue;
+		seen.add(a.finishedGoodItemId);
+		await recalculateFinishedGoodValue(a.finishedGoodItemId);
+	}
+}
+
 // ─── Routes ────────────────────────────────────────────────────────────────
 
 export default async function inventoryRoutes(fastify: FastifyInstance) {
@@ -266,11 +338,17 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 				const items = await db.select().from(inventoryItems).where(eq(inventoryItems.categoryId, id));
 				const fieldDefs: FieldDefinition[] = JSON.parse(updated[0].fieldDefinitions as string);
 				const valueFormula = updated[0].valueFormula as string;
+				const isFinishedGood = updated[0].categoryType === 'finished_good';
 
 				for (const item of items) {
-					const fieldValues = JSON.parse(item.fieldValues as string);
-					const totalValue = computeTotalValue(valueFormula, fieldDefs, fieldValues);
-					await db.update(inventoryItems).set({ totalValue }).where(eq(inventoryItems.id, item.id));
+					if (isFinishedGood) {
+						// Finished goods: value = sum of allocated raw-material costs
+						await recalculateFinishedGoodValue(item.id);
+					} else {
+						const fieldValues = JSON.parse(item.fieldValues as string);
+						const totalValue = computeTotalValue(valueFormula, fieldDefs, fieldValues);
+						await db.update(inventoryItems).set({ totalValue }).where(eq(inventoryItems.id, item.id));
+					}
 				}
 			}
 
@@ -278,7 +356,11 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 			if (data.quantityField !== undefined || data.valueFormula !== undefined || data.fieldDefinitions !== undefined) {
 				if (updated[0].categoryType === 'raw_material') {
 					const items = await db.select().from(inventoryItems).where(eq(inventoryItems.categoryId, id));
-					for (const item of items) await recalculateRemaining(item.id);
+					for (const item of items) {
+						await recalculateRemaining(item.id);
+						// Material cost changed → refresh finished goods that used this material
+						await recalculateFinishedGoodsUsingRawMaterial(item.id);
+					}
 				}
 			}
 
@@ -359,6 +441,7 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 		const fieldDefs: FieldDefinition[] = JSON.parse(category.fieldDefinitions as string);
 		const valueFormula = category.valueFormula as string;
 		const isRawMaterial = category.categoryType === 'raw_material';
+		const isFinishedGood = category.categoryType === 'finished_good';
 		// Only non-computed fields can be imported (computed are derived from formula)
 		const importableFields = fieldDefs.filter(f => f.type !== 'computed');
 
@@ -384,7 +467,10 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 
 			try {
 				const resolved = resolveFields(fieldDefs, fieldValues);
-				const totalValue = computeTotalValue(valueFormula, fieldDefs, fieldValues);
+				// Finished goods: value comes from material allocations (none on import → 0)
+				const totalValue = isFinishedGood
+					? 0
+					: computeTotalValue(valueFormula, fieldDefs, fieldValues);
 				const totalQuantity = isRawMaterial && category.quantityField
 					? Number(resolved[category.quantityField as string] ?? 0)
 					: null;
@@ -463,10 +549,15 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 			const valueFormula = category.valueFormula as string;
 
 			const resolved = resolveFields(fieldDefs, data.fieldValues);
-			const totalValue = computeTotalValue(valueFormula, fieldDefs, data.fieldValues);
+			const isRawMaterial = category.categoryType === 'raw_material';
+			const isFinishedGood = category.categoryType === 'finished_good';
+			// Finished goods: value = material allocations (0 until materials are assigned)
+			// Other types: value from category value formula (e.g. price for selling price fields)
+			const totalValue = isFinishedGood
+				? 0
+				: computeTotalValue(valueFormula, fieldDefs, data.fieldValues);
 
 			// For raw materials, initialise remaining to full quantity/value
-			const isRawMaterial = category.categoryType === 'raw_material';
 			const totalQuantity = isRawMaterial && category.quantityField
 				? Number(resolved[category.quantityField as string] ?? 0)
 				: null;
@@ -504,17 +595,31 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 			const valueFormula = category.valueFormula as string;
 			const newFieldValues = data.fieldValues ?? JSON.parse(existing.fieldValues as string);
 			const resolved = resolveFields(fieldDefs, newFieldValues);
-			const totalValue = computeTotalValue(valueFormula, fieldDefs, newFieldValues);
+			const isRawMaterial = category.categoryType === 'raw_material';
+			const isFinishedGood = category.categoryType === 'finished_good';
 
-			await db.update(inventoryItems).set({
-				name: data.name ?? existing.name,
-				fieldValues: JSON.stringify(resolved),
-				totalValue,
-				...(data.quantity !== undefined ? { quantity: data.quantity } : {})
-			}).where(eq(inventoryItems.id, id));
+			// Finished goods keep material-based totalValue (not formula / selling price)
+			if (isFinishedGood) {
+				await db.update(inventoryItems).set({
+					name: data.name ?? existing.name,
+					fieldValues: JSON.stringify(resolved),
+					...(data.quantity !== undefined ? { quantity: data.quantity } : {})
+				}).where(eq(inventoryItems.id, id));
+			} else {
+				const totalValue = computeTotalValue(valueFormula, fieldDefs, newFieldValues);
+				await db.update(inventoryItems).set({
+					name: data.name ?? existing.name,
+					fieldValues: JSON.stringify(resolved),
+					totalValue,
+					...(data.quantity !== undefined ? { quantity: data.quantity } : {})
+				}).where(eq(inventoryItems.id, id));
+			}
 
-			// Recompute remaining for raw materials (totalValue changed)
-			if (category.categoryType === 'raw_material') await recalculateRemaining(id);
+			// Recompute remaining for raw materials (totalValue changed), then cascade to FGs
+			if (isRawMaterial) {
+				await recalculateRemaining(id);
+				await recalculateFinishedGoodsUsingRawMaterial(id);
+			}
 
 			const [updated] = await db.select().from(inventoryItems).where(eq(inventoryItems.id, id)).limit(1);
 			await logAudit({ operation: 'UPDATE', resourceType: 'inventory_item', resourceId: id, source: 'Web UI', oldData: existing, newData: updated });
@@ -659,6 +764,7 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 		}).returning();
 
 		await recalculateRemaining(data.rawMaterialItemId);
+		await recalculateFinishedGoodValue(data.finishedGoodItemId);
 		await saveDatabase();
 		return reply.status(201).send(inserted[0]);
 	});
@@ -672,10 +778,32 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 		if (!existing) return reply.status(404).send({ error: 'Not Found', message: `Allocation ${id} not found` });
 
 		const rawMaterialItemId = existing.rawMaterialItemId;
+		const finishedGoodItemId = existing.finishedGoodItemId;
 		await db.delete(materialAllocations).where(eq(materialAllocations.id, id));
 		await recalculateRemaining(rawMaterialItemId);
+		await recalculateFinishedGoodValue(finishedGoodItemId);
 		await saveDatabase();
 		return reply.status(204).send();
 	});
+
+	// One-time-style backfill on route registration: finished-good total_value
+	// should always be the sum of allocated raw-material costs (not selling price).
+	try {
+		const finishedGoods = await db
+			.select({ id: inventoryItems.id })
+			.from(inventoryItems)
+			.innerJoin(inventoryCategories, eq(inventoryItems.categoryId, inventoryCategories.id))
+			.where(sql`${inventoryCategories.categoryType} = 'finished_good'`);
+
+		for (const fg of finishedGoods) {
+			await recalculateFinishedGoodValue(fg.id);
+		}
+		if (finishedGoods.length > 0) {
+			await saveDatabase();
+			console.log(`✓ Recalculated material cost for ${finishedGoods.length} finished good(s)`);
+		}
+	} catch (err) {
+		console.error('Failed to backfill finished-good material values:', err);
+	}
 
 }

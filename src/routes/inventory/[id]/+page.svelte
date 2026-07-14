@@ -92,11 +92,17 @@
 	let resolvedPreview = $derived(
 		category ? resolveFormValues(category.fieldDefinitions, itemFieldValues) : {}
 	);
+	// For finished goods, value is material cost (stored totalValue), not the selling-price formula.
+	// For other types, preview from the category value formula.
 	let previewTotalValue = $derived(
-		category ? evaluateFormula(
-			category.valueFormula,
-			Object.fromEntries(Object.entries(resolvedPreview).filter(([, v]) => typeof v === 'number')) as Record<string, number>
-		) : 0
+		category?.categoryType === 'finished_good'
+			? (editingItem?.totalValue ?? 0)
+			: category
+				? evaluateFormula(
+					category.valueFormula,
+					Object.fromEntries(Object.entries(resolvedPreview).filter(([, v]) => typeof v === 'number')) as Record<string, number>
+				)
+				: 0
 	);
 
 	// ── Item modal ────────────────────────────────────────────────────────────
@@ -274,6 +280,7 @@
 	// ── Derived helpers ───────────────────────────────────────────────────────
 
 	let isRawMaterial = $derived(category?.categoryType === 'raw_material');
+	let isFinishedGood = $derived(category?.categoryType === 'finished_good');
 	let inputFields = $derived(category?.fieldDefinitions.filter(f => f.type !== 'computed') ?? []);
 	let allFields = $derived(category?.fieldDefinitions ?? []);
 	let totalValue = $derived(category?.totalValue ?? 0);
@@ -538,7 +545,13 @@
 						</div>
 					{/each}
 				</div>
-				<p class="text-xs text-base-content/50 mt-1">Value formula: <code class="font-mono">{category.valueFormula}</code></p>
+				{#if isFinishedGood}
+					<p class="text-xs text-base-content/50 mt-1">
+						Value = cost of raw materials assigned via <strong>Materials</strong> (selling price is a separate field if configured).
+					</p>
+				{:else if category.valueFormula}
+					<p class="text-xs text-base-content/50 mt-1">Value formula: <code class="font-mono">{category.valueFormula}</code></p>
+				{/if}
 			</div>
 		</div>
 
@@ -718,7 +731,7 @@
 			<!-- Value + Quantity -->
 			<div class="flex items-center justify-between mb-4">
 				<div>
-					<div class="text-xs text-base-content/50">Value</div>
+					<div class="text-xs text-base-content/50">{isFinishedGood ? 'Value (material cost)' : 'Value'}</div>
 					<div class="font-mono font-bold text-primary">{formatCurrency(detailItem.totalValue)}</div>
 				</div>
 				{#if !isRawMaterial}
@@ -820,7 +833,12 @@
 						</div>
 					{/if}
 					<div class="col-span-2 bg-primary/10 rounded-lg px-4 py-3 flex justify-between items-center mb-2">
-						<span class="text-sm font-medium">Item Value</span>
+						<div>
+							<span class="text-sm font-medium">{isFinishedGood ? 'Material Cost (Value)' : 'Item Value'}</span>
+							{#if isFinishedGood}
+								<div class="text-xs text-base-content/50">From raw materials assigned on the Materials screen</div>
+							{/if}
+						</div>
 						<span class="font-mono font-bold text-primary text-lg">{formatCurrency(previewTotalValue)}</span>
 					</div>
 
@@ -879,6 +897,15 @@
 			{#if allocLoading}
 				<div class="flex justify-center py-4"><span class="loading loading-spinner loading-md"></span></div>
 			{:else}
+				{#if allocatingForItem}
+					<div class="alert alert-info text-sm mb-4 py-2">
+						<span>
+							Material cost (Value):
+							<strong class="font-mono">{formatCurrency(items.find(i => i.id === allocatingForItem!.id)?.totalValue ?? allocatingForItem.totalValue)}</strong>
+							— updates when you add or remove materials below.
+						</span>
+					</div>
+				{/if}
 				<!-- Existing allocations -->
 				{#if itemAllocations.length > 0}
 					<table class="table table-sm mb-4">
