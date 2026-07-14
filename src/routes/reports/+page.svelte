@@ -253,16 +253,25 @@
 		return groups.reduce((sum, g) => sum + groupBudgetedVariance(g), 0);
 	}
 
-	/** Positive variance is good for revenue; negative is good for expense. */
+	/** App uses Profit/Loss; accept Revenue/Expense aliases too. */
+	function isExpenseType(accountType: string): boolean {
+		return accountType === 'Loss' || accountType === 'Expense';
+	}
+
+	/**
+	 * Variance = actual − budget.
+	 * Expenses (Loss): under budget is good (negative variance).
+	 * Revenue (Profit): over budget is good (positive variance).
+	 */
 	function isFavorableVariance(variance: number, accountType: string): boolean {
 		if (variance === 0) return false;
-		if (accountType === 'Expense') return variance < 0;
-		return variance > 0; // Revenue (and others): over budget is favorable
+		if (isExpenseType(accountType)) return variance < 0;
+		return variance > 0;
 	}
 
 	function isUnfavorableVariance(variance: number, accountType: string): boolean {
 		if (variance === 0) return false;
-		if (accountType === 'Expense') return variance > 0;
+		if (isExpenseType(accountType)) return variance > 0;
 		return variance < 0;
 	}
 </script>
@@ -837,7 +846,7 @@
 									{@const revVar = sectionBudgetedVariance(profitLoss.revenue.accounts)}
 									<div class="w-24 font-mono">{formatCurrency(profitLoss.revenue.total)}</div>
 									<div class="w-24 font-mono text-base-content/70">{formatCurrency(revBudget)}</div>
-									<div class="w-24 font-mono" class:text-success={isFavorableVariance(revVar, 'Revenue')} class:text-error={isUnfavorableVariance(revVar, 'Revenue')}>{formatCurrency(revVar)}</div>
+									<div class="w-24 font-mono" class:text-success={isFavorableVariance(revVar, 'Profit')} class:text-error={isUnfavorableVariance(revVar, 'Profit')}>{formatCurrency(revVar)}</div>
 								{:else}
 									<span class="font-mono">{formatCurrency(profitLoss.revenue.total)}</span>
 								{/if}
@@ -971,7 +980,7 @@
 									{@const expVar = sectionBudgetedVariance(profitLoss.expenses.accounts)}
 									<div class="w-24 font-mono">{formatCurrency(profitLoss.expenses.total)}</div>
 									<div class="w-24 font-mono text-base-content/70">{formatCurrency(expBudget)}</div>
-									<div class="w-24 font-mono" class:text-success={isFavorableVariance(expVar, 'Expense')} class:text-error={isUnfavorableVariance(expVar, 'Expense')}>{formatCurrency(expVar)}</div>
+									<div class="w-24 font-mono" class:text-success={isFavorableVariance(expVar, 'Loss')} class:text-error={isUnfavorableVariance(expVar, 'Loss')}>{formatCurrency(expVar)}</div>
 								{:else}
 									<span class="font-mono">{formatCurrency(profitLoss.expenses.total)}</span>
 								{/if}
