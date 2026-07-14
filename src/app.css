@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+  Avoid @apply of DaisyUI theme utilities (bg-base-*, text-base-*, border-base-*,
+  bg-primary, etc.) onto DaisyUI component classes (.card, .btn, .input, …).
+  That creates circular dependencies in Tailwind/PostCSS. Use oklch(var(--*)) instead.
+*/
+
 /* ─── Base ─────────────────────────────────────────────────────────────── */
 @layer base {
 	html {
@@ -12,7 +18,9 @@
 	}
 
 	body {
-		@apply min-h-screen bg-base-200 text-base-content font-sans;
+		@apply min-h-screen font-sans;
+		background-color: oklch(var(--b2));
+		color: oklch(var(--bc));
 		background-image:
 			radial-gradient(ellipse 80% 50% at 0% -20%, color-mix(in oklab, oklch(var(--p)) 8%, transparent), transparent),
 			radial-gradient(ellipse 60% 40% at 100% 0%, color-mix(in oklab, oklch(var(--a)) 6%, transparent), transparent);
@@ -32,7 +40,7 @@
 
 	/* Refined focus rings */
 	:focus-visible {
-		@apply outline-none;
+		outline: none;
 		box-shadow: 0 0 0 3px color-mix(in oklab, oklch(var(--p)) 35%, transparent);
 	}
 
@@ -55,16 +63,19 @@
 	}
 
 	.page-title {
-		@apply font-display text-3xl sm:text-4xl font-bold tracking-tight text-base-content;
+		@apply font-display text-3xl sm:text-4xl font-bold tracking-tight;
+		color: oklch(var(--bc));
 	}
 
 	.page-subtitle {
-		@apply mt-1.5 text-sm sm:text-base text-base-content/55 font-medium;
+		@apply mt-1.5 text-sm sm:text-base font-medium;
+		color: color-mix(in oklab, oklch(var(--bc)) 55%, transparent);
 	}
 
 	/* Elevated cards — soft border + shadow instead of heavy drop shadows */
 	.card {
-		@apply border border-base-300/70 bg-base-100;
+		border: 1px solid color-mix(in oklab, oklch(var(--b3)) 70%, transparent);
+		background-color: oklch(var(--b1));
 		box-shadow: 0 1px 3px 0 rgb(15 23 42 / 0.04), 0 8px 24px -6px rgb(15 23 42 / 0.07);
 		border-radius: var(--rounded-box, 1rem);
 	}
@@ -99,7 +110,7 @@
 	}
 
 	.btn-primary {
-		@apply border-transparent shadow-sm;
+		border-color: transparent;
 		background-image: linear-gradient(
 			180deg,
 			color-mix(in oklab, oklch(var(--p)) 108%, white) 0%,
@@ -117,7 +128,7 @@
 	}
 
 	.btn-secondary {
-		@apply shadow-sm;
+		box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.05);
 	}
 
 	.btn-ghost {
@@ -125,11 +136,15 @@
 	}
 
 	.btn-outline {
-		@apply border-base-300 bg-base-100/80 backdrop-blur-sm;
+		border-color: oklch(var(--b3));
+		background-color: color-mix(in oklab, oklch(var(--b1)) 80%, transparent);
+		backdrop-filter: blur(4px);
 	}
 
 	.btn-outline:hover:not(:disabled) {
-		@apply border-primary/40 bg-primary/5 text-primary;
+		border-color: color-mix(in oklab, oklch(var(--p)) 40%, transparent);
+		background-color: color-mix(in oklab, oklch(var(--p)) 5%, transparent);
+		color: oklch(var(--p));
 	}
 
 	.btn-sm {
@@ -148,7 +163,9 @@
 	.input,
 	.select,
 	.textarea {
-		@apply border-base-300 bg-base-100 font-medium;
+		@apply font-medium;
+		border-color: oklch(var(--b3));
+		background-color: oklch(var(--b1));
 		transition:
 			border-color 0.15s ease,
 			box-shadow 0.15s ease;
@@ -157,18 +174,20 @@
 	.input:focus,
 	.select:focus,
 	.textarea:focus {
-		@apply border-primary/50 outline-none;
+		outline: none;
+		border-color: color-mix(in oklab, oklch(var(--p)) 50%, transparent);
 		box-shadow: 0 0 0 3px color-mix(in oklab, oklch(var(--p)) 18%, transparent);
 	}
 
 	.input-bordered,
 	.select-bordered,
 	.textarea-bordered {
-		@apply border-base-300;
+		border-color: oklch(var(--b3));
 	}
 
 	.label-text {
-		@apply text-sm font-medium text-base-content/70;
+		@apply text-sm font-medium;
+		color: color-mix(in oklab, oklch(var(--bc)) 70%, transparent);
 	}
 
 	/* Tables */
@@ -177,7 +196,9 @@
 	}
 
 	.table :where(th) {
-		@apply text-2xs uppercase tracking-wider font-semibold text-base-content/50 bg-base-200/60;
+		@apply text-2xs uppercase tracking-wider font-semibold;
+		color: color-mix(in oklab, oklch(var(--bc)) 50%, transparent);
+		background-color: color-mix(in oklab, oklch(var(--b2)) 60%, transparent);
 		border-bottom: 1px solid oklch(var(--b3));
 	}
 
@@ -195,41 +216,55 @@
 
 	/* Badges */
 	.badge {
-		@apply font-semibold tracking-tight border-0;
+		@apply font-semibold tracking-tight;
+		border-width: 0;
 	}
 
 	/* Alerts */
 	.alert {
-		@apply border border-base-300/60 shadow-soft rounded-2xl;
+		@apply rounded-2xl;
+		border: 1px solid color-mix(in oklab, oklch(var(--b3)) 60%, transparent);
+		box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 4px 16px -2px rgb(15 23 42 / 0.06);
 	}
 
 	/* Tabs */
 	.tabs-boxed {
-		@apply bg-base-200/80 p-1 rounded-xl border border-base-300/50;
+		@apply p-1 rounded-xl;
+		background-color: color-mix(in oklab, oklch(var(--b2)) 80%, transparent);
+		border: 1px solid color-mix(in oklab, oklch(var(--b3)) 50%, transparent);
 	}
 
 	.tabs-boxed .tab {
-		@apply rounded-lg font-semibold text-sm text-base-content/60;
+		@apply rounded-lg font-semibold text-sm;
+		color: color-mix(in oklab, oklch(var(--bc)) 60%, transparent);
 	}
 
 	.tabs-boxed .tab-active {
-		@apply bg-base-100 text-primary shadow-soft;
+		background-color: oklch(var(--b1));
+		color: oklch(var(--p));
+		box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 4px 16px -2px rgb(15 23 42 / 0.06);
 	}
 
 	/* Menu / nav (sidebar overrides also in layout) */
 	.menu li > *:not(ul):not(.menu-title):not(details):active,
 	.menu li > *:not(ul):not(.menu-title):not(details).active,
 	.menu li > details > summary:active {
-		@apply bg-primary/10 text-primary font-semibold;
+		@apply font-semibold;
+		background-color: color-mix(in oklab, oklch(var(--p)) 10%, transparent);
+		color: oklch(var(--p));
 	}
 
 	/* Stats */
 	.stats {
-		@apply border border-base-300/60 shadow-card bg-base-100 rounded-2xl overflow-hidden;
+		@apply rounded-2xl overflow-hidden;
+		border: 1px solid color-mix(in oklab, oklch(var(--b3)) 60%, transparent);
+		background-color: oklch(var(--b1));
+		box-shadow: 0 1px 3px 0 rgb(15 23 42 / 0.05), 0 8px 24px -6px rgb(15 23 42 / 0.08);
 	}
 
 	.stat-title {
-		@apply text-2xs uppercase tracking-wider font-semibold text-base-content/50;
+		@apply text-2xs uppercase tracking-wider font-semibold;
+		color: color-mix(in oklab, oklch(var(--bc)) 50%, transparent);
 	}
 
 	.stat-value {
@@ -242,12 +277,19 @@
 
 	/* Dividers */
 	.divider {
-		@apply text-base-content/40 text-xs font-semibold uppercase tracking-wider before:bg-base-300 after:bg-base-300;
+		@apply text-xs font-semibold uppercase tracking-wider;
+		color: color-mix(in oklab, oklch(var(--bc)) 40%, transparent);
+	}
+
+	.divider:before,
+	.divider:after {
+		background-color: oklch(var(--b3));
 	}
 
 	/* Modal */
 	.modal-box {
-		@apply border border-base-300/70 shadow-elevated;
+		border: 1px solid color-mix(in oklab, oklch(var(--b3)) 70%, transparent);
+		box-shadow: 0 4px 6px -1px rgb(15 23 42 / 0.06), 0 16px 40px -8px rgb(15 23 42 / 0.12);
 	}
 
 	/* Links */
@@ -263,7 +305,7 @@
 	/* Checkbox / toggle polish */
 	.checkbox,
 	.toggle {
-		@apply border-base-300;
+		border-color: oklch(var(--b3));
 	}
 
 	/* Mobile touch targets */
@@ -273,17 +315,26 @@
 
 	/* Loading skeleton */
 	.skeleton {
-		@apply animate-pulse bg-base-300 rounded-lg;
+		@apply animate-pulse rounded-lg;
+		background-color: oklch(var(--b3));
 	}
 
 	/* Section label chip */
 	.section-label {
-		@apply inline-flex items-center gap-1.5 text-2xs font-bold uppercase tracking-wider text-base-content/45;
+		@apply inline-flex items-center gap-1.5 text-2xs font-bold uppercase tracking-wider;
+		color: color-mix(in oklab, oklch(var(--bc)) 45%, transparent);
 	}
 
 	/* Soft metric tile */
 	.metric-tile {
-		@apply rounded-2xl border border-base-300/60 bg-base-100 p-5 shadow-soft transition-shadow hover:shadow-card;
+		@apply rounded-2xl p-5 transition-shadow;
+		border: 1px solid color-mix(in oklab, oklch(var(--b3)) 60%, transparent);
+		background-color: oklch(var(--b1));
+		box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 4px 16px -2px rgb(15 23 42 / 0.06);
+	}
+
+	.metric-tile:hover {
+		box-shadow: 0 1px 3px 0 rgb(15 23 42 / 0.05), 0 8px 24px -6px rgb(15 23 42 / 0.08);
 	}
 
 	/* Primary gradient surface */
@@ -293,7 +344,7 @@
 			oklch(var(--p)) 0%,
 			color-mix(in oklab, oklch(var(--p)) 70%, oklch(var(--a))) 100%
 		);
-		@apply text-primary-content;
+		color: oklch(var(--pc));
 	}
 
 	/* Print styles for reports */
@@ -311,13 +362,15 @@
 		}
 
 		body {
-			@apply bg-white text-black;
+			background-color: white !important;
+			color: black !important;
 			background-image: none !important;
 		}
 
 		.card,
 		.table {
-			@apply shadow-none border border-gray-300;
+			box-shadow: none !important;
+			border: 1px solid #d1d5db !important;
 		}
 	}
 }
