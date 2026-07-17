@@ -778,6 +778,7 @@ function migrateBookings(): void {
 					platform_fee REAL NOT NULL DEFAULT 0,
 					rental_fee REAL NOT NULL DEFAULT 0,
 					comment TEXT,
+					added_date TEXT NOT NULL DEFAULT (date('now')),
 					created_at INTEGER NOT NULL DEFAULT (unixepoch()),
 					updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 				)
@@ -796,6 +797,21 @@ function migrateBookings(): void {
 			console.log('✓ bookings table created');
 		} else {
 			console.log('✓ bookings table already exists');
+		}
+
+		// Ensure added_date column exists (when booking was recorded)
+		const bookCols = sqlite.exec('PRAGMA table_info(bookings)');
+		if (bookCols.length > 0) {
+			const colNames = bookCols[0].values.map((c: any) => c[1] as string);
+			if (!colNames.includes('added_date')) {
+				sqlite.run(`ALTER TABLE bookings ADD COLUMN added_date TEXT`);
+				// Backfill from system created_at timestamp
+				sqlite.run(`
+					UPDATE bookings
+					SET added_date = COALESCE(date(created_at, 'unixepoch'), date('now'))
+				`);
+				console.log('✓ Added added_date to bookings');
+			}
 		}
 
 		// Seed default booking config settings if not present

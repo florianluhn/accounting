@@ -508,6 +508,8 @@ export const bookings = sqliteTable(
 		platformFee: real('platform_fee').notNull().default(0),
 		rentalFee: real('rental_fee').notNull().default(0),
 		comment: text('comment'),
+		// When the booking was recorded in the system (editable calendar date, yyyy-mm-dd)
+		addedDate: text('added_date').notNull().default(sql`(date('now'))`),
 		createdAt: integer('created_at', { mode: 'timestamp' })
 			.notNull()
 			.default(sql`(unixepoch())`),

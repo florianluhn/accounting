@@ -1180,6 +1180,7 @@ export interface CustomerBooking {
 	platformFee: number;
 	rentalFee: number;
 	comment?: string | null;
+	addedDate?: string | null;
 }
 
 export interface MaterialAllocation {
@@ -1363,6 +1364,8 @@ export interface Booking {
 	platformFee: number;
 	rentalFee: number;
 	comment?: string | null;
+	/** When the booking was recorded (yyyy-mm-dd) */
+	addedDate: string;
 	createdAt?: Date;
 	updatedAt?: Date;
 }

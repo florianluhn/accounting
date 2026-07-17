@@ -33,7 +33,9 @@ const createBookingSchema = z.object({
 	touristTax: z.number().min(0).default(0),
 	platformFee: z.number().min(0).default(0),
 	rentalFee: z.number().min(0).default(0),
-	comment: z.string().max(2000).optional().nullable()
+	comment: z.string().max(2000).optional().nullable(),
+	// When the booking was added/recorded (yyyy-mm-dd); defaults to today if omitted
+	addedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
 });
 
 const updateBookingSchema = createBookingSchema.partial();
@@ -195,6 +197,7 @@ export default async function bookingsRoutes(fastify: FastifyInstance) {
 				platformFee: bookings.platformFee,
 				rentalFee: bookings.rentalFee,
 				comment: bookings.comment,
+				addedDate: bookings.addedDate,
 				createdAt: bookings.createdAt,
 				updatedAt: bookings.updatedAt
 			})
@@ -233,9 +236,11 @@ export default async function bookingsRoutes(fastify: FastifyInstance) {
 			return reply.status(409).send({ error: 'Conflict', message: 'Booking dates overlap with an existing booking' });
 		}
 
+		const today = new Date().toISOString().slice(0, 10);
 		const inserted = await db.insert(bookings).values({
 			...data,
-			comment: data.comment ?? null
+			comment: data.comment ?? null,
+			addedDate: data.addedDate || today
 		}).returning();
 		await saveDatabase();
 		return reply.status(201).send(inserted[0]);

@@ -30,6 +30,7 @@
 	let platformId = $state(0);
 	let checkInDate = $state('');
 	let checkOutDate = $state('');
+	let addedDate = $state('');
 	let totalPaid = $state('');
 	let cleaningFee = $state('');
 	let salesTax = $state('');
@@ -153,12 +154,21 @@
 		if (!platformFeeOverride) platformFee = computedPlatformFee.toFixed(2);
 	});
 
+	function todayIsoDate(): string {
+		const d = new Date();
+		const y = d.getFullYear();
+		const m = String(d.getMonth() + 1).padStart(2, '0');
+		const day = String(d.getDate()).padStart(2, '0');
+		return `${y}-${m}-${day}`;
+	}
+
 	function resetForm(defaultDate?: string) {
 		customerId = 0;
 		platformId = platforms[0]?.id || 0;
-		const today = new Date().toISOString().split('T')[0];
+		const today = todayIsoDate();
 		checkInDate = defaultDate || today;
 		checkOutDate = defaultDate || today;
+		addedDate = today;
 		totalPaid = '';
 		comment = '';
 		salesTaxOverride = false;
@@ -249,6 +259,7 @@
 		platformId = b.platformId;
 		checkInDate = b.checkInDate;
 		checkOutDate = b.checkOutDate;
+		addedDate = b.addedDate || todayIsoDate();
 		totalPaid = b.totalPaid.toFixed(2);
 		cleaningFee = b.cleaningFee.toFixed(2);
 		salesTax = b.salesTax.toFixed(2);
@@ -291,7 +302,8 @@
 				touristTax: parseFloat(touristTax) || 0,
 				platformFee: parseFloat(platformFee) || 0,
 				rentalFee,
-				comment: comment || null
+				comment: comment || null,
+				addedDate: addedDate || todayIsoDate()
 			};
 
 			let bookingId: number;
@@ -854,6 +866,13 @@
 					<input type="date" class="input input-bordered" bind:value={checkOutDate} required />
 				</div>
 
+				<div class="form-control">
+					<label class="label">
+						<span class="label-text">Date Added</span>
+						<span class="label-text-alt text-base-content/50">When this booking was recorded</span>
+					</label>
+					<input type="date" class="input input-bordered" bind:value={addedDate} required />
+				</div>
 				<div class="form-control">
 					<label class="label"><span class="label-text">Nights (auto)</span></label>
 					<input type="number" class="input input-bordered" value={nights} disabled />

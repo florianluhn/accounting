@@ -257,7 +257,8 @@ export default async function customersRoutes(fastify: FastifyInstance) {
 				touristTax: bookings.touristTax,
 				platformFee: bookings.platformFee,
 				rentalFee: bookings.rentalFee,
-				comment: bookings.comment
+				comment: bookings.comment,
+				addedDate: bookings.addedDate
 			})
 			.from(bookings)
 			.leftJoin(bookingPlatforms, eq(bookings.platformId, bookingPlatforms.id))
