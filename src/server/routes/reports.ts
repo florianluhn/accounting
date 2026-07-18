@@ -350,12 +350,8 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 
 		const categories = Array.from(categoryMap.entries())
 			.map(([category, balance]) => ({ category, balance }))
-			.sort((a, b) => {
-				// Uncategorized goes last
-				if (a.category === 'Uncategorized') return 1;
-				if (b.category === 'Uncategorized') return -1;
-				return a.category.localeCompare(b.category);
-			});
+			// Highest amount first (for P&L / account drill-down)
+			.sort((a, b) => b.balance - a.balance);
 
 		return { categories };
 	});
