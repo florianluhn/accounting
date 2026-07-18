@@ -62,7 +62,6 @@
 	let bulkField = $state<'category' | 'description' | 'copy_description_to_category'>('category');
 	let bulkMatchValue = $state('');
 	let bulkNewValue = $state('');
-	let bulkOnlyBlankCategory = $state(true);
 	let bulkUseDateFilters = $state(true);
 	let bulkPreviewing = $state(false);
 	let bulkApplying = $state(false);
@@ -77,12 +76,43 @@
 			description: string;
 			category?: string | null;
 			categoryAfter?: string;
+			descriptionAfter?: string;
 			amount: number;
 			currencyCode: string;
 		}>;
 	} | null>(null);
 	let bulkMeta = $state<{ categories: string[]; descriptions: string[] }>({ categories: [], descriptions: [] });
 	let isCopyMode = $derived(bulkField === 'copy_description_to_category');
+
+	// Row selection for selection-based mass change
+	let selectedIds = $state<Set<number>>(new Set());
+	let showSelectionModal = $state(false);
+	let selectionApplying = $state(false);
+	let selectionError = $state('');
+	let selectionSuccess = $state('');
+	// Which fields to apply to selected rows
+	let selApply = $state({
+		description: false,
+		category: false,
+		comment: false,
+		debitAccountId: false,
+		creditAccountId: false,
+		vendorId: false,
+		customerId: false,
+		currencyCode: false,
+		entryDate: false
+	});
+	let selValues = $state({
+		description: '',
+		category: '',
+		comment: '',
+		debitAccountId: 0,
+		creditAccountId: 0,
+		vendorId: 0 as number | null,
+		customerId: 0 as number | null,
+		currencyCode: 'USD',
+		entryDate: new Date().toISOString().split('T')[0]
+	});
 
 	// Search state for account dropdowns
 	let debitAccountSearch = $state('');
@@ -163,6 +193,9 @@
 			if (endDate) params.endDate = new Date(endDate);
 
 			entries = await journalEntriesAPI.list(params);
+			// Drop selections that no longer exist in the loaded set
+			const valid = new Set(entries.map((e) => e.id));
+			selectedIds = new Set([...selectedIds].filter((id) => valid.has(id)));
 
 			// Load attachments for all entries
 			await loadAttachments();
@@ -519,7 +552,6 @@
 		bulkField = 'category';
 		bulkMatchValue = '';
 		bulkNewValue = '';
-		bulkOnlyBlankCategory = true;
 		bulkUseDateFilters = !!(startDate || endDate);
 		showBulkModal = true;
 		try {
@@ -539,22 +571,17 @@
 	function bulkPayload(preview: boolean) {
 		const payload: {
 			field: 'category' | 'description' | 'copy_description_to_category';
-			matchValue?: string;
-			newValue?: string;
-			onlyBlankCategory?: boolean;
+			matchValue: string;
+			newValue: string;
 			startDate?: Date;
 			endDate?: Date;
 			preview: boolean;
 		} = {
 			field: bulkField,
+			matchValue: bulkMatchValue,
+			newValue: bulkNewValue,
 			preview
 		};
-		if (bulkField === 'copy_description_to_category') {
-			payload.onlyBlankCategory = bulkOnlyBlankCategory;
-		} else {
-			payload.matchValue = bulkMatchValue;
-			payload.newValue = bulkNewValue;
-		}
 		if (bulkUseDateFilters) {
 			if (startDate) payload.startDate = new Date(startDate);
 			if (endDate) payload.endDate = new Date(endDate);
@@ -567,11 +594,11 @@
 			bulkError = '';
 			bulkPreviewing = true;
 			bulkResult = null;
-			if (bulkField === 'description' && !bulkMatchValue.trim()) {
+			if ((bulkField === 'description' || bulkField === 'copy_description_to_category') && !bulkMatchValue.trim()) {
 				bulkError = 'Enter the description to find.';
 				return;
 			}
-			if (bulkField === 'description' && !bulkNewValue.trim()) {
+			if ((bulkField === 'description' || bulkField === 'copy_description_to_category') && !bulkNewValue.trim()) {
 				bulkError = 'New description cannot be empty.';
 				return;
 			}
@@ -587,9 +614,11 @@
 		const n = bulkResult?.count ?? '?';
 		let msg: string;
 		if (bulkField === 'copy_description_to_category') {
-			msg = bulkOnlyBlankCategory
-				? `Copy each entry's description into category for ${n} entr${n === 1 ? 'y' : 'ies'} with a blank category?\n\nThis cannot be undone in one click.`
-				: `Copy each entry's description into category for ${n} entr${n === 1 ? 'y' : 'ies'} (where category differs)?\n\nThis cannot be undone in one click.`;
+			msg =
+				`For ${n} entr${n === 1 ? 'y' : 'ies'} with description "${bulkMatchValue}":\n` +
+				`• Set category to that description\n` +
+				`• Change description to "${bulkNewValue}"\n\n` +
+				`This cannot be undone in one click.`;
 		} else {
 			const label = bulkField === 'category' ? 'category' : 'description';
 			const from = bulkMatchValue === '' && bulkField === 'category' ? '(blank)' : `"${bulkMatchValue}"`;
@@ -672,6 +701,127 @@
 				)
 			: entries
 	);
+
+	let selectedCount = $derived(selectedIds.size);
+	let allFilteredSelected = $derived(
+		filteredEntries.length > 0 && filteredEntries.every((e) => selectedIds.has(e.id))
+	);
+
+	function toggleSelect(id: number) {
+		const next = new Set(selectedIds);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		selectedIds = next;
+	}
+
+	function toggleSelectAllFiltered() {
+		const next = new Set(selectedIds);
+		if (allFilteredSelected) {
+			for (const e of filteredEntries) next.delete(e.id);
+		} else {
+			for (const e of filteredEntries) next.add(e.id);
+		}
+		selectedIds = next;
+	}
+
+	function clearSelection() {
+		selectedIds = new Set();
+	}
+
+	function openSelectionModal() {
+		if (selectedIds.size === 0) return;
+		selectionError = '';
+		selectionSuccess = '';
+		selApply = {
+			description: false,
+			category: false,
+			comment: false,
+			debitAccountId: false,
+			creditAccountId: false,
+			vendorId: false,
+			customerId: false,
+			currencyCode: false,
+			entryDate: false
+		};
+		const first = entries.find((e) => selectedIds.has(e.id));
+		selValues = {
+			description: first?.description ?? '',
+			category: first?.category ?? '',
+			comment: first?.comment ?? '',
+			debitAccountId: first?.debitAccountId ?? 0,
+			creditAccountId: first?.creditAccountId ?? 0,
+			vendorId: first?.vendorId ?? 0,
+			customerId: first?.customerId ?? 0,
+			currencyCode: first?.currencyCode ?? currencies.find((c) => c.isDefault)?.code ?? 'USD',
+			entryDate: first
+				? new Date(first.entryDate).toISOString().split('T')[0]
+				: new Date().toISOString().split('T')[0]
+		};
+		showSelectionModal = true;
+	}
+
+	function closeSelectionModal() {
+		showSelectionModal = false;
+		selectionError = '';
+	}
+
+	async function handleSelectionApply() {
+		const set: Record<string, unknown> = {};
+		if (selApply.description) {
+			if (!selValues.description.trim()) {
+				selectionError = 'Description cannot be empty.';
+				return;
+			}
+			set.description = selValues.description.trim();
+		}
+		if (selApply.category) set.category = selValues.category.trim() === '' ? null : selValues.category.trim();
+		if (selApply.comment) set.comment = selValues.comment.trim() === '' ? null : selValues.comment.trim();
+		if (selApply.debitAccountId) {
+			if (!selValues.debitAccountId) {
+				selectionError = 'Select a debit account.';
+				return;
+			}
+			set.debitAccountId = selValues.debitAccountId;
+		}
+		if (selApply.creditAccountId) {
+			if (!selValues.creditAccountId) {
+				selectionError = 'Select a credit account.';
+				return;
+			}
+			set.creditAccountId = selValues.creditAccountId;
+		}
+		if (selApply.vendorId) set.vendorId = selValues.vendorId || null;
+		if (selApply.customerId) set.customerId = selValues.customerId || null;
+		if (selApply.currencyCode) set.currencyCode = selValues.currencyCode;
+		if (selApply.entryDate) set.entryDate = new Date(selValues.entryDate);
+
+		if (Object.keys(set).length === 0) {
+			selectionError = 'Enable at least one field to change.';
+			return;
+		}
+
+		const n = selectedIds.size;
+		const fields = Object.keys(set).join(', ');
+		if (!confirm(`Apply [${fields}] to ${n} selected entr${n === 1 ? 'y' : 'ies'}?\n\nThis cannot be undone in one click.`)) {
+			return;
+		}
+
+		try {
+			selectionError = '';
+			selectionApplying = true;
+			const result = await journalEntriesAPI.bulkSet({
+				ids: [...selectedIds],
+				set: set as Parameters<typeof journalEntriesAPI.bulkSet>[0]['set']
+			});
+			selectionSuccess = `Updated ${result.updated} entr${result.updated === 1 ? 'y' : 'ies'}.`;
+			await loadEntries();
+			// Keep selection for further edits; clear success after a moment is optional
+		} catch (e) {
+			selectionError = e instanceof Error ? e.message : 'Failed to update selected entries';
+		} finally {
+			selectionApplying = false;
+		}
+	}
 </script>
 
 <div class="page-shell">
@@ -823,6 +973,20 @@
 				</button>
 			</div>
 		{/if}
+
+		{#if selectedCount > 0}
+			<div class="flex flex-wrap items-center gap-3 rounded-xl border border-primary/25 bg-primary/5 px-4 py-3">
+				<span class="font-semibold text-sm">
+					{selectedCount} selected
+				</span>
+				<button type="button" class="btn btn-primary btn-sm" onclick={openSelectionModal}>
+					Edit selected…
+				</button>
+				<button type="button" class="btn btn-ghost btn-sm" onclick={clearSelection}>
+					Clear selection
+				</button>
+			</div>
+		{/if}
 	</div>
 
 	<!-- Journal Entries List -->
@@ -872,13 +1036,23 @@
 				</div>
 			{:else}
 				<div class="overflow-x-auto">
-					<table class="table table-zebra table-fixed w-full min-w-[1000px]">
+					<table class="table table-zebra table-fixed w-full min-w-[1040px]">
 						<thead>
 							<tr>
+								<th class="w-10">
+									<label class="flex items-center justify-center cursor-pointer" title={allFilteredSelected ? 'Deselect all visible' : 'Select all visible'}>
+										<input
+											type="checkbox"
+											class="checkbox checkbox-sm"
+											checked={allFilteredSelected}
+											onchange={toggleSelectAllFiltered}
+										/>
+									</label>
+								</th>
 								<th class="w-[10%]">Date</th>
-								<th class="w-[22%]">Description</th>
-								<th class="w-[16%]">Debit Account</th>
-								<th class="w-[16%]">Credit Account</th>
+								<th class="w-[20%]">Description</th>
+								<th class="w-[15%]">Debit Account</th>
+								<th class="w-[15%]">Credit Account</th>
 								<th class="w-[10%]">Amount</th>
 								<th class="w-[8%]">Category</th>
 								<th class="w-[10%]">Vendor / Customer</th>
@@ -886,8 +1060,18 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each filteredEntries as entry}
-								<tr>
+							{#each filteredEntries as entry (entry.id)}
+								<tr class={selectedIds.has(entry.id) ? 'bg-primary/5' : ''}>
+									<td class="align-top">
+										<label class="flex items-center justify-center cursor-pointer py-1">
+											<input
+												type="checkbox"
+												class="checkbox checkbox-sm"
+												checked={selectedIds.has(entry.id)}
+												onchange={() => toggleSelect(entry.id)}
+											/>
+										</label>
+									</td>
 									<td class="align-top">{formatDate(entry.entryDate)}</td>
 									<td class="whitespace-normal align-top break-words">
 										<div class="font-medium">{entry.description}</div>
@@ -1361,7 +1545,7 @@
 		<div class="modal-box max-w-xl">
 			<h3 class="font-bold text-lg mb-1">Mass change journal entries</h3>
 			<p class="text-sm text-base-content/60 mb-4">
-				Replace a category or description across many entries, or copy each description into its category.
+				Replace a category or description across many entries, or copy a description into category and rename the description.
 			</p>
 
 			{#if bulkError}
@@ -1386,30 +1570,56 @@
 					>
 						<option value="category">Replace category</option>
 						<option value="description">Replace description</option>
-						<option value="copy_description_to_category">Copy description → category</option>
+						<option value="copy_description_to_category">Copy description → category, then rename description</option>
 					</select>
 				</div>
 
 				{#if isCopyMode}
-					<div class="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">
-						<p class="font-medium mb-1">Copy description into category</p>
-						<p class="text-base-content/60">
-							For each matching entry, sets <strong>category</strong> to that entry’s own
-							<strong> description</strong> (truncated to 100 characters if needed).
-						</p>
+					<div class="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm space-y-1">
+						<p class="font-medium">Copy description → category, then rename</p>
+						<ol class="list-decimal list-inside text-base-content/70 space-y-0.5">
+							<li>Find all entries with the chosen description</li>
+							<li>Copy that description into <strong>category</strong></li>
+							<li>Change their <strong>description</strong> to the new text</li>
+						</ol>
 					</div>
 
-					<label class="label cursor-pointer justify-start gap-3">
-						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={bulkOnlyBlankCategory} onchange={() => { bulkResult = null; }} />
-						<span class="label-text">
-							Only entries with a blank category
-							<span class="text-base-content/50 block text-xs mt-0.5">
-								{bulkOnlyBlankCategory
-									? 'Recommended — fills missing categories without overwriting existing ones.'
-									: 'Also overwrites categories that differ from the description.'}
-							</span>
-						</span>
-					</label>
+					<div class="form-control">
+						<label class="label">
+							<span class="label-text">Find description</span>
+							<span class="label-text-alt">Exact match</span>
+						</label>
+						<input
+							type="text"
+							class="input input-bordered"
+							list="bulk-description-list"
+							bind:value={bulkMatchValue}
+							placeholder="Description to find"
+							oninput={() => { bulkResult = null; }}
+						/>
+						<datalist id="bulk-description-list">
+							{#each bulkMeta.descriptions as d}
+								<option value={d}></option>
+							{/each}
+						</datalist>
+						<label class="label">
+							<span class="label-text-alt text-base-content/50">This text is copied into category (max 100 characters)</span>
+						</label>
+					</div>
+
+					<div class="form-control">
+						<label class="label">
+							<span class="label-text">New description</span>
+						</label>
+						<input
+							type="text"
+							class="input input-bordered"
+							list="bulk-description-list"
+							bind:value={bulkNewValue}
+							placeholder="Description after the copy"
+							oninput={() => { bulkResult = null; }}
+						/>
+					</div>
 				{:else}
 					<div class="form-control">
 						<label class="label">
@@ -1491,13 +1701,21 @@
 							<ul class="space-y-1.5 max-h-40 overflow-y-auto text-sm">
 								{#each bulkResult.sample as s}
 									<li class="flex justify-between gap-2 border-b border-base-300/50 pb-1">
-										<span class="truncate">
+										<span class="truncate min-w-0">
 											<span class="text-base-content/50 font-mono text-xs">{formatDate(s.entryDate)}</span>
-											— {s.description}
 											{#if isCopyMode}
-												<span class="badge badge-primary badge-xs ml-1">→ {s.categoryAfter ?? s.description.slice(0, 100)}</span>
-											{:else if s.category}
-												<span class="badge badge-ghost badge-xs ml-1">{s.category}</span>
+												<span class="block truncate">
+													Desc: <span class="line-through opacity-60">{s.description}</span>
+													→ <strong>{s.descriptionAfter ?? bulkNewValue}</strong>
+												</span>
+												<span class="block truncate text-xs">
+													Category → <span class="badge badge-primary badge-xs">{s.categoryAfter ?? bulkMatchValue.slice(0, 100)}</span>
+												</span>
+											{:else}
+												— {s.description}
+												{#if s.category}
+													<span class="badge badge-ghost badge-xs ml-1">{s.category}</span>
+												{/if}
 											{/if}
 										</span>
 										<span class="font-mono text-xs shrink-0">{formatCurrency(s.amount, s.currencyCode)}</span>
@@ -1539,5 +1757,191 @@
 			</div>
 		</div>
 		<div class="modal-backdrop" onclick={closeBulkModal}></div>
+	</div>
+{/if}
+
+<!-- Selection-based bulk edit modal -->
+{#if showSelectionModal}
+	<div class="modal modal-open">
+		<div class="modal-box max-w-2xl">
+			<h3 class="font-bold text-lg mb-1">Edit selected entries</h3>
+			<p class="text-sm text-base-content/60 mb-4">
+				Apply the same values to <strong>{selectedCount}</strong> selected entr{selectedCount === 1 ? 'y' : 'ies'}.
+				Enable only the fields you want to change.
+			</p>
+
+			{#if selectionError}
+				<div class="alert alert-error mb-4 text-sm"><span>{selectionError}</span></div>
+			{/if}
+			{#if selectionSuccess}
+				<div class="alert alert-success mb-4 text-sm"><span>{selectionSuccess}</span></div>
+			{/if}
+
+			<div class="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+				<!-- Description -->
+				<div class="rounded-xl border border-base-300 p-3">
+					<label class="label cursor-pointer justify-start gap-3 py-0 mb-2">
+						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={selApply.description} />
+						<span class="label-text font-semibold">Description</span>
+					</label>
+					<input
+						type="text"
+						class="input input-bordered input-sm w-full"
+						bind:value={selValues.description}
+						disabled={!selApply.description}
+						placeholder="New description"
+					/>
+				</div>
+
+				<!-- Category -->
+				<div class="rounded-xl border border-base-300 p-3">
+					<label class="label cursor-pointer justify-start gap-3 py-0 mb-2">
+						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={selApply.category} />
+						<span class="label-text font-semibold">Category</span>
+					</label>
+					<input
+						type="text"
+						class="input input-bordered input-sm w-full"
+						bind:value={selValues.category}
+						disabled={!selApply.category}
+						placeholder="New category (blank clears)"
+					/>
+				</div>
+
+				<!-- Comment -->
+				<div class="rounded-xl border border-base-300 p-3">
+					<label class="label cursor-pointer justify-start gap-3 py-0 mb-2">
+						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={selApply.comment} />
+						<span class="label-text font-semibold">Comment</span>
+					</label>
+					<textarea
+						class="textarea textarea-bordered textarea-sm w-full"
+						rows="2"
+						bind:value={selValues.comment}
+						disabled={!selApply.comment}
+						placeholder="New comment (blank clears)"
+					></textarea>
+				</div>
+
+				<!-- Entry date -->
+				<div class="rounded-xl border border-base-300 p-3">
+					<label class="label cursor-pointer justify-start gap-3 py-0 mb-2">
+						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={selApply.entryDate} />
+						<span class="label-text font-semibold">Entry date</span>
+					</label>
+					<input
+						type="date"
+						class="input input-bordered input-sm w-full"
+						bind:value={selValues.entryDate}
+						disabled={!selApply.entryDate}
+					/>
+				</div>
+
+				<!-- Debit account -->
+				<div class="rounded-xl border border-base-300 p-3">
+					<label class="label cursor-pointer justify-start gap-3 py-0 mb-2">
+						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={selApply.debitAccountId} />
+						<span class="label-text font-semibold">Debit account</span>
+					</label>
+					<select
+						class="select select-bordered select-sm w-full"
+						bind:value={selValues.debitAccountId}
+						disabled={!selApply.debitAccountId}
+					>
+						<option value={0}>Select debit account…</option>
+						{#each subledgerAccounts as a}
+							<option value={a.id}>{a.accountNumber} — {a.name}</option>
+						{/each}
+					</select>
+				</div>
+
+				<!-- Credit account -->
+				<div class="rounded-xl border border-base-300 p-3">
+					<label class="label cursor-pointer justify-start gap-3 py-0 mb-2">
+						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={selApply.creditAccountId} />
+						<span class="label-text font-semibold">Credit account</span>
+					</label>
+					<select
+						class="select select-bordered select-sm w-full"
+						bind:value={selValues.creditAccountId}
+						disabled={!selApply.creditAccountId}
+					>
+						<option value={0}>Select credit account…</option>
+						{#each subledgerAccounts as a}
+							<option value={a.id}>{a.accountNumber} — {a.name}</option>
+						{/each}
+					</select>
+				</div>
+
+				<!-- Currency -->
+				<div class="rounded-xl border border-base-300 p-3">
+					<label class="label cursor-pointer justify-start gap-3 py-0 mb-2">
+						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={selApply.currencyCode} />
+						<span class="label-text font-semibold">Currency</span>
+					</label>
+					<select
+						class="select select-bordered select-sm w-full"
+						bind:value={selValues.currencyCode}
+						disabled={!selApply.currencyCode}
+					>
+						{#each currencies as c}
+							<option value={c.code}>{c.code} — {c.name}</option>
+						{/each}
+					</select>
+				</div>
+
+				<!-- Vendor -->
+				<div class="rounded-xl border border-base-300 p-3">
+					<label class="label cursor-pointer justify-start gap-3 py-0 mb-2">
+						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={selApply.vendorId} />
+						<span class="label-text font-semibold">Vendor</span>
+					</label>
+					<select
+						class="select select-bordered select-sm w-full"
+						bind:value={selValues.vendorId}
+						disabled={!selApply.vendorId}
+					>
+						<option value={0}>None (clear vendor)</option>
+						{#each vendors as v}
+							<option value={v.id}>{v.name}</option>
+						{/each}
+					</select>
+				</div>
+
+				<!-- Customer -->
+				<div class="rounded-xl border border-base-300 p-3">
+					<label class="label cursor-pointer justify-start gap-3 py-0 mb-2">
+						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={selApply.customerId} />
+						<span class="label-text font-semibold">Customer</span>
+					</label>
+					<select
+						class="select select-bordered select-sm w-full"
+						bind:value={selValues.customerId}
+						disabled={!selApply.customerId}
+					>
+						<option value={0}>None (clear customer)</option>
+						{#each customers as c}
+							<option value={c.id}>{c.lastName}, {c.firstName}</option>
+						{/each}
+					</select>
+				</div>
+			</div>
+
+			<div class="modal-action flex-wrap">
+				<button type="button" class="btn btn-ghost" onclick={closeSelectionModal}>Close</button>
+				<button
+					type="button"
+					class="btn btn-primary"
+					onclick={handleSelectionApply}
+					disabled={selectionApplying}
+				>
+					{#if selectionApplying}
+						<span class="loading loading-spinner loading-sm"></span>
+					{/if}
+					Apply to {selectedCount} selected
+				</button>
+			</div>
+		</div>
+		<div class="modal-backdrop" onclick={closeSelectionModal}></div>
 	</div>
 {/if}

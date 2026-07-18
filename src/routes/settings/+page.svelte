@@ -1,12 +1,19 @@
 <script lang="ts">
 	import { currenciesAPI, type Currency, backupAPI, type BackupStatus, settingsAPI, bookingsAPI, type BookingConfig, type BookingPlatform } from '$lib/api';
-	import { modules, applyModuleSettings } from '$lib/modules.svelte';
+	import { modules, branding, applyModuleSettings, setAppLogo } from '$lib/modules.svelte';
 
 	let currencies = $state<Currency[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 	let showAddModal = $state(false);
 	let editingCurrency = $state<Currency | null>(null);
+
+	// App logo
+	let logoUploading = $state(false);
+	let logoMessage = $state('');
+	let logoPreviewUrl = $derived(
+		branding.hasLogo ? settingsAPI.getLogoUrl(branding.logoVersion) : ''
+	);
 
 	// Backup state
 	let backupStatus = $state<BackupStatus | null>(null);
@@ -43,6 +50,40 @@
 		loadModuleSettings();
 		loadBookingSettings();
 	});
+
+	async function handleLogoUpload(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		try {
+			logoUploading = true;
+			logoMessage = '';
+			error = '';
+			await settingsAPI.uploadLogo(file);
+			setAppLogo(true);
+			logoMessage = 'Logo updated. It now appears in the top-left of the app.';
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to upload logo';
+		} finally {
+			logoUploading = false;
+			input.value = '';
+		}
+	}
+
+	async function handleLogoRemove() {
+		if (!confirm('Remove the app logo? The default icon will be shown again.')) return;
+		try {
+			logoUploading = true;
+			logoMessage = '';
+			await settingsAPI.deleteLogo();
+			setAppLogo(false);
+			logoMessage = 'Logo removed.';
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to remove logo';
+		} finally {
+			logoUploading = false;
+		}
+	}
 
 	async function loadBookingSettings() {
 		try {
@@ -271,6 +312,77 @@
 			<span>{error}</span>
 		</div>
 	{/if}
+
+	<!-- App logo / branding -->
+	<div class="card bg-base-100 shadow-xl mb-6">
+		<div class="card-body">
+			<h2 class="card-title text-2xl">App logo</h2>
+			<p class="text-sm text-base-content/60 mb-4">
+				Upload a picture that appears in the top-left of the app (sidebar and mobile header).
+			</p>
+
+			<div class="flex flex-col sm:flex-row gap-6 items-start">
+				<div class="flex flex-col items-center gap-2">
+					{#if logoPreviewUrl}
+						<img
+							src={logoPreviewUrl}
+							alt="App logo"
+							class="w-24 h-24 rounded-2xl object-cover border border-base-300 shadow-soft bg-base-200"
+						/>
+					{:else}
+						<div
+							class="w-24 h-24 rounded-2xl surface-primary flex items-center justify-center shadow-md text-primary-content"
+						>
+							<svg class="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18M3 9h18M3 15h18" />
+							</svg>
+						</div>
+					{/if}
+					<span class="text-2xs text-base-content/50 font-medium">
+						{logoPreviewUrl ? 'Current logo' : 'Default icon'}
+					</span>
+				</div>
+
+				<div class="flex-1 space-y-3 w-full max-w-md">
+					<label class="form-control w-full">
+						<span class="label-text mb-1">Upload image</span>
+						<input
+							type="file"
+							class="file-input file-input-bordered w-full"
+							accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+							onchange={handleLogoUpload}
+							disabled={logoUploading}
+						/>
+						<span class="label-text-alt text-base-content/50 mt-1">
+							PNG, JPEG, WebP, GIF, or SVG
+						</span>
+					</label>
+
+					<div class="flex flex-wrap gap-2">
+						{#if branding.hasLogo}
+							<button
+								type="button"
+								class="btn btn-outline btn-sm text-error"
+								onclick={handleLogoRemove}
+								disabled={logoUploading}
+							>
+								Remove logo
+							</button>
+						{/if}
+						{#if logoUploading}
+							<span class="loading loading-spinner loading-sm text-primary"></span>
+						{/if}
+					</div>
+
+					{#if logoMessage}
+						<div class="alert alert-success text-sm py-2">
+							<span>{logoMessage}</span>
+						</div>
+					{/if}
+				</div>
+			</div>
+		</div>
+	</div>
 
 	<!-- Currencies Section -->
 	<div class="card bg-base-100 shadow-xl mb-6">

@@ -487,7 +487,6 @@ export const journalEntriesAPI = {
 		field: 'category' | 'description' | 'copy_description_to_category';
 		matchValue?: string;
 		newValue?: string;
-		onlyBlankCategory?: boolean;
 		startDate?: Date;
 		endDate?: Date;
 		preview?: boolean;
@@ -498,18 +497,39 @@ export const journalEntriesAPI = {
 		field: string;
 		matchValue?: string;
 		newValue?: string;
-		onlyBlankCategory?: boolean;
 		sample?: Array<{
 			id: number;
 			entryDate: Date;
 			description: string;
 			category?: string | null;
 			categoryAfter?: string;
+			descriptionAfter?: string;
 			amount: number;
 			currencyCode: string;
 		}>;
 	}> {
 		return apiFetch('/api/journal-entries/bulk-update', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+
+	/** Apply fields to specific journal entries selected by ID. */
+	async bulkSet(data: {
+		ids: number[];
+		set: {
+			description?: string;
+			category?: string | null;
+			comment?: string | null;
+			debitAccountId?: number;
+			creditAccountId?: number;
+			vendorId?: number | null;
+			customerId?: number | null;
+			currencyCode?: string;
+			entryDate?: Date;
+		};
+	}): Promise<{ updated: number; ids: number[]; set: Record<string, unknown> }> {
+		return apiFetch('/api/journal-entries/bulk-set', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
@@ -1133,6 +1153,7 @@ export interface AppSettings {
 	bookings: boolean;
 	fixedAssets: boolean;
 	budgets: boolean;
+	hasLogo?: boolean;
 }
 
 export const settingsAPI = {
@@ -1141,6 +1162,27 @@ export const settingsAPI = {
 	},
 	async update(data: Partial<AppSettings>): Promise<AppSettings> {
 		return apiFetch('/api/settings', { method: 'PUT', body: JSON.stringify(data) });
+	},
+	/** Cache-busted URL for the app logo image (empty string if unused). */
+	getLogoUrl(cacheBust?: string | number): string {
+		const base = `${getApiBaseUrl()}/api/settings/logo`;
+		return cacheBust != null ? `${base}?v=${cacheBust}` : base;
+	},
+	async uploadLogo(file: File): Promise<{ success: boolean; hasLogo: boolean }> {
+		const formData = new FormData();
+		formData.append('file', file);
+		const response = await fetch(`${getApiBaseUrl()}/api/settings/logo`, {
+			method: 'POST',
+			body: formData
+		});
+		if (!response.ok) {
+			const error = await response.json().catch(() => ({ message: response.statusText }));
+			throw new Error(error.message || 'Failed to upload logo');
+		}
+		return response.json();
+	},
+	async deleteLogo(): Promise<{ success: boolean; hasLogo: boolean }> {
+		return apiFetch('/api/settings/logo', { method: 'DELETE' });
 	}
 };
 

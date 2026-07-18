@@ -4,7 +4,7 @@
 	import { browser } from '$app/environment';
 	import type { LayoutData } from './$types';
 	import { settingsAPI } from '$lib/api';
-	import { modules, applyModuleSettings } from '$lib/modules.svelte';
+	import { modules, branding, applyModuleSettings } from '$lib/modules.svelte';
 	let { data }: { data: LayoutData } = $props();
 
 	// Inject app config into window for API client to use
@@ -16,6 +16,10 @@
 	const appName = data.appConfig.APP_SHORT_NAME || 'Accounting';
 	const appFullName = data.appConfig.APP_NAME || 'Accounting App';
 	const appDescription = data.appConfig.APP_DESCRIPTION || 'Personal Finance';
+
+	let logoUrl = $derived(
+		branding.hasLogo ? settingsAPI.getLogoUrl(branding.logoVersion) : ''
+	);
 
 	// Load module settings once on app start
 	$effect(() => {
@@ -109,13 +113,21 @@
 				</label>
 			</div>
 			<div class="flex-1 flex items-center gap-2.5">
-				<div
-					class="w-8 h-8 rounded-xl surface-primary flex items-center justify-center shadow-sm"
-				>
-					<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18M3 9h18M3 15h18" />
-					</svg>
-				</div>
+				{#if logoUrl}
+					<img
+						src={logoUrl}
+						alt=""
+						class="w-8 h-8 rounded-xl object-cover shadow-sm bg-base-200 shrink-0"
+					/>
+				{:else}
+					<div
+						class="w-8 h-8 rounded-xl surface-primary flex items-center justify-center shadow-sm"
+					>
+						<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18M3 9h18M3 15h18" />
+						</svg>
+					</div>
+				{/if}
 				<span class="text-lg font-bold tracking-tight">{appName}</span>
 			</div>
 			<button class="btn btn-ghost btn-square btn-sm" onclick={toggleTheme} aria-label="Toggle theme">
@@ -144,13 +156,21 @@
 			<!-- Brand -->
 			<div class="px-5 pt-6 pb-5">
 				<div class="flex items-center gap-3">
-					<div
-						class="w-10 h-10 rounded-2xl surface-primary flex items-center justify-center shadow-md shrink-0"
-					>
-						<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18M3 9h18M3 15h18" />
-						</svg>
-					</div>
+					{#if logoUrl}
+						<img
+							src={logoUrl}
+							alt={appName}
+							class="w-10 h-10 rounded-2xl object-cover shadow-md shrink-0 bg-base-200 ring-1 ring-base-300/60"
+						/>
+					{:else}
+						<div
+							class="w-10 h-10 rounded-2xl surface-primary flex items-center justify-center shadow-md shrink-0"
+						>
+							<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18M3 9h18M3 15h18" />
+							</svg>
+						</div>
+					{/if}
 					<div class="min-w-0">
 						<h1 class="text-lg font-bold tracking-tight truncate leading-tight">{appName}</h1>
 						<p class="text-2xs font-medium text-base-content/45 truncate mt-0.5">{appDescription}</p>

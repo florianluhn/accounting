@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
 import { journalEntries, subledgerAccounts, currencies, glAccounts, vendors, inventoryItems, customers } from '../db/schema.js';
-import { eq, and, gte, lte, desc, or, isNull, ne, sql } from 'drizzle-orm';
+import { eq, and, gte, lte, desc, or, isNull, ne, inArray } from 'drizzle-orm';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { logAudit, generateBatchId } from '../services/audit.js';
@@ -82,34 +82,40 @@ const updateJournalEntrySchema = z.object({
 /** Mass-change: find all entries matching a field value and replace it. */
 const bulkUpdateSchema = z.object({
 	field: z.enum(['category', 'description', 'copy_description_to_category']),
-	/** Exact value to find. For category, empty string matches blank/null categories. Unused for copy mode. */
-	matchValue: z.string().max(500).optional().default(''),
-	/** Replacement value. Empty string clears category; description must be non-empty. Unused for copy mode. */
-	newValue: z.string().max(500).optional().default(''),
 	/**
-	 * For copy_description_to_category: only touch entries with blank/missing category.
-	 * When false, update every entry whose category differs from its description.
+	 * Exact value to find.
+	 * - category: empty string matches blank/null categories
+	 * - description / copy_description_to_category: exact description text
 	 */
-	onlyBlankCategory: z.boolean().optional().default(false),
+	matchValue: z.string().max(500).optional().default(''),
+	/**
+	 * Replacement value.
+	 * - category: empty string clears category
+	 * - description: new description (required non-empty)
+	 * - copy_description_to_category: new description after copying old one to category
+	 */
+	newValue: z.string().max(500).optional().default(''),
 	/** Optional date range (same semantics as list filters). */
 	startDate: z.coerce.date().optional(),
 	endDate: z.coerce.date().optional(),
 	/** If true, only return match count/sample — no writes. */
 	preview: z.boolean().optional().default(false)
 }).superRefine((data, ctx) => {
-	if (data.field === 'description' && data.newValue.trim() === '') {
-		ctx.addIssue({
-			code: z.ZodIssueCode.custom,
-			message: 'New description cannot be empty',
-			path: ['newValue']
-		});
-	}
-	if (data.field === 'description' && data.matchValue.trim() === '') {
-		ctx.addIssue({
-			code: z.ZodIssueCode.custom,
-			message: 'Match description cannot be empty',
-			path: ['matchValue']
-		});
+	if (data.field === 'description' || data.field === 'copy_description_to_category') {
+		if (data.matchValue.trim() === '') {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: 'Description to find cannot be empty',
+				path: ['matchValue']
+			});
+		}
+		if (data.newValue.trim() === '') {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: 'New description cannot be empty',
+				path: ['newValue']
+			});
+		}
 	}
 });
 
@@ -128,20 +134,8 @@ function buildBulkMatchConditions(data: z.infer<typeof bulkUpdateSchema>) {
 	const conditions: any[] = [...buildBulkDateConditions(data)];
 
 	if (data.field === 'copy_description_to_category') {
-		// Must have a description to copy
-		conditions.push(ne(journalEntries.description, ''));
-		if (data.onlyBlankCategory) {
-			conditions.push(or(isNull(journalEntries.category), eq(journalEntries.category, '')));
-		} else {
-			// Category missing or different from description (and respect 100-char category limit)
-			conditions.push(
-				or(
-					isNull(journalEntries.category),
-					eq(journalEntries.category, ''),
-					sql`${journalEntries.category} != substr(${journalEntries.description}, 1, 100)`
-				)
-			);
-		}
+		// Only entries with this exact description
+		conditions.push(eq(journalEntries.description, data.matchValue));
 		return conditions;
 	}
 
@@ -159,6 +153,34 @@ function buildBulkMatchConditions(data: z.infer<typeof bulkUpdateSchema>) {
 
 	return conditions;
 }
+
+/**
+ * Apply field values to a specific list of journal entry IDs (selection-based mass change).
+ * Only provided keys in `set` are updated.
+ */
+const bulkSetSchema = z.object({
+	ids: z.array(z.number().int().positive()).min(1).max(5000),
+	set: z
+		.object({
+			description: z.string().min(1).max(500).optional(),
+			category: z.string().max(100).nullable().optional(),
+			comment: z.string().max(1000).nullable().optional(),
+			debitAccountId: z.number().int().positive().optional(),
+			creditAccountId: z.number().int().positive().optional(),
+			vendorId: z.number().int().positive().nullable().optional(),
+			customerId: z.number().int().positive().nullable().optional(),
+			currencyCode: z.string().length(3).optional(),
+			entryDate: z.coerce.date().optional()
+		})
+		.refine((s) => Object.keys(s).length > 0, { message: 'At least one field to set is required' })
+		.refine(
+			(s) =>
+				s.debitAccountId === undefined ||
+				s.creditAccountId === undefined ||
+				s.debitAccountId !== s.creditAccountId,
+			{ message: 'Debit and credit accounts must be different' }
+		)
+});
 
 export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 	// GET /api/journal-entries - List all journal entries
@@ -318,6 +340,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 		} else if (data.field === 'description') {
 			conditions.push(ne(journalEntries.description, data.newValue));
 		}
+		// copy mode always rewrites category + description for matched rows
 
 		const whereClause = and(...conditions);
 
@@ -335,19 +358,22 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			.orderBy(desc(journalEntries.entryDate));
 
 		const count = matched.length;
+		const categoryAfter =
+			data.field === 'copy_description_to_category' ? data.matchValue.slice(0, 100) : undefined;
 		const sample = matched.slice(0, 10).map((row) => ({
 			...row,
-			// Preview what category will become after copy
 			...(data.field === 'copy_description_to_category'
-				? { categoryAfter: row.description.slice(0, 100) }
+				? {
+						categoryAfter,
+						descriptionAfter: data.newValue
+					}
 				: {})
 		}));
 
 		const responseBase = {
 			field: data.field,
 			matchValue: data.matchValue,
-			newValue: data.newValue,
-			onlyBlankCategory: data.onlyBlankCategory
+			newValue: data.newValue
 		};
 
 		if (data.preview) {
@@ -361,10 +387,16 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 		let updated: { id: number }[];
 
 		if (data.field === 'copy_description_to_category') {
-			// Category column is max 100 chars — truncate description when copying
+			// 1) category ← current description (max 100 chars)
+			// 2) description ← new description
+			// Use the matched description text for category so the value is exact.
+			const categoryValue = data.matchValue.slice(0, 100);
 			updated = await db
 				.update(journalEntries)
-				.set({ category: sql`substr(${journalEntries.description}, 1, 100)` })
+				.set({
+					category: categoryValue,
+					description: data.newValue
+				})
 				.where(whereClause)
 				.returning({ id: journalEntries.id });
 		} else {
@@ -383,7 +415,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 		const batchId = generateBatchId();
 		const auditDesc =
 			data.field === 'copy_description_to_category'
-				? `Mass copy description → category${data.onlyBlankCategory ? ' (blank categories only)' : ''} (${updated.length} entries)`
+				? `Mass copy description "${data.matchValue}" → category, then set description to "${data.newValue}" (${updated.length} entries)`
 				: `Mass change ${data.field}: "${data.matchValue}" → "${data.newValue}" (${updated.length} entries)`;
 
 		await logAudit({
@@ -397,7 +429,6 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 				field: data.field,
 				matchValue: data.matchValue,
 				newValue: data.newValue,
-				onlyBlankCategory: data.onlyBlankCategory,
 				updatedCount: updated.length,
 				ids: updated.map((r) => r.id)
 			}
@@ -410,6 +441,139 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			count: updated.length,
 			updated: updated.length,
 			...responseBase
+		};
+	});
+
+	// POST /api/journal-entries/bulk-set - Set fields on selected journal entries by ID
+	fastify.post<{ Body: z.infer<typeof bulkSetSchema> }>('/bulk-set', async (request, reply) => {
+		const data = bulkSetSchema.parse(request.body);
+		const ids = [...new Set(data.ids)];
+
+		const existing = await db
+			.select({
+				id: journalEntries.id,
+				amount: journalEntries.amount,
+				currencyCode: journalEntries.currencyCode,
+				debitAccountId: journalEntries.debitAccountId,
+				creditAccountId: journalEntries.creditAccountId
+			})
+			.from(journalEntries)
+			.where(inArray(journalEntries.id, ids));
+
+		if (existing.length === 0) {
+			return reply.status(404).send({
+				error: 'Not Found',
+				message: 'No matching journal entries found for the selected IDs'
+			});
+		}
+
+		// Validate accounts if provided
+		if (data.set.debitAccountId !== undefined) {
+			const [acc] = await db
+				.select({ id: subledgerAccounts.id })
+				.from(subledgerAccounts)
+				.where(eq(subledgerAccounts.id, data.set.debitAccountId))
+				.limit(1);
+			if (!acc) {
+				return reply.status(400).send({ error: 'Bad Request', message: 'Debit account not found' });
+			}
+		}
+		if (data.set.creditAccountId !== undefined) {
+			const [acc] = await db
+				.select({ id: subledgerAccounts.id })
+				.from(subledgerAccounts)
+				.where(eq(subledgerAccounts.id, data.set.creditAccountId))
+				.limit(1);
+			if (!acc) {
+				return reply.status(400).send({ error: 'Bad Request', message: 'Credit account not found' });
+			}
+		}
+
+		// Debit/credit must differ per entry when only one side is being set
+		if (data.set.debitAccountId !== undefined || data.set.creditAccountId !== undefined) {
+			for (const row of existing) {
+				const debit = data.set.debitAccountId ?? row.debitAccountId;
+				const credit = data.set.creditAccountId ?? row.creditAccountId;
+				if (debit === credit) {
+					return reply.status(400).send({
+						error: 'Bad Request',
+						message: `Debit and credit accounts would be the same on entry #${row.id}`
+					});
+				}
+			}
+		}
+
+		if (data.set.currencyCode !== undefined) {
+			const [cur] = await db
+				.select()
+				.from(currencies)
+				.where(eq(currencies.code, data.set.currencyCode))
+				.limit(1);
+			if (!cur) {
+				return reply.status(400).send({ error: 'Bad Request', message: `Currency ${data.set.currencyCode} not found` });
+			}
+		}
+
+		const updatePayload: Record<string, unknown> = {};
+		if (data.set.description !== undefined) updatePayload.description = data.set.description;
+		if (data.set.category !== undefined) {
+			updatePayload.category = data.set.category === '' ? null : data.set.category;
+		}
+		if (data.set.comment !== undefined) {
+			updatePayload.comment = data.set.comment === '' ? null : data.set.comment;
+		}
+		if (data.set.debitAccountId !== undefined) updatePayload.debitAccountId = data.set.debitAccountId;
+		if (data.set.creditAccountId !== undefined) updatePayload.creditAccountId = data.set.creditAccountId;
+		if (data.set.vendorId !== undefined) updatePayload.vendorId = data.set.vendorId;
+		if (data.set.customerId !== undefined) updatePayload.customerId = data.set.customerId;
+		if (data.set.entryDate !== undefined) updatePayload.entryDate = data.set.entryDate;
+
+		const targetIds = existing.map((r) => r.id);
+
+		// Currency change: recompute amountInUSD per entry (amounts may differ)
+		if (data.set.currencyCode !== undefined) {
+			const [cur] = await db
+				.select()
+				.from(currencies)
+				.where(eq(currencies.code, data.set.currencyCode))
+				.limit(1);
+			const rate = cur!.exchangeRate;
+			for (const row of existing) {
+				const amountInUSD = Math.round(row.amount * rate * 100) / 100;
+				await db
+					.update(journalEntries)
+					.set({ ...updatePayload, currencyCode: data.set.currencyCode, amountInUSD })
+					.where(eq(journalEntries.id, row.id));
+			}
+		} else {
+			await db
+				.update(journalEntries)
+				.set(updatePayload)
+				.where(inArray(journalEntries.id, targetIds));
+		}
+
+		const batchId = generateBatchId();
+		const fields = Object.keys(data.set).join(', ');
+		await logAudit({
+			operation: 'UPDATE',
+			resourceType: 'journal_entry',
+			resourceId: batchId,
+			source: 'Web UI',
+			batchId,
+			description: `Bulk set [${fields}] on ${targetIds.length} selected journal entries`,
+			newData: {
+				ids: targetIds,
+				set: data.set,
+				updatedCount: targetIds.length
+			}
+		});
+
+		await saveDatabase();
+
+		return {
+			updated: targetIds.length,
+			ids: targetIds,
+			set: data.set
 		};
 	});
 
