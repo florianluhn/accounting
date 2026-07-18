@@ -435,6 +435,8 @@ export const journalEntriesAPI = {
 		debitAccountId?: number;
 		creditAccountId?: number;
 		category?: string;
+		/** Only entries with no category */
+		uncategorized?: boolean;
 		currencyCode?: string;
 		customerId?: number;
 		inventoryItemId?: number;
@@ -445,7 +447,8 @@ export const journalEntriesAPI = {
 		if (params?.endDate) query.set('endDate', params.endDate.toISOString());
 		if (params?.debitAccountId) query.set('debitAccountId', String(params.debitAccountId));
 		if (params?.creditAccountId) query.set('creditAccountId', String(params.creditAccountId));
-		if (params?.category) query.set('category', params.category);
+		if (params?.uncategorized) query.set('uncategorized', 'true');
+		else if (params?.category) query.set('category', params.category);
 		if (params?.currencyCode) query.set('currencyCode', params.currencyCode);
 		if (params?.customerId) query.set('customerId', String(params.customerId));
 		if (params?.inventoryItemId) query.set('inventoryItemId', String(params.inventoryItemId));
@@ -541,6 +544,7 @@ export const journalEntriesAPI = {
 		debitAccountId?: number;
 		creditAccountId?: number;
 		category?: string;
+		uncategorized?: boolean;
 		currencyCode?: string;
 	}): Promise<void> {
 		const query = new URLSearchParams();
@@ -548,7 +552,8 @@ export const journalEntriesAPI = {
 		if (params?.endDate) query.set('endDate', params.endDate.toISOString());
 		if (params?.debitAccountId) query.set('debitAccountId', String(params.debitAccountId));
 		if (params?.creditAccountId) query.set('creditAccountId', String(params.creditAccountId));
-		if (params?.category) query.set('category', params.category);
+		if (params?.uncategorized) query.set('uncategorized', 'true');
+		else if (params?.category) query.set('category', params.category);
 		if (params?.currencyCode) query.set('currencyCode', params.currencyCode);
 
 		const queryString = query.toString();

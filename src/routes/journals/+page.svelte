@@ -32,6 +32,8 @@
 	let searchQuery = $state('');
 	let startDate = $state('');
 	let endDate = $state('');
+	/** When true, only journal entries without a category are shown */
+	let uncategorizedOnly = $state(false);
 
 	// Modal state
 	let showModal = $state(false);
@@ -124,11 +126,12 @@
 		loadData();
 	});
 
-	// Reload entries when date filters change
+	// Reload entries when date / category filters change
 	$effect(() => {
 		// Track dependencies
 		startDate;
 		endDate;
+		uncategorizedOnly;
 
 		// Only reload if we've already loaded data initially
 		if (subledgerAccounts.length > 0) {
@@ -188,9 +191,10 @@
 			loading = true;
 			error = '';
 
-			const params: any = {};
+			const params: Parameters<typeof journalEntriesAPI.list>[0] = {};
 			if (startDate) params.startDate = new Date(startDate);
 			if (endDate) params.endDate = new Date(endDate);
+			if (uncategorizedOnly) params.uncategorized = true;
 
 			entries = await journalEntriesAPI.list(params);
 			// Drop selections that no longer exist in the loaded set
@@ -498,14 +502,16 @@
 	function clearFilters() {
 		startDate = '';
 		endDate = '';
+		uncategorizedOnly = false;
 	}
 
 	async function handleDownloadCSV() {
 		try {
 			error = '';
-			const params: any = {};
+			const params: Parameters<typeof journalEntriesAPI.downloadCSV>[0] = {};
 			if (startDate) params.startDate = new Date(startDate);
 			if (endDate) params.endDate = new Date(endDate);
+			if (uncategorizedOnly) params.uncategorized = true;
 
 			await journalEntriesAPI.downloadCSV(params);
 		} catch (e) {
@@ -875,7 +881,15 @@
 					bind:value={endDate}
 				/>
 			</div>
-			{#if startDate || endDate}
+			<label class="label cursor-pointer gap-2 items-center pb-3">
+				<input
+					type="checkbox"
+					class="checkbox checkbox-sm checkbox-primary"
+					bind:checked={uncategorizedOnly}
+				/>
+				<span class="label-text font-medium">Without category only</span>
+			</label>
+			{#if startDate || endDate || uncategorizedOnly}
 				<button class="btn btn-ghost" onclick={clearFilters}>
 					Clear Filters
 				</button>
@@ -1031,7 +1045,9 @@
 					<span>
 						{searchQuery
 							? 'No journal entries match your search.'
-							: 'No journal entries yet. Create your first transaction to get started.'}
+							: uncategorizedOnly
+								? 'No uncategorized journal entries for the current filters.'
+								: 'No journal entries yet. Create your first transaction to get started.'}
 					</span>
 				</div>
 			{:else}

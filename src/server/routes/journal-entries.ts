@@ -191,6 +191,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			debitAccountId?: string;
 			creditAccountId?: string;
 			category?: string;
+			/** When true, only entries with null/empty category */
+			uncategorized?: string;
 			currencyCode?: string;
 			vendorId?: string;
 			customerId?: string;
@@ -256,7 +258,9 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			}
 		}
 
-		if (request.query.category) {
+		if (request.query.uncategorized === 'true' || request.query.uncategorized === '1') {
+			conditions.push(or(isNull(journalEntries.category), eq(journalEntries.category, '')));
+		} else if (request.query.category) {
 			conditions.push(eq(journalEntries.category, request.query.category));
 		}
 
@@ -898,6 +902,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			debitAccountId?: string;
 			creditAccountId?: string;
 			category?: string;
+			uncategorized?: string;
 			currencyCode?: string;
 		}
 	}>('/export/csv', async (request, reply) => {
@@ -956,7 +961,9 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			}
 		}
 
-		if (request.query.category) {
+		if (request.query.uncategorized === 'true' || request.query.uncategorized === '1') {
+			conditions.push(or(isNull(journalEntries.category), eq(journalEntries.category, '')));
+		} else if (request.query.category) {
 			conditions.push(eq(journalEntries.category, request.query.category));
 		}
 
