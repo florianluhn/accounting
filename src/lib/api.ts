@@ -479,6 +479,39 @@ export const journalEntriesAPI = {
 		});
 	},
 
+	async metaValues(): Promise<{ categories: string[]; descriptions: string[] }> {
+		return apiFetch('/api/journal-entries/meta/values');
+	},
+
+	async bulkUpdate(data: {
+		field: 'category' | 'description';
+		matchValue: string;
+		newValue: string;
+		startDate?: Date;
+		endDate?: Date;
+		preview?: boolean;
+	}): Promise<{
+		preview: boolean;
+		count: number;
+		updated?: number;
+		field: string;
+		matchValue: string;
+		newValue: string;
+		sample?: Array<{
+			id: number;
+			entryDate: Date;
+			description: string;
+			category?: string | null;
+			amount: number;
+			currencyCode: string;
+		}>;
+	}> {
+		return apiFetch('/api/journal-entries/bulk-update', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+
 	async downloadCSV(params?: {
 		startDate?: Date;
 		endDate?: Date;

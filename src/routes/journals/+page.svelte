@@ -57,6 +57,30 @@
 	let uploadingCSV = $state(false);
 	let csvUploadResult = $state<{ success: number; failed: number; errors: string[]; message?: string } | null>(null);
 
+	// Mass change (bulk update) modal
+	let showBulkModal = $state(false);
+	let bulkField = $state<'category' | 'description'>('category');
+	let bulkMatchValue = $state('');
+	let bulkNewValue = $state('');
+	let bulkUseDateFilters = $state(true);
+	let bulkPreviewing = $state(false);
+	let bulkApplying = $state(false);
+	let bulkError = $state('');
+	let bulkResult = $state<{
+		preview: boolean;
+		count: number;
+		updated?: number;
+		sample?: Array<{
+			id: number;
+			entryDate: Date;
+			description: string;
+			category?: string | null;
+			amount: number;
+			currencyCode: string;
+		}>;
+	} | null>(null);
+	let bulkMeta = $state<{ categories: string[]; descriptions: string[] }>({ categories: [], descriptions: [] });
+
 	// Search state for account dropdowns
 	let debitAccountSearch = $state('');
 	let creditAccountSearch = $state('');
@@ -486,6 +510,96 @@
 		return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 	}
 
+	async function openBulkModal() {
+		bulkError = '';
+		bulkResult = null;
+		bulkField = 'category';
+		bulkMatchValue = '';
+		bulkNewValue = '';
+		bulkUseDateFilters = !!(startDate || endDate);
+		showBulkModal = true;
+		try {
+			bulkMeta = await journalEntriesAPI.metaValues();
+		} catch (e) {
+			// non-critical — free text still works
+			bulkMeta = { categories: [], descriptions: [] };
+		}
+	}
+
+	function closeBulkModal() {
+		showBulkModal = false;
+		bulkResult = null;
+		bulkError = '';
+	}
+
+	function bulkPayload(preview: boolean) {
+		const payload: {
+			field: 'category' | 'description';
+			matchValue: string;
+			newValue: string;
+			startDate?: Date;
+			endDate?: Date;
+			preview: boolean;
+		} = {
+			field: bulkField,
+			matchValue: bulkMatchValue,
+			newValue: bulkNewValue,
+			preview
+		};
+		if (bulkUseDateFilters) {
+			if (startDate) payload.startDate = new Date(startDate);
+			if (endDate) payload.endDate = new Date(endDate);
+		}
+		return payload;
+	}
+
+	async function handleBulkPreview() {
+		try {
+			bulkError = '';
+			bulkPreviewing = true;
+			bulkResult = null;
+			if (bulkField === 'description' && !bulkMatchValue.trim()) {
+				bulkError = 'Enter the description to find.';
+				return;
+			}
+			if (bulkField === 'description' && !bulkNewValue.trim()) {
+				bulkError = 'New description cannot be empty.';
+				return;
+			}
+			bulkResult = await journalEntriesAPI.bulkUpdate(bulkPayload(true));
+		} catch (e) {
+			bulkError = e instanceof Error ? e.message : 'Preview failed';
+		} finally {
+			bulkPreviewing = false;
+		}
+	}
+
+	async function handleBulkApply() {
+		const label = bulkField === 'category' ? 'category' : 'description';
+		const from = bulkMatchValue === '' && bulkField === 'category' ? '(blank)' : `"${bulkMatchValue}"`;
+		const to = bulkNewValue === '' && bulkField === 'category' ? '(blank)' : `"${bulkNewValue}"`;
+		const n = bulkResult?.count ?? '?';
+		if (!confirm(`Change ${label} from ${from} to ${to} on ${n} journal entr${n === 1 ? 'y' : 'ies'}?\n\nThis cannot be undone in one click.`)) {
+			return;
+		}
+		try {
+			bulkError = '';
+			bulkApplying = true;
+			const result = await journalEntriesAPI.bulkUpdate(bulkPayload(false));
+			bulkResult = result;
+			await loadEntries();
+			try {
+				bulkMeta = await journalEntriesAPI.metaValues();
+			} catch {
+				/* ignore */
+			}
+		} catch (e) {
+			bulkError = e instanceof Error ? e.message : 'Mass change failed';
+		} finally {
+			bulkApplying = false;
+		}
+	}
+
 	function getAccountName(id: number): string {
 		const account = subledgerAccounts.find(a => a.id === id);
 		return account ? `${account.accountNumber} - ${account.name}` : 'Unknown';
@@ -614,6 +728,16 @@
 				/>
 			</div>
 			<div class="flex gap-2 flex-wrap">
+				<button
+					class="btn btn-outline"
+					onclick={openBulkModal}
+					title="Change category or description on many entries at once"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h10m-10 6h16M15 10l4 4m0 0l-4 4m4-4H9" />
+					</svg>
+					Mass change
+				</button>
 				<button
 					class="btn btn-outline"
 					onclick={handleDownloadCSV}
@@ -1213,5 +1337,167 @@
 			</form>
 		</div>
 		<div class="modal-backdrop" onclick={closeModal}></div>
+	</div>
+{/if}
+
+<!-- Mass change modal -->
+{#if showBulkModal}
+	<div class="modal modal-open">
+		<div class="modal-box max-w-xl">
+			<h3 class="font-bold text-lg mb-1">Mass change journal entries</h3>
+			<p class="text-sm text-base-content/60 mb-4">
+				Find every entry with a matching category or description and replace it in one step.
+			</p>
+
+			{#if bulkError}
+				<div class="alert alert-error mb-4 text-sm">
+					<span>{bulkError}</span>
+				</div>
+			{/if}
+
+			{#if bulkResult && !bulkResult.preview && (bulkResult.updated ?? 0) > 0}
+				<div class="alert alert-success mb-4 text-sm">
+					<span>Updated <strong>{bulkResult.updated}</strong> entr{(bulkResult.updated ?? 0) === 1 ? 'y' : 'ies'}.</span>
+				</div>
+			{/if}
+
+			<div class="space-y-4">
+				<div class="form-control">
+					<label class="label"><span class="label-text">Field to change</span></label>
+					<select
+						class="select select-bordered"
+						bind:value={bulkField}
+						onchange={() => { bulkMatchValue = ''; bulkNewValue = ''; bulkResult = null; }}
+					>
+						<option value="category">Category</option>
+						<option value="description">Description</option>
+					</select>
+				</div>
+
+				<div class="form-control">
+					<label class="label">
+						<span class="label-text">Find</span>
+						<span class="label-text-alt">Exact match</span>
+					</label>
+					{#if bulkField === 'category'}
+						<input
+							type="text"
+							class="input input-bordered"
+							list="bulk-category-list"
+							bind:value={bulkMatchValue}
+							placeholder="Category to find (leave blank for empty category)"
+							oninput={() => { bulkResult = null; }}
+						/>
+						<datalist id="bulk-category-list">
+							{#each bulkMeta.categories as cat}
+								<option value={cat}></option>
+							{/each}
+						</datalist>
+						<label class="label">
+							<span class="label-text-alt text-base-content/50">Leave empty to match entries with no category</span>
+						</label>
+					{:else}
+						<input
+							type="text"
+							class="input input-bordered"
+							list="bulk-description-list"
+							bind:value={bulkMatchValue}
+							placeholder="Exact description to find"
+							oninput={() => { bulkResult = null; }}
+						/>
+						<datalist id="bulk-description-list">
+							{#each bulkMeta.descriptions as d}
+								<option value={d}></option>
+							{/each}
+						</datalist>
+					{/if}
+				</div>
+
+				<div class="form-control">
+					<label class="label">
+						<span class="label-text">Replace with</span>
+					</label>
+					<input
+						type="text"
+						class="input input-bordered"
+						list={bulkField === 'category' ? 'bulk-category-list' : undefined}
+						bind:value={bulkNewValue}
+						placeholder={bulkField === 'category' ? 'New category (blank clears category)' : 'New description'}
+						oninput={() => { bulkResult = null; }}
+					/>
+				</div>
+
+				<label class="label cursor-pointer justify-start gap-3">
+					<input type="checkbox" class="checkbox checkbox-sm" bind:checked={bulkUseDateFilters} onchange={() => { bulkResult = null; }} />
+					<span class="label-text">
+						Limit to current date filters
+						{#if startDate || endDate}
+							<span class="text-base-content/50">
+								({startDate || '…'} → {endDate || '…'})
+							</span>
+						{:else}
+							<span class="text-base-content/50">(no date filter set — all dates)</span>
+						{/if}
+					</span>
+				</label>
+
+				{#if bulkResult?.preview}
+					<div class="rounded-xl border border-base-300 bg-base-200/50 p-4">
+						<p class="font-semibold text-sm mb-2">
+							{bulkResult.count === 0
+								? 'No matching entries found.'
+								: `${bulkResult.count} entr${bulkResult.count === 1 ? 'y' : 'ies'} will be updated.`}
+						</p>
+						{#if bulkResult.sample && bulkResult.sample.length > 0}
+							<p class="text-2xs uppercase tracking-wider text-base-content/50 mb-2">Sample</p>
+							<ul class="space-y-1.5 max-h-40 overflow-y-auto text-sm">
+								{#each bulkResult.sample as s}
+									<li class="flex justify-between gap-2 border-b border-base-300/50 pb-1">
+										<span class="truncate">
+											<span class="text-base-content/50 font-mono text-xs">{formatDate(s.entryDate)}</span>
+											— {s.description}
+											{#if s.category}
+												<span class="badge badge-ghost badge-xs ml-1">{s.category}</span>
+											{/if}
+										</span>
+										<span class="font-mono text-xs shrink-0">{formatCurrency(s.amount, s.currencyCode)}</span>
+									</li>
+								{/each}
+							</ul>
+							{#if bulkResult.count > bulkResult.sample.length}
+								<p class="text-xs text-base-content/50 mt-2">…and {bulkResult.count - bulkResult.sample.length} more</p>
+							{/if}
+						{/if}
+					</div>
+				{/if}
+			</div>
+
+			<div class="modal-action flex-wrap">
+				<button type="button" class="btn btn-ghost" onclick={closeBulkModal}>Close</button>
+				<button
+					type="button"
+					class="btn btn-outline"
+					onclick={handleBulkPreview}
+					disabled={bulkPreviewing || bulkApplying}
+				>
+					{#if bulkPreviewing}
+						<span class="loading loading-spinner loading-sm"></span>
+					{/if}
+					Preview matches
+				</button>
+				<button
+					type="button"
+					class="btn btn-primary"
+					onclick={handleBulkApply}
+					disabled={bulkApplying || bulkPreviewing || !bulkResult?.preview || (bulkResult?.count ?? 0) === 0}
+				>
+					{#if bulkApplying}
+						<span class="loading loading-spinner loading-sm"></span>
+					{/if}
+					Apply change
+				</button>
+			</div>
+		</div>
+		<div class="modal-backdrop" onclick={closeBulkModal}></div>
 	</div>
 {/if}

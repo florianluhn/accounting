@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
 import { journalEntries, subledgerAccounts, currencies, glAccounts, vendors, inventoryItems, customers } from '../db/schema.js';
-import { eq, and, gte, lte, desc } from 'drizzle-orm';
+import { eq, and, gte, lte, desc, or, isNull, ne } from 'drizzle-orm';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { logAudit, generateBatchId } from '../services/audit.js';
@@ -78,6 +78,60 @@ const updateJournalEntrySchema = z.object({
 	fixedAssetId: z.number().int().positive().nullable().optional(),
 	isDepreciation: z.boolean().optional()
 });
+
+/** Mass-change: find all entries matching a field value and replace it. */
+const bulkUpdateSchema = z.object({
+	field: z.enum(['category', 'description']),
+	/** Exact value to find. For category, empty string matches blank/null categories. */
+	matchValue: z.string().max(500),
+	/** Replacement value. Empty string clears category; description must be non-empty. */
+	newValue: z.string().max(500),
+	/** Optional date range (same semantics as list filters). */
+	startDate: z.coerce.date().optional(),
+	endDate: z.coerce.date().optional(),
+	/** If true, only return match count/sample — no writes. */
+	preview: z.boolean().optional().default(false)
+}).superRefine((data, ctx) => {
+	if (data.field === 'description' && data.newValue.trim() === '') {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: 'New description cannot be empty',
+			path: ['newValue']
+		});
+	}
+	if (data.field === 'description' && data.matchValue.trim() === '') {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: 'Match description cannot be empty',
+			path: ['matchValue']
+		});
+	}
+});
+
+function buildBulkMatchConditions(data: z.infer<typeof bulkUpdateSchema>) {
+	const conditions: any[] = [];
+
+	if (data.field === 'category') {
+		const match = data.matchValue.trim();
+		if (match === '') {
+			// Blank / missing category
+			conditions.push(or(isNull(journalEntries.category), eq(journalEntries.category, '')));
+		} else {
+			conditions.push(eq(journalEntries.category, match));
+		}
+	} else {
+		conditions.push(eq(journalEntries.description, data.matchValue));
+	}
+
+	if (data.startDate && !isNaN(data.startDate.getTime())) {
+		conditions.push(gte(journalEntries.entryDate, data.startDate));
+	}
+	if (data.endDate && !isNaN(data.endDate.getTime())) {
+		conditions.push(lte(journalEntries.entryDate, data.endDate));
+	}
+
+	return conditions;
+}
 
 export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 	// GET /api/journal-entries - List all journal entries
@@ -195,6 +249,116 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 
 		const entries = await query;
 		return entries;
+	});
+
+	// GET /api/journal-entries/meta/values - Distinct categories & descriptions for mass change UI
+	fastify.get('/meta/values', async () => {
+		const categoryRows = await db
+			.select({ category: journalEntries.category })
+			.from(journalEntries)
+			.groupBy(journalEntries.category);
+
+		const descriptionRows = await db
+			.select({ description: journalEntries.description })
+			.from(journalEntries)
+			.groupBy(journalEntries.description);
+
+		const categories = categoryRows
+			.map((r) => r.category)
+			.filter((c): c is string => c != null && c !== '')
+			.sort((a, b) => a.localeCompare(b));
+
+		const descriptions = descriptionRows
+			.map((r) => r.description)
+			.filter((d): d is string => !!d)
+			.sort((a, b) => a.localeCompare(b))
+			.slice(0, 500);
+
+		return { categories, descriptions };
+	});
+
+	// POST /api/journal-entries/bulk-update - Mass change category or description
+	fastify.post<{ Body: z.infer<typeof bulkUpdateSchema> }>('/bulk-update', async (request, reply) => {
+		const data = bulkUpdateSchema.parse(request.body);
+		const conditions = buildBulkMatchConditions(data);
+
+		// Skip no-ops where value already equals new value
+		if (data.field === 'category') {
+			const newCat = data.newValue.trim() === '' ? null : data.newValue.trim();
+			if (newCat === null) {
+				// Already matched blank — nothing to change if we're "clearing" blanks
+				// Still allow if match was a non-empty value
+			} else {
+				conditions.push(or(isNull(journalEntries.category), ne(journalEntries.category, newCat))!);
+			}
+		} else {
+			conditions.push(ne(journalEntries.description, data.newValue));
+		}
+
+		const whereClause = and(...conditions);
+
+		const matched = await db
+			.select({
+				id: journalEntries.id,
+				entryDate: journalEntries.entryDate,
+				description: journalEntries.description,
+				category: journalEntries.category,
+				amount: journalEntries.amount,
+				currencyCode: journalEntries.currencyCode
+			})
+			.from(journalEntries)
+			.where(whereClause)
+			.orderBy(desc(journalEntries.entryDate));
+
+		const count = matched.length;
+		const sample = matched.slice(0, 10);
+
+		if (data.preview) {
+			return { preview: true, count, sample, field: data.field, matchValue: data.matchValue, newValue: data.newValue };
+		}
+
+		if (count === 0) {
+			return { preview: false, count: 0, updated: 0, field: data.field, matchValue: data.matchValue, newValue: data.newValue };
+		}
+
+		const updatePayload =
+			data.field === 'category'
+				? { category: data.newValue.trim() === '' ? null : data.newValue.trim() }
+				: { description: data.newValue };
+
+		const updated = await db
+			.update(journalEntries)
+			.set(updatePayload)
+			.where(whereClause)
+			.returning({ id: journalEntries.id });
+
+		const batchId = generateBatchId();
+		await logAudit({
+			operation: 'UPDATE',
+			resourceType: 'journal_entry',
+			resourceId: batchId,
+			source: 'Web UI',
+			batchId,
+			description: `Mass change ${data.field}: "${data.matchValue}" → "${data.newValue}" (${updated.length} entries)`,
+			newData: {
+				field: data.field,
+				matchValue: data.matchValue,
+				newValue: data.newValue,
+				updatedCount: updated.length,
+				ids: updated.map((r) => r.id)
+			}
+		});
+
+		await saveDatabase();
+
+		return {
+			preview: false,
+			count: updated.length,
+			updated: updated.length,
+			field: data.field,
+			matchValue: data.matchValue,
+			newValue: data.newValue
+		};
 	});
 
 	// GET /api/journal-entries/:id - Get single journal entry
