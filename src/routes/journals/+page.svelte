@@ -59,9 +59,10 @@
 
 	// Mass change (bulk update) modal
 	let showBulkModal = $state(false);
-	let bulkField = $state<'category' | 'description'>('category');
+	let bulkField = $state<'category' | 'description' | 'copy_description_to_category'>('category');
 	let bulkMatchValue = $state('');
 	let bulkNewValue = $state('');
+	let bulkOnlyBlankCategory = $state(true);
 	let bulkUseDateFilters = $state(true);
 	let bulkPreviewing = $state(false);
 	let bulkApplying = $state(false);
@@ -75,11 +76,13 @@
 			entryDate: Date;
 			description: string;
 			category?: string | null;
+			categoryAfter?: string;
 			amount: number;
 			currencyCode: string;
 		}>;
 	} | null>(null);
 	let bulkMeta = $state<{ categories: string[]; descriptions: string[] }>({ categories: [], descriptions: [] });
+	let isCopyMode = $derived(bulkField === 'copy_description_to_category');
 
 	// Search state for account dropdowns
 	let debitAccountSearch = $state('');
@@ -516,6 +519,7 @@
 		bulkField = 'category';
 		bulkMatchValue = '';
 		bulkNewValue = '';
+		bulkOnlyBlankCategory = true;
 		bulkUseDateFilters = !!(startDate || endDate);
 		showBulkModal = true;
 		try {
@@ -534,18 +538,23 @@
 
 	function bulkPayload(preview: boolean) {
 		const payload: {
-			field: 'category' | 'description';
-			matchValue: string;
-			newValue: string;
+			field: 'category' | 'description' | 'copy_description_to_category';
+			matchValue?: string;
+			newValue?: string;
+			onlyBlankCategory?: boolean;
 			startDate?: Date;
 			endDate?: Date;
 			preview: boolean;
 		} = {
 			field: bulkField,
-			matchValue: bulkMatchValue,
-			newValue: bulkNewValue,
 			preview
 		};
+		if (bulkField === 'copy_description_to_category') {
+			payload.onlyBlankCategory = bulkOnlyBlankCategory;
+		} else {
+			payload.matchValue = bulkMatchValue;
+			payload.newValue = bulkNewValue;
+		}
 		if (bulkUseDateFilters) {
 			if (startDate) payload.startDate = new Date(startDate);
 			if (endDate) payload.endDate = new Date(endDate);
@@ -575,13 +584,19 @@
 	}
 
 	async function handleBulkApply() {
-		const label = bulkField === 'category' ? 'category' : 'description';
-		const from = bulkMatchValue === '' && bulkField === 'category' ? '(blank)' : `"${bulkMatchValue}"`;
-		const to = bulkNewValue === '' && bulkField === 'category' ? '(blank)' : `"${bulkNewValue}"`;
 		const n = bulkResult?.count ?? '?';
-		if (!confirm(`Change ${label} from ${from} to ${to} on ${n} journal entr${n === 1 ? 'y' : 'ies'}?\n\nThis cannot be undone in one click.`)) {
-			return;
+		let msg: string;
+		if (bulkField === 'copy_description_to_category') {
+			msg = bulkOnlyBlankCategory
+				? `Copy each entry's description into category for ${n} entr${n === 1 ? 'y' : 'ies'} with a blank category?\n\nThis cannot be undone in one click.`
+				: `Copy each entry's description into category for ${n} entr${n === 1 ? 'y' : 'ies'} (where category differs)?\n\nThis cannot be undone in one click.`;
+		} else {
+			const label = bulkField === 'category' ? 'category' : 'description';
+			const from = bulkMatchValue === '' && bulkField === 'category' ? '(blank)' : `"${bulkMatchValue}"`;
+			const to = bulkNewValue === '' && bulkField === 'category' ? '(blank)' : `"${bulkNewValue}"`;
+			msg = `Change ${label} from ${from} to ${to} on ${n} journal entr${n === 1 ? 'y' : 'ies'}?\n\nThis cannot be undone in one click.`;
 		}
+		if (!confirm(msg)) return;
 		try {
 			bulkError = '';
 			bulkApplying = true;
@@ -1346,7 +1361,7 @@
 		<div class="modal-box max-w-xl">
 			<h3 class="font-bold text-lg mb-1">Mass change journal entries</h3>
 			<p class="text-sm text-base-content/60 mb-4">
-				Find every entry with a matching category or description and replace it in one step.
+				Replace a category or description across many entries, or copy each description into its category.
 			</p>
 
 			{#if bulkError}
@@ -1363,69 +1378,92 @@
 
 			<div class="space-y-4">
 				<div class="form-control">
-					<label class="label"><span class="label-text">Field to change</span></label>
+					<label class="label"><span class="label-text">Action</span></label>
 					<select
 						class="select select-bordered"
 						bind:value={bulkField}
 						onchange={() => { bulkMatchValue = ''; bulkNewValue = ''; bulkResult = null; }}
 					>
-						<option value="category">Category</option>
-						<option value="description">Description</option>
+						<option value="category">Replace category</option>
+						<option value="description">Replace description</option>
+						<option value="copy_description_to_category">Copy description → category</option>
 					</select>
 				</div>
 
-				<div class="form-control">
-					<label class="label">
-						<span class="label-text">Find</span>
-						<span class="label-text-alt">Exact match</span>
-					</label>
-					{#if bulkField === 'category'}
-						<input
-							type="text"
-							class="input input-bordered"
-							list="bulk-category-list"
-							bind:value={bulkMatchValue}
-							placeholder="Category to find (leave blank for empty category)"
-							oninput={() => { bulkResult = null; }}
-						/>
-						<datalist id="bulk-category-list">
-							{#each bulkMeta.categories as cat}
-								<option value={cat}></option>
-							{/each}
-						</datalist>
-						<label class="label">
-							<span class="label-text-alt text-base-content/50">Leave empty to match entries with no category</span>
-						</label>
-					{:else}
-						<input
-							type="text"
-							class="input input-bordered"
-							list="bulk-description-list"
-							bind:value={bulkMatchValue}
-							placeholder="Exact description to find"
-							oninput={() => { bulkResult = null; }}
-						/>
-						<datalist id="bulk-description-list">
-							{#each bulkMeta.descriptions as d}
-								<option value={d}></option>
-							{/each}
-						</datalist>
-					{/if}
-				</div>
+				{#if isCopyMode}
+					<div class="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">
+						<p class="font-medium mb-1">Copy description into category</p>
+						<p class="text-base-content/60">
+							For each matching entry, sets <strong>category</strong> to that entry’s own
+							<strong> description</strong> (truncated to 100 characters if needed).
+						</p>
+					</div>
 
-				<div class="form-control">
-					<label class="label">
-						<span class="label-text">Replace with</span>
+					<label class="label cursor-pointer justify-start gap-3">
+						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={bulkOnlyBlankCategory} onchange={() => { bulkResult = null; }} />
+						<span class="label-text">
+							Only entries with a blank category
+							<span class="text-base-content/50 block text-xs mt-0.5">
+								{bulkOnlyBlankCategory
+									? 'Recommended — fills missing categories without overwriting existing ones.'
+									: 'Also overwrites categories that differ from the description.'}
+							</span>
+						</span>
 					</label>
-					<input
-						type="text"
-						class="input input-bordered"
-						list={bulkField === 'category' ? 'bulk-category-list' : undefined}
-						bind:value={bulkNewValue}
-						placeholder={bulkField === 'category' ? 'New category (blank clears category)' : 'New description'}
-						oninput={() => { bulkResult = null; }}
-					/>
-				</div>
+				{:else}
+					<div class="form-control">
+						<label class="label">
+							<span class="label-text">Find</span>
+							<span class="label-text-alt">Exact match</span>
+						</label>
+						{#if bulkField === 'category'}
+							<input
+								type="text"
+								class="input input-bordered"
+								list="bulk-category-list"
+								bind:value={bulkMatchValue}
+								placeholder="Category to find (leave blank for empty category)"
+								oninput={() => { bulkResult = null; }}
+							/>
+							<datalist id="bulk-category-list">
+								{#each bulkMeta.categories as cat}
+									<option value={cat}></option>
+								{/each}
+							</datalist>
+							<label class="label">
+								<span class="label-text-alt text-base-content/50">Leave empty to match entries with no category</span>
+							</label>
+						{:else}
+							<input
+								type="text"
+								class="input input-bordered"
+								list="bulk-description-list"
+								bind:value={bulkMatchValue}
+								placeholder="Exact description to find"
+								oninput={() => { bulkResult = null; }}
+							/>
+							<datalist id="bulk-description-list">
+								{#each bulkMeta.descriptions as d}
+									<option value={d}></option>
+								{/each}
+							</datalist>
+						{/if}
+					</div>
+
+					<div class="form-control">
+						<label class="label">
+							<span class="label-text">Replace with</span>
+						</label>
+						<input
+							type="text"
+							class="input input-bordered"
+							list={bulkField === 'category' ? 'bulk-category-list' : undefined}
+							bind:value={bulkNewValue}
+							placeholder={bulkField === 'category' ? 'New category (blank clears category)' : 'New description'}
+							oninput={() => { bulkResult = null; }}
+						/>
+					</div>
+				{/if}
 
 				<label class="label cursor-pointer justify-start gap-3">
 					<input type="checkbox" class="checkbox checkbox-sm" bind:checked={bulkUseDateFilters} onchange={() => { bulkResult = null; }} />
@@ -1456,7 +1494,9 @@
 										<span class="truncate">
 											<span class="text-base-content/50 font-mono text-xs">{formatDate(s.entryDate)}</span>
 											— {s.description}
-											{#if s.category}
+											{#if isCopyMode}
+												<span class="badge badge-primary badge-xs ml-1">→ {s.categoryAfter ?? s.description.slice(0, 100)}</span>
+											{:else if s.category}
 												<span class="badge badge-ghost badge-xs ml-1">{s.category}</span>
 											{/if}
 										</span>

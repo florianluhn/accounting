@@ -484,9 +484,10 @@ export const journalEntriesAPI = {
 	},
 
 	async bulkUpdate(data: {
-		field: 'category' | 'description';
-		matchValue: string;
-		newValue: string;
+		field: 'category' | 'description' | 'copy_description_to_category';
+		matchValue?: string;
+		newValue?: string;
+		onlyBlankCategory?: boolean;
 		startDate?: Date;
 		endDate?: Date;
 		preview?: boolean;
@@ -495,13 +496,15 @@ export const journalEntriesAPI = {
 		count: number;
 		updated?: number;
 		field: string;
-		matchValue: string;
-		newValue: string;
+		matchValue?: string;
+		newValue?: string;
+		onlyBlankCategory?: boolean;
 		sample?: Array<{
 			id: number;
 			entryDate: Date;
 			description: string;
 			category?: string | null;
+			categoryAfter?: string;
 			amount: number;
 			currencyCode: string;
 		}>;

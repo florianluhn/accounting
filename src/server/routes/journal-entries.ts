@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
 import { journalEntries, subledgerAccounts, currencies, glAccounts, vendors, inventoryItems, customers } from '../db/schema.js';
-import { eq, and, gte, lte, desc, or, isNull, ne } from 'drizzle-orm';
+import { eq, and, gte, lte, desc, or, isNull, ne, sql } from 'drizzle-orm';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { logAudit, generateBatchId } from '../services/audit.js';
@@ -81,11 +81,16 @@ const updateJournalEntrySchema = z.object({
 
 /** Mass-change: find all entries matching a field value and replace it. */
 const bulkUpdateSchema = z.object({
-	field: z.enum(['category', 'description']),
-	/** Exact value to find. For category, empty string matches blank/null categories. */
-	matchValue: z.string().max(500),
-	/** Replacement value. Empty string clears category; description must be non-empty. */
-	newValue: z.string().max(500),
+	field: z.enum(['category', 'description', 'copy_description_to_category']),
+	/** Exact value to find. For category, empty string matches blank/null categories. Unused for copy mode. */
+	matchValue: z.string().max(500).optional().default(''),
+	/** Replacement value. Empty string clears category; description must be non-empty. Unused for copy mode. */
+	newValue: z.string().max(500).optional().default(''),
+	/**
+	 * For copy_description_to_category: only touch entries with blank/missing category.
+	 * When false, update every entry whose category differs from its description.
+	 */
+	onlyBlankCategory: z.boolean().optional().default(false),
 	/** Optional date range (same semantics as list filters). */
 	startDate: z.coerce.date().optional(),
 	endDate: z.coerce.date().optional(),
@@ -108,8 +113,37 @@ const bulkUpdateSchema = z.object({
 	}
 });
 
-function buildBulkMatchConditions(data: z.infer<typeof bulkUpdateSchema>) {
+function buildBulkDateConditions(data: z.infer<typeof bulkUpdateSchema>) {
 	const conditions: any[] = [];
+	if (data.startDate && !isNaN(data.startDate.getTime())) {
+		conditions.push(gte(journalEntries.entryDate, data.startDate));
+	}
+	if (data.endDate && !isNaN(data.endDate.getTime())) {
+		conditions.push(lte(journalEntries.entryDate, data.endDate));
+	}
+	return conditions;
+}
+
+function buildBulkMatchConditions(data: z.infer<typeof bulkUpdateSchema>) {
+	const conditions: any[] = [...buildBulkDateConditions(data)];
+
+	if (data.field === 'copy_description_to_category') {
+		// Must have a description to copy
+		conditions.push(ne(journalEntries.description, ''));
+		if (data.onlyBlankCategory) {
+			conditions.push(or(isNull(journalEntries.category), eq(journalEntries.category, '')));
+		} else {
+			// Category missing or different from description (and respect 100-char category limit)
+			conditions.push(
+				or(
+					isNull(journalEntries.category),
+					eq(journalEntries.category, ''),
+					sql`${journalEntries.category} != substr(${journalEntries.description}, 1, 100)`
+				)
+			);
+		}
+		return conditions;
+	}
 
 	if (data.field === 'category') {
 		const match = data.matchValue.trim();
@@ -121,13 +155,6 @@ function buildBulkMatchConditions(data: z.infer<typeof bulkUpdateSchema>) {
 		}
 	} else {
 		conditions.push(eq(journalEntries.description, data.matchValue));
-	}
-
-	if (data.startDate && !isNaN(data.startDate.getTime())) {
-		conditions.push(gte(journalEntries.entryDate, data.startDate));
-	}
-	if (data.endDate && !isNaN(data.endDate.getTime())) {
-		conditions.push(lte(journalEntries.entryDate, data.endDate));
 	}
 
 	return conditions;
@@ -282,16 +309,13 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 		const data = bulkUpdateSchema.parse(request.body);
 		const conditions = buildBulkMatchConditions(data);
 
-		// Skip no-ops where value already equals new value
+		// Skip no-ops where value already equals new value (replace modes only)
 		if (data.field === 'category') {
 			const newCat = data.newValue.trim() === '' ? null : data.newValue.trim();
-			if (newCat === null) {
-				// Already matched blank — nothing to change if we're "clearing" blanks
-				// Still allow if match was a non-empty value
-			} else {
+			if (newCat !== null) {
 				conditions.push(or(isNull(journalEntries.category), ne(journalEntries.category, newCat))!);
 			}
-		} else {
+		} else if (data.field === 'description') {
 			conditions.push(ne(journalEntries.description, data.newValue));
 		}
 
@@ -311,39 +335,69 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			.orderBy(desc(journalEntries.entryDate));
 
 		const count = matched.length;
-		const sample = matched.slice(0, 10);
+		const sample = matched.slice(0, 10).map((row) => ({
+			...row,
+			// Preview what category will become after copy
+			...(data.field === 'copy_description_to_category'
+				? { categoryAfter: row.description.slice(0, 100) }
+				: {})
+		}));
+
+		const responseBase = {
+			field: data.field,
+			matchValue: data.matchValue,
+			newValue: data.newValue,
+			onlyBlankCategory: data.onlyBlankCategory
+		};
 
 		if (data.preview) {
-			return { preview: true, count, sample, field: data.field, matchValue: data.matchValue, newValue: data.newValue };
+			return { preview: true, count, sample, ...responseBase };
 		}
 
 		if (count === 0) {
-			return { preview: false, count: 0, updated: 0, field: data.field, matchValue: data.matchValue, newValue: data.newValue };
+			return { preview: false, count: 0, updated: 0, ...responseBase };
 		}
 
-		const updatePayload =
-			data.field === 'category'
-				? { category: data.newValue.trim() === '' ? null : data.newValue.trim() }
-				: { description: data.newValue };
+		let updated: { id: number }[];
 
-		const updated = await db
-			.update(journalEntries)
-			.set(updatePayload)
-			.where(whereClause)
-			.returning({ id: journalEntries.id });
+		if (data.field === 'copy_description_to_category') {
+			// Category column is max 100 chars — truncate description when copying
+			updated = await db
+				.update(journalEntries)
+				.set({ category: sql`substr(${journalEntries.description}, 1, 100)` })
+				.where(whereClause)
+				.returning({ id: journalEntries.id });
+		} else {
+			const updatePayload =
+				data.field === 'category'
+					? { category: data.newValue.trim() === '' ? null : data.newValue.trim() }
+					: { description: data.newValue };
+
+			updated = await db
+				.update(journalEntries)
+				.set(updatePayload)
+				.where(whereClause)
+				.returning({ id: journalEntries.id });
+		}
 
 		const batchId = generateBatchId();
+		const auditDesc =
+			data.field === 'copy_description_to_category'
+				? `Mass copy description → category${data.onlyBlankCategory ? ' (blank categories only)' : ''} (${updated.length} entries)`
+				: `Mass change ${data.field}: "${data.matchValue}" → "${data.newValue}" (${updated.length} entries)`;
+
 		await logAudit({
 			operation: 'UPDATE',
 			resourceType: 'journal_entry',
 			resourceId: batchId,
 			source: 'Web UI',
 			batchId,
-			description: `Mass change ${data.field}: "${data.matchValue}" → "${data.newValue}" (${updated.length} entries)`,
+			description: auditDesc,
 			newData: {
 				field: data.field,
 				matchValue: data.matchValue,
 				newValue: data.newValue,
+				onlyBlankCategory: data.onlyBlankCategory,
 				updatedCount: updated.length,
 				ids: updated.map((r) => r.id)
 			}
@@ -355,9 +409,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			preview: false,
 			count: updated.length,
 			updated: updated.length,
-			field: data.field,
-			matchValue: data.matchValue,
-			newValue: data.newValue
+			...responseBase
 		};
 	});
 
