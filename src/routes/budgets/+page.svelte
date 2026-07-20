@@ -1,25 +1,49 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import {
 		subledgerAccountsAPI,
 		budgetsAPI,
+		settingsAPI,
 		type SubledgerAccount,
 		type Budget
 	} from '$lib/api';
+	import { financialYear, applyModuleSettings } from '$lib/modules.svelte';
+	import {
+		formatFinancialYearLabel,
+		formatFinancialYearRange,
+		getFinancialYear
+	} from '$lib/financial-year';
 
 	let loading = $state(true);
 	let saving = $state(false);
 	let error = $state('');
 	let success = $state('');
 
-	let selectedYear = $state(new Date().getFullYear());
+	let selectedYear = $state(getFinancialYear(new Date(), 1));
 	let accounts = $state<SubledgerAccount[]>([]);
 	let budgets = $state<Budget[]>([]);
+	let fyReady = $state(false);
 
 	// Form state map: subledgerAccountId -> amount
 	let budgetValues = $state<Record<number, number>>({});
 
+	let fyLabel = $derived(formatFinancialYearLabel(selectedYear, financialYear.startMonth));
+	let fyRange = $derived(formatFinancialYearRange(selectedYear, financialYear.startMonth));
+
 	$effect(() => {
+		settingsAPI
+			.get()
+			.then((s) => {
+				applyModuleSettings(s);
+				selectedYear = getFinancialYear(new Date(), financialYear.startMonth);
+				fyReady = true;
+			})
+			.catch(() => {
+				fyReady = true;
+			});
+	});
+
+	$effect(() => {
+		if (!fyReady) return;
 		loadData(selectedYear);
 	});
 
@@ -111,7 +135,7 @@
 	<div class="mb-8">
 		<p class="section-label mb-2">Planning</p>
 		<h1 class="page-title">Budgets</h1>
-		<p class="page-subtitle">Annual budgets for profit and loss accounts</p>
+		<p class="page-subtitle">Financial-year budgets for profit and loss accounts</p>
 	</div>
 
 	{#if error}
@@ -127,12 +151,23 @@
 
 	<div class="card bg-base-100 shadow-xl mb-6">
 		<div class="card-body">
-			<div class="flex items-end gap-4 mb-6">
+			<div class="flex flex-wrap items-end gap-4 mb-6">
 				<div class="form-control">
 					<label class="label">
-						<span class="label-text">Year</span>
+						<span class="label-text">Financial year</span>
 					</label>
-					<input type="number" class="input input-bordered w-32" bind:value={selectedYear} min="2000" max="2100" />
+					<input
+						type="number"
+						class="input input-bordered w-32"
+						bind:value={selectedYear}
+						min="2000"
+						max="2100"
+					/>
+				</div>
+				<div class="pb-2 text-sm text-base-content/70">
+					<span class="font-semibold">{fyLabel}</span>
+					<span class="mx-1">·</span>
+					<span>{fyRange}</span>
 				</div>
 			</div>
 

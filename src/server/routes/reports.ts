@@ -1,8 +1,20 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db from '../db/connection.js';
-import { journalEntries, subledgerAccounts, glAccounts, currencies, budgets } from '../db/schema.js';
+import { journalEntries, subledgerAccounts, glAccounts, currencies, budgets, appSettings } from '../db/schema.js';
 import { eq, and, lte, gte, sql, desc } from 'drizzle-orm';
+import { getFinancialYearUTC } from '../../lib/financial-year.js';
+
+async function getFinancialYearStartMonth(): Promise<number> {
+	const rows = await db
+		.select()
+		.from(appSettings)
+		.where(eq(appSettings.key, 'financialYearStartMonth'))
+		.limit(1);
+	const n = parseInt(rows[0]?.value ?? '1', 10);
+	if (!Number.isFinite(n) || n < 1 || n > 12) return 1;
+	return n;
+}
 
 // Validation schemas
 const dateRangeSchema = z.object({
@@ -224,12 +236,15 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			// P&L shows performance over a period
 			const balances = await calculateBalances(startDate, endDate, currencyCode);
 
-			// Fetch budgets for the year of endDate
-			const year = (endDate || new Date()).getUTCFullYear();
+			// Budgets are keyed by financial-year start year (settings → financial year start month).
+			// Prefer the period start so Mar–Feb ranges map to the correct FY.
+			const fyStartMonth = await getFinancialYearStartMonth();
+			const periodAnchor = startDate || endDate || new Date();
+			const budgetYear = getFinancialYearUTC(periodAnchor, fyStartMonth);
 			const yearBudgets = await db
 				.select()
 				.from(budgets)
-				.where(eq(budgets.year, year));
+				.where(eq(budgets.year, budgetYear));
 
 			const budgetMap = new Map<number, number>();
 			for (const b of yearBudgets) {

@@ -8,9 +8,16 @@ import { existsSync } from 'fs';
 import { CONFIG } from '../config.js';
 
 const SETTING_KEYS = ['vendors', 'customers', 'inventory', 'timeTracking', 'bookings', 'fixedAssets', 'budgets'] as const;
+const FINANCIAL_YEAR_START_MONTH_KEY = 'financialYearStartMonth';
 const LOGO_SETTING_KEY = 'app_logo_filename';
 const LOGO_MIME_KEY = 'app_logo_mime';
 const ALLOWED_LOGO_MIMES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif', 'image/svg+xml']);
+
+function parseFinancialYearStartMonth(value: string | null | undefined): number {
+	const n = parseInt(value ?? '1', 10);
+	if (!Number.isFinite(n) || n < 1 || n > 12) return 1;
+	return n;
+}
 
 async function getSetting(key: string): Promise<string | null> {
 	const rows = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
@@ -46,6 +53,7 @@ async function getAllSettings() {
 		bookings: (map.bookings ?? 'true') === 'true',
 		fixedAssets: (map.fixedAssets ?? 'true') === 'true',
 		budgets: (map.budgets ?? 'false') === 'true',
+		financialYearStartMonth: parseFinancialYearStartMonth(map[FINANCIAL_YEAR_START_MONTH_KEY]),
 		hasLogo: !!(map[LOGO_SETTING_KEY] && map[LOGO_SETTING_KEY].length > 0)
 	};
 }
@@ -57,12 +65,19 @@ export default async function settingsRoutes(fastify: FastifyInstance) {
 	});
 
 	// PUT /api/settings
-	fastify.put<{ Body: Record<string, boolean> }>('/', async (request) => {
+	fastify.put<{ Body: Record<string, boolean | number> }>('/', async (request) => {
 		const body = request.body;
 		for (const key of SETTING_KEYS) {
 			if (key in body && typeof body[key] === 'boolean') {
 				await setSetting(key, String(body[key]));
 			}
+		}
+		if (
+			FINANCIAL_YEAR_START_MONTH_KEY in body &&
+			typeof body[FINANCIAL_YEAR_START_MONTH_KEY] === 'number'
+		) {
+			const month = parseFinancialYearStartMonth(String(body[FINANCIAL_YEAR_START_MONTH_KEY]));
+			await setSetting(FINANCIAL_YEAR_START_MONTH_KEY, String(month));
 		}
 		await saveDatabase();
 		return getAllSettings();

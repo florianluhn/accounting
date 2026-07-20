@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { modules } from '$lib/modules.svelte';
+	import { modules, financialYear, applyModuleSettings } from '$lib/modules.svelte';
 	import {
 		reportsAPI,
 		currenciesAPI,
 		subledgerAccountsAPI,
+		settingsAPI,
 		type BalanceSheetReport,
 		type ProfitLossReport,
 		type TrialBalanceReport,
@@ -14,6 +15,13 @@
 		type Currency,
 		type SubledgerAccount
 	} from '$lib/api';
+	import {
+		formatFinancialYearLabel,
+		formatFinancialYearRange,
+		getFinancialYear,
+		getFinancialYearBounds,
+		toLocalDateString
+	} from '$lib/financial-year';
 
 	type ReportType = 'balance-sheet' | 'profit-loss' | 'trial-balance';
 
@@ -25,11 +33,7 @@
 
 	// Get local date in YYYY-MM-DD format (without timezone conversion)
 	function getLocalDateString(date?: Date): string {
-		const d = date || new Date();
-		const year = d.getFullYear();
-		const month = String(d.getMonth() + 1).padStart(2, '0');
-		const day = String(d.getDate()).padStart(2, '0');
-		return `${year}-${month}-${day}`;
+		return toLocalDateString(date || new Date());
 	}
 
 	// Convert YYYY-MM-DD string to Date (backend will handle time boundaries in UTC)
@@ -44,9 +48,32 @@
 		return new Date(dateString);
 	}
 
-	// Date filters
+	function applyFinancialYearDefaults() {
+		const fyYear = getFinancialYear(new Date(), financialYear.startMonth);
+		const { start, end } = getFinancialYearBounds(fyYear, financialYear.startMonth);
+		startDate = getLocalDateString(start);
+		// Cap "to" at today when still inside the current financial year
+		const today = new Date();
+		const endCap = end.getTime() > today.getTime() ? today : end;
+		endDate = getLocalDateString(endCap);
+	}
+
+	// Date filters — defaults applied after settings load (calendar year until then)
 	let startDate = $state(getLocalDateString(new Date(new Date().getFullYear(), 0, 1)));
 	let endDate = $state(getLocalDateString());
+
+	let currentFyLabel = $derived(
+		formatFinancialYearLabel(
+			getFinancialYear(new Date(), financialYear.startMonth),
+			financialYear.startMonth
+		)
+	);
+	let currentFyRange = $derived(
+		formatFinancialYearRange(
+			getFinancialYear(new Date(), financialYear.startMonth),
+			financialYear.startMonth
+		)
+	);
 
 	// Report data
 	let balanceSheet = $state<BalanceSheetReport | null>(null);
@@ -69,7 +96,28 @@
 	$effect(() => {
 		loadCurrencies();
 		loadSubledgerAccounts();
+		settingsAPI
+			.get()
+			.then((s) => {
+				applyModuleSettings(s);
+				applyFinancialYearDefaults();
+			})
+			.catch(() => {});
 	});
+
+	function setReportType(type: ReportType) {
+		activeReport = type;
+		balanceSheet = null;
+		profitLoss = null;
+		trialBalance = null;
+		if (type === 'profit-loss') {
+			applyFinancialYearDefaults();
+		}
+	}
+
+	function useCurrentFinancialYear() {
+		applyFinancialYearDefaults();
+	}
 
 	async function loadCurrencies() {
 		try {
@@ -311,7 +359,7 @@
 			role="tab"
 			class="tab"
 			class:tab-active={activeReport === 'balance-sheet'}
-			onclick={() => { activeReport = 'balance-sheet'; balanceSheet = null; }}
+			onclick={() => setReportType('balance-sheet')}
 		>
 			Balance Sheet
 		</button>
@@ -319,7 +367,7 @@
 			role="tab"
 			class="tab"
 			class:tab-active={activeReport === 'profit-loss'}
-			onclick={() => { activeReport = 'profit-loss'; profitLoss = null; }}
+			onclick={() => setReportType('profit-loss')}
 		>
 			Profit & Loss
 		</button>
@@ -327,7 +375,7 @@
 			role="tab"
 			class="tab"
 			class:tab-active={activeReport === 'trial-balance'}
-			onclick={() => { activeReport = 'trial-balance'; trialBalance = null; }}
+			onclick={() => setReportType('trial-balance')}
 		>
 			Trial Balance
 		</button>
@@ -336,6 +384,12 @@
 	<!-- Date Range & Currency Selector -->
 	<div class="card bg-base-100 shadow-xl mb-6">
 		<div class="card-body">
+			{#if activeReport === 'profit-loss'}
+				<p class="text-sm text-base-content/60 mb-3">
+					Financial year ({currentFyLabel}): {currentFyRange}.
+					From date defaults to the start of the financial year; budgets for that year are applied on the report.
+				</p>
+			{/if}
 			<div class="flex gap-4 items-end flex-wrap">
 				{#if activeReport !== 'balance-sheet'}
 					<div class="form-control">
@@ -365,6 +419,11 @@
 						{/each}
 					</select>
 				</div>
+				{#if activeReport === 'profit-loss'}
+					<button type="button" class="btn btn-outline" onclick={useCurrentFinancialYear}>
+						Use current FY
+					</button>
+				{/if}
 				<button class="btn btn-primary" onclick={generateReport} disabled={loading}>
 					{#if loading}
 						<span class="loading loading-spinner"></span>

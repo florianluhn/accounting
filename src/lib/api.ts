@@ -1158,6 +1158,8 @@ export interface AppSettings {
 	bookings: boolean;
 	fixedAssets: boolean;
 	budgets: boolean;
+	/** Month the financial year starts (1 = January … 12 = December). End month is start − 1. */
+	financialYearStartMonth: number;
 	hasLogo?: boolean;
 }
 

@@ -28,7 +28,17 @@ export const branding = $state({
 	logoVersion: 0
 });
 
-export function applyModuleSettings(settings: Partial<ModuleSettings> & { hasLogo?: boolean }) {
+/** App-wide financial year (1 = January … 12 = December). Default calendar year. */
+export const financialYear = $state({
+	startMonth: 1
+});
+
+export function applyModuleSettings(
+	settings: Partial<ModuleSettings> & {
+		hasLogo?: boolean;
+		financialYearStartMonth?: number;
+	}
+) {
 	if (settings.vendors !== undefined) modules.vendors = settings.vendors;
 	if (settings.customers !== undefined) modules.customers = settings.customers;
 	if (settings.inventory !== undefined) modules.inventory = settings.inventory;
@@ -37,6 +47,10 @@ export function applyModuleSettings(settings: Partial<ModuleSettings> & { hasLog
 	if (settings.fixedAssets !== undefined) modules.fixedAssets = settings.fixedAssets;
 	if (settings.budgets !== undefined) modules.budgets = settings.budgets;
 	if (settings.hasLogo !== undefined) branding.hasLogo = settings.hasLogo;
+	if (settings.financialYearStartMonth !== undefined) {
+		const m = Math.round(Number(settings.financialYearStartMonth));
+		financialYear.startMonth = Number.isFinite(m) && m >= 1 && m <= 12 ? m : 1;
+	}
 }
 
 export function setAppLogo(hasLogo: boolean) {

@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { currenciesAPI, type Currency, backupAPI, type BackupStatus, settingsAPI, bookingsAPI, type BookingConfig, type BookingPlatform } from '$lib/api';
-	import { modules, branding, applyModuleSettings, setAppLogo } from '$lib/modules.svelte';
+	import { modules, branding, financialYear, applyModuleSettings, setAppLogo } from '$lib/modules.svelte';
+	import {
+		MONTH_NAMES,
+		financialYearEndMonth,
+		formatFinancialYearRange,
+		getFinancialYear
+	} from '$lib/financial-year';
 
 	let currencies = $state<Currency[]>([]);
 	let loading = $state(true);
@@ -155,6 +161,8 @@
 	}
 
 	let modulesSaving = $state(false);
+	let financialYearSaving = $state(false);
+	let financialYearMessage = $state('');
 
 	async function loadModuleSettings() {
 		try {
@@ -184,6 +192,29 @@
 			modulesSaving = false;
 		}
 	}
+
+	async function saveFinancialYearStartMonth() {
+		try {
+			financialYearSaving = true;
+			financialYearMessage = '';
+			const updated = await settingsAPI.update({
+				financialYearStartMonth: financialYear.startMonth
+			});
+			applyModuleSettings(updated);
+			const endName = MONTH_NAMES[financialYearEndMonth(financialYear.startMonth) - 1];
+			const startName = MONTH_NAMES[financialYear.startMonth - 1];
+			financialYearMessage = `Financial year set to ${startName}–${endName}. Budgets and P&L use this period.`;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to save financial year';
+		} finally {
+			financialYearSaving = false;
+		}
+	}
+
+	let fyPreviewRange = $derived(
+		formatFinancialYearRange(getFinancialYear(new Date(), financialYear.startMonth), financialYear.startMonth)
+	);
+	let fyEndMonthName = $derived(MONTH_NAMES[financialYearEndMonth(financialYear.startMonth) - 1]);
 
 	async function loadCurrencies() {
 		try {
@@ -459,6 +490,67 @@
 							{/each}
 						</tbody>
 					</table>
+				</div>
+			{/if}
+		</div>
+	</div>
+
+	<!-- Financial Year -->
+	<div class="card bg-base-100 shadow-xl mb-6">
+		<div class="card-body">
+			<h2 class="card-title mb-1">Financial Year</h2>
+			<p class="text-sm text-base-content/60 mb-4">
+				Choose the month your financial year starts. The ending month is calculated automatically.
+				Budgets are stored per financial year, and Profit &amp; Loss defaults to this period.
+			</p>
+
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl">
+				<div class="form-control">
+					<label class="label" for="fy-start-month">
+						<span class="label-text">Starting month</span>
+					</label>
+					<select
+						id="fy-start-month"
+						class="select select-bordered"
+						value={String(financialYear.startMonth)}
+						onchange={(e) => {
+							const v = parseInt((e.currentTarget as HTMLSelectElement).value, 10);
+							financialYear.startMonth = Number.isFinite(v) && v >= 1 && v <= 12 ? v : 1;
+							saveFinancialYearStartMonth();
+						}}
+					>
+						{#each MONTH_NAMES as name, i}
+							<option value={String(i + 1)}>{name}</option>
+						{/each}
+					</select>
+				</div>
+				<div class="form-control">
+					<label class="label">
+						<span class="label-text">Ending month</span>
+					</label>
+					<input
+						type="text"
+						class="input input-bordered"
+						value={fyEndMonthName}
+						readonly
+						disabled
+					/>
+					<label class="label">
+						<span class="label-text-alt text-base-content/50">Calculated from starting month</span>
+					</label>
+				</div>
+			</div>
+
+			<div class="mt-3 text-sm text-base-content/70">
+				Current period: <span class="font-medium">{fyPreviewRange}</span>
+			</div>
+
+			{#if financialYearSaving}
+				<div class="text-sm text-base-content/50 mt-2">Saving...</div>
+			{/if}
+			{#if financialYearMessage}
+				<div class="alert alert-success text-sm py-2 mt-3">
+					<span>{financialYearMessage}</span>
 				</div>
 			{/if}
 		</div>

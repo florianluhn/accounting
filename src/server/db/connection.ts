@@ -1031,7 +1031,8 @@ function migrateAppSettings(): void {
 			customers: 'true',
 			inventory: 'true',
 			timeTracking: 'true',
-			fixedAssets: 'true'
+			fixedAssets: 'true',
+			financialYearStartMonth: '1'
 		};
 		for (const [key, value] of Object.entries(defaults)) {
 			sqlite.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('${key}', '${value}')`);
