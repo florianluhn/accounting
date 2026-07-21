@@ -9,6 +9,8 @@ export interface ModuleSettings {
 	bookings: boolean;
 	fixedAssets: boolean;
 	budgets: boolean;
+	/** Check / reference numbers on journal entries for matching related postings */
+	checkReferences: boolean;
 }
 
 export const modules = $state<ModuleSettings>({
@@ -18,7 +20,8 @@ export const modules = $state<ModuleSettings>({
 	timeTracking: true,
 	bookings: true,
 	fixedAssets: true,
-	budgets: false
+	budgets: false,
+	checkReferences: false
 });
 
 /** Shared branding state so Settings and the layout shell stay in sync. */
@@ -46,6 +49,7 @@ export function applyModuleSettings(
 	if (settings.bookings !== undefined) modules.bookings = settings.bookings;
 	if (settings.fixedAssets !== undefined) modules.fixedAssets = settings.fixedAssets;
 	if (settings.budgets !== undefined) modules.budgets = settings.budgets;
+	if (settings.checkReferences !== undefined) modules.checkReferences = settings.checkReferences;
 	if (settings.hasLogo !== undefined) branding.hasLogo = settings.hasLogo;
 	if (settings.financialYearStartMonth !== undefined) {
 		const m = Math.round(Number(settings.financialYearStartMonth));

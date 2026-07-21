@@ -1114,6 +1114,25 @@ function setupTriggers() {
 
 // Run migrations
 
+function migrateCheckReference(): void {
+	try {
+		const cols = sqlite.exec('PRAGMA table_info(journal_entries)');
+		if (cols.length > 0) {
+			const colNames = cols[0].values.map((c: any) => c[1]);
+			if (!colNames.includes('check_reference')) {
+				sqlite.run('ALTER TABLE journal_entries ADD COLUMN check_reference TEXT');
+				console.log('✓ Added check_reference to journal_entries');
+			}
+			sqlite.run(
+				'CREATE INDEX IF NOT EXISTS idx_journal_entries_check_reference ON journal_entries(check_reference)'
+			);
+		}
+	} catch (error) {
+		console.error('Failed to migrate check_reference:', error);
+		throw error;
+	}
+}
+
 function migrateBudgets(): void {
 	try {
 		const tableCheck = sqlite.exec(
@@ -1165,6 +1184,7 @@ migrateAttachmentsBookings();
 migrateAttachmentsInventoryItem();
 migrateFixedAssets();
 migrateBudgets();
+migrateCheckReference();
 
 setupTriggers();
 

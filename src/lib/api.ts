@@ -415,6 +415,8 @@ export interface JournalEntry {
 	description: string;
 	category?: string | null;
 	comment?: string | null;
+	/** Check number or external reference for matching related entries */
+	checkReference?: string | null;
 	vendorId?: number | null;
 	customerId?: number | null;
 	customerName?: string | null;
@@ -441,6 +443,8 @@ export const journalEntriesAPI = {
 		customerId?: number;
 		inventoryItemId?: number;
 		fixedAssetId?: number;
+		/** Exact check / reference number */
+		checkReference?: string;
 	}): Promise<JournalEntry[]> {
 		const query = new URLSearchParams();
 		if (params?.startDate) query.set('startDate', params.startDate.toISOString());
@@ -453,6 +457,7 @@ export const journalEntriesAPI = {
 		if (params?.customerId) query.set('customerId', String(params.customerId));
 		if (params?.inventoryItemId) query.set('inventoryItemId', String(params.inventoryItemId));
 		if (params?.fixedAssetId) query.set('fixedAssetId', String(params.fixedAssetId));
+		if (params?.checkReference) query.set('checkReference', params.checkReference);
 
 		const queryString = query.toString();
 		return apiFetch(`/api/journal-entries${queryString ? `?${queryString}` : ''}`);
@@ -1158,6 +1163,7 @@ export interface AppSettings {
 	bookings: boolean;
 	fixedAssets: boolean;
 	budgets: boolean;
+	checkReferences: boolean;
 	/** Month the financial year starts (1 = January … 12 = December). End month is start − 1. */
 	financialYearStartMonth: number;
 	hasLogo?: boolean;

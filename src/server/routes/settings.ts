@@ -7,7 +7,16 @@ import { mkdir, writeFile, unlink, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { CONFIG } from '../config.js';
 
-const SETTING_KEYS = ['vendors', 'customers', 'inventory', 'timeTracking', 'bookings', 'fixedAssets', 'budgets'] as const;
+const SETTING_KEYS = [
+	'vendors',
+	'customers',
+	'inventory',
+	'timeTracking',
+	'bookings',
+	'fixedAssets',
+	'budgets',
+	'checkReferences'
+] as const;
 const FINANCIAL_YEAR_START_MONTH_KEY = 'financialYearStartMonth';
 const LOGO_SETTING_KEY = 'app_logo_filename';
 const LOGO_MIME_KEY = 'app_logo_mime';
@@ -53,6 +62,7 @@ async function getAllSettings() {
 		bookings: (map.bookings ?? 'true') === 'true',
 		fixedAssets: (map.fixedAssets ?? 'true') === 'true',
 		budgets: (map.budgets ?? 'false') === 'true',
+		checkReferences: (map.checkReferences ?? 'false') === 'true',
 		financialYearStartMonth: parseFinancialYearStartMonth(map[FINANCIAL_YEAR_START_MONTH_KEY]),
 		hasLogo: !!(map[LOGO_SETTING_KEY] && map[LOGO_SETTING_KEY].length > 0)
 	};

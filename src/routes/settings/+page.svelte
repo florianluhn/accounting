@@ -183,7 +183,8 @@
 				timeTracking: modules.timeTracking,
 				bookings: modules.bookings,
 				fixedAssets: modules.fixedAssets,
-				budgets: modules.budgets
+				budgets: modules.budgets,
+				checkReferences: modules.checkReferences
 			});
 			applyModuleSettings(updated);
 		} catch (e) {
@@ -610,6 +611,20 @@
 						<div class="text-xs text-base-content/50">Annual budgeting per account</div>
 					</div>
 					<input type="checkbox" class="toggle toggle-primary" bind:checked={modules.budgets} onchange={saveModuleSettings} />
+				</label>
+				<label class="flex items-center justify-between p-3 bg-base-200 rounded-box cursor-pointer">
+					<div>
+						<div class="font-medium">Check / References</div>
+						<div class="text-xs text-base-content/50">
+							Match related journal entries (e.g. check number on clearing vs bank)
+						</div>
+					</div>
+					<input
+						type="checkbox"
+						class="toggle toggle-primary"
+						bind:checked={modules.checkReferences}
+						onchange={saveModuleSettings}
+					/>
 				</label>
 			</div>
 			{#if modulesSaving}

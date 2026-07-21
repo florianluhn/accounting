@@ -112,6 +112,8 @@ export const journalEntries = sqliteTable(
 		description: text('description').notNull(),
 		category: text('category'), // Optional categorization
 		comment: text('comment'),
+		/** Check number or external reference used to match related journal entries */
+		checkReference: text('check_reference'),
 		vendorId: integer('vendor_id').references(() => vendors.id, { onDelete: 'set null' }),
 		customerId: integer('customer_id').references(() => customers.id, { onDelete: 'set null' }),
 		inventoryItemId: integer('inventory_item_id'), // optional link to a finished good item
@@ -131,6 +133,7 @@ export const journalEntries = sqliteTable(
 		creditIdx: index('idx_journal_entries_credit').on(table.creditAccountId),
 		categoryIdx: index('idx_journal_entries_category').on(table.category),
 		currencyIdx: index('idx_journal_entries_currency').on(table.currencyCode),
+		checkReferenceIdx: index('idx_journal_entries_check_reference').on(table.checkReference),
 		vendorIdx: index('idx_journal_entries_vendor').on(table.vendorId),
 		customerIdx: index('idx_journal_entries_customer').on(table.customerId),
 		inventoryItemIdx: index('idx_journal_entries_inventory_item').on(table.inventoryItemId),

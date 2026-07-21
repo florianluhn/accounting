@@ -47,6 +47,7 @@
 		description: '',
 		category: '',
 		comment: '',
+		checkReference: '',
 		vendorId: 0,
 		customerId: 0,
 		inventoryItemId: 0,
@@ -320,6 +321,7 @@
 			description: '',
 			category: '',
 			comment: '',
+			checkReference: '',
 			vendorId: 0,
 			customerId: 0,
 			inventoryItemId: 0,
@@ -346,6 +348,7 @@
 			description: entry.description,
 			category: entry.category || '',
 			comment: entry.comment || '',
+			checkReference: entry.checkReference || '',
 			vendorId: entry.vendorId || 0,
 			customerId: entry.customerId || 0,
 			inventoryItemId: entry.inventoryItemId || 0,
@@ -408,6 +411,9 @@
 				description: formData.description,
 				category: formData.category || undefined,
 				comment: formData.comment || undefined,
+				...(modules.checkReferences
+					? { checkReference: formData.checkReference.trim() || null }
+					: {}),
 				vendorId: formData.vendorId || null,
 				customerId: formData.customerId || null,
 				inventoryItemId: formData.inventoryItemId || null,
@@ -699,14 +705,43 @@
 	// Filter entries based on search query
 	let filteredEntries = $derived(
 		searchQuery
-			? entries.filter(entry =>
-					entry.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-					entry.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-					getAccountName(entry.debitAccountId).toLowerCase().includes(searchQuery.toLowerCase()) ||
-					getAccountName(entry.creditAccountId).toLowerCase().includes(searchQuery.toLowerCase())
-				)
+			? entries.filter((entry) => {
+					const q = searchQuery.toLowerCase();
+					return (
+						entry.description.toLowerCase().includes(q) ||
+						entry.category?.toLowerCase().includes(q) ||
+						entry.checkReference?.toLowerCase().includes(q) ||
+						entry.comment?.toLowerCase().includes(q) ||
+						getAccountName(entry.debitAccountId).toLowerCase().includes(q) ||
+						getAccountName(entry.creditAccountId).toLowerCase().includes(q)
+					);
+				})
 			: entries
 	);
+
+	/** Count of loaded entries per check/reference (for linked badges). */
+	let checkReferenceCounts = $derived.by(() => {
+		const map = new Map<string, number>();
+		if (!modules.checkReferences) return map;
+		for (const e of entries) {
+			const ref = e.checkReference?.trim();
+			if (!ref) continue;
+			map.set(ref, (map.get(ref) || 0) + 1);
+		}
+		return map;
+	});
+
+	/** Other loaded entries sharing the same check/reference as the form value. */
+	let matchingCheckEntries = $derived.by(() => {
+		if (!modules.checkReferences) return [] as JournalEntry[];
+		const ref = formData.checkReference.trim();
+		if (!ref) return [] as JournalEntry[];
+		return entries.filter(
+			(e) =>
+				e.checkReference?.trim() === ref &&
+				(!editingEntry || e.id !== editingEntry.id)
+		);
+	});
 
 	let selectedCount = $derived(selectedIds.size);
 	let allFilteredSelected = $derived(
@@ -901,7 +936,9 @@
 			<div class="form-control">
 				<input
 					type="text"
-					placeholder="Search entries..."
+					placeholder={modules.checkReferences
+						? 'Search description, category, check/ref, accounts…'
+						: 'Search entries...'}
 					class="input input-bordered w-64"
 					bind:value={searchQuery}
 				/>
@@ -1091,6 +1128,18 @@
 									<td class="align-top">{formatDate(entry.entryDate)}</td>
 									<td class="whitespace-normal align-top break-words">
 										<div class="font-medium">{entry.description}</div>
+										{#if modules.checkReferences && entry.checkReference}
+											<div class="mt-1">
+												<span class="badge badge-ghost badge-sm font-mono" title="Check / Reference">
+													Ref: {entry.checkReference}
+												</span>
+												{#if (checkReferenceCounts.get(entry.checkReference.trim()) || 0) > 1}
+													<span class="text-2xs text-base-content/50 ml-1">
+														({checkReferenceCounts.get(entry.checkReference.trim())} linked)
+													</span>
+												{/if}
+											</div>
+										{/if}
 										{#if entry.comment}
 											<div class="text-sm text-base-content/70 mt-1">{entry.comment}</div>
 										{/if}
@@ -1376,6 +1425,41 @@
 							placeholder="e.g., Utilities, Salary, Sales"
 						/>
 					</div>
+
+					<!-- Check / Reference -->
+					{#if modules.checkReferences}
+					<div class="form-control col-span-2">
+						<label class="label">
+							<span class="label-text">Check / Reference (Optional)</span>
+							<span class="label-text-alt text-xs text-base-content/50">
+								e.g. check number to match clearing and bank postings
+							</span>
+						</label>
+						<input
+							type="text"
+							class="input input-bordered font-mono"
+							bind:value={formData.checkReference}
+							placeholder="e.g., 1042 or CHK-1042"
+							maxlength="100"
+						/>
+						{#if matchingCheckEntries.length > 0}
+							<div class="mt-2 p-3 rounded-box bg-base-200 text-sm">
+								<div class="font-medium mb-1">
+									{matchingCheckEntries.length} other entr{matchingCheckEntries.length === 1 ? 'y' : 'ies'} with this reference
+								</div>
+								<ul class="space-y-1 max-h-32 overflow-y-auto">
+									{#each matchingCheckEntries as match (match.id)}
+										<li class="text-xs text-base-content/70 flex flex-wrap gap-x-2">
+											<span class="font-mono">{formatDate(match.entryDate)}</span>
+											<span class="truncate">{match.description}</span>
+											<span class="font-mono">{formatCurrency(match.amount, match.currencyCode)}</span>
+										</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+					</div>
+					{/if}
 
 					<!-- Vendor -->
 					{#if modules.vendors}

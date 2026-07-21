@@ -48,6 +48,7 @@ const createJournalEntrySchema = z.object({
 	description: z.string().min(1).max(500),
 	category: z.string().max(100).optional(),
 	comment: z.string().max(1000).optional(),
+	checkReference: z.string().max(100).nullable().optional(),
 	vendorId: z.number().int().positive().nullable().optional(),
 	customerId: z.number().int().positive().nullable().optional(),
 	inventoryItemId: z.number().int().positive().nullable().optional(),
@@ -71,6 +72,7 @@ const updateJournalEntrySchema = z.object({
 	description: z.string().min(1).max(500).optional(),
 	category: z.string().max(100).optional(),
 	comment: z.string().max(1000).optional(),
+	checkReference: z.string().max(100).nullable().optional(),
 	vendorId: z.number().int().positive().nullable().optional(),
 	customerId: z.number().int().positive().nullable().optional(),
 	inventoryItemId: z.number().int().positive().nullable().optional(),
@@ -165,6 +167,7 @@ const bulkSetSchema = z.object({
 			description: z.string().min(1).max(500).optional(),
 			category: z.string().max(100).nullable().optional(),
 			comment: z.string().max(1000).nullable().optional(),
+			checkReference: z.string().max(100).nullable().optional(),
 			debitAccountId: z.number().int().positive().optional(),
 			creditAccountId: z.number().int().positive().optional(),
 			vendorId: z.number().int().positive().nullable().optional(),
@@ -198,6 +201,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			customerId?: string;
 			inventoryItemId?: string;
 			fixedAssetId?: string;
+			checkReference?: string;
 		}
 	}>('/', async (request, reply) => {
 		let query = db.select({
@@ -211,6 +215,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			description: journalEntries.description,
 			category: journalEntries.category,
 			comment: journalEntries.comment,
+			checkReference: journalEntries.checkReference,
 			vendorId: journalEntries.vendorId,
 			customerId: journalEntries.customerId,
 			customerName: customers.firstName,
@@ -266,6 +271,10 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 
 		if (request.query.currencyCode) {
 			conditions.push(eq(journalEntries.currencyCode, request.query.currencyCode));
+		}
+
+		if (request.query.checkReference) {
+			conditions.push(eq(journalEntries.checkReference, request.query.checkReference));
 		}
 
 		if (request.query.vendorId) {
@@ -526,6 +535,12 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 		if (data.set.comment !== undefined) {
 			updatePayload.comment = data.set.comment === '' ? null : data.set.comment;
 		}
+		if (data.set.checkReference !== undefined) {
+			updatePayload.checkReference =
+				data.set.checkReference === '' || data.set.checkReference == null
+					? null
+					: data.set.checkReference.trim();
+		}
 		if (data.set.debitAccountId !== undefined) updatePayload.debitAccountId = data.set.debitAccountId;
 		if (data.set.creditAccountId !== undefined) updatePayload.creditAccountId = data.set.creditAccountId;
 		if (data.set.vendorId !== undefined) updatePayload.vendorId = data.set.vendorId;
@@ -661,12 +676,18 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 
 			const linkType = validatedData.inventoryItemId ? (validatedData.inventoryLinkType ?? null) : null;
 
+			const checkRef =
+				validatedData.checkReference != null && String(validatedData.checkReference).trim() !== ''
+					? String(validatedData.checkReference).trim()
+					: null;
+
 			// Insert new journal entry
 			const newEntry = await db
 				.insert(journalEntries)
 				.values({
 					...validatedData,
 					amountInUSD,
+					checkReference: checkRef,
 					customerId: validatedData.customerId ?? null,
 					inventoryItemId: validatedData.inventoryItemId ?? null,
 					inventoryLinkType: linkType,
@@ -772,6 +793,12 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 
 		// Prepare update data
 		const updateData: any = { ...validatedData };
+		if (validatedData.checkReference !== undefined) {
+			updateData.checkReference =
+				validatedData.checkReference == null || String(validatedData.checkReference).trim() === ''
+					? null
+					: String(validatedData.checkReference).trim();
+		}
 
 		// If amount or currency changed, recalculate amountInUSD
 		if (validatedData.amount || validatedData.currencyCode) {
@@ -921,7 +948,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 				currencyCode: journalEntries.currencyCode,
 				description: journalEntries.description,
 				category: journalEntries.category,
-				comment: journalEntries.comment
+				comment: journalEntries.comment,
+				checkReference: journalEntries.checkReference
 			})
 			.from(journalEntries)
 			.leftJoin(
@@ -1010,7 +1038,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			Currency: entry.currencyCode,
 			Description: entry.description,
 			Category: entry.category || '',
-			Comment: entry.comment || ''
+			Comment: entry.comment || '',
+			'Check / Reference': entry.checkReference || ''
 		}));
 
 		const csv = stringify(csvData, {
@@ -1025,7 +1054,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 				'Currency',
 				'Description',
 				'Category',
-				'Comment'
+				'Comment',
+				'Check / Reference'
 			]
 		});
 
@@ -1080,6 +1110,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			description: string;
 			category: string | null;
 			comment: string | null;
+			checkReference: string | null;
 		}> = [];
 
 		for (let i = 0; i < records.length; i++) {
@@ -1141,6 +1172,11 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 				// Calculate amount in USD (round to 2 decimal places)
 				const amountInUSD = Math.round(amount * currency[0].exchangeRate * 100) / 100;
 
+				const checkRefRaw =
+					record['Check / Reference'] ?? record['Check/Reference'] ?? record.CheckReference ?? '';
+				const checkReference =
+					typeof checkRefRaw === 'string' && checkRefRaw.trim() !== '' ? checkRefRaw.trim() : null;
+
 				// Add to validated entries
 				validatedEntries.push({
 					entryDate,
@@ -1151,7 +1187,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 					creditAccountId: creditAccount[0].id,
 					description: record.Description || 'Imported from CSV',
 					category: record.Category || null,
-					comment: record.Comment || null
+					comment: record.Comment || null,
+					checkReference
 				});
 			} catch (error) {
 				results.failed++;
