@@ -1,11 +1,27 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
-import { journalEntries, subledgerAccounts, currencies, glAccounts, vendors, inventoryItems, customers } from '../db/schema.js';
-import { eq, and, gte, lte, desc, or, isNull, ne, inArray } from 'drizzle-orm';
+import {
+	journalEntries,
+	subledgerAccounts,
+	currencies,
+	glAccounts,
+	vendors,
+	inventoryItems,
+	customers,
+	attachments
+} from '../db/schema.js';
+import { eq, and, gte, lte, desc, or, isNull, isNotNull, ne, inArray, count } from 'drizzle-orm';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { logAudit, generateBatchId } from '../services/audit.js';
+import { join } from 'path';
+import { unlink } from 'fs/promises';
+import { existsSync } from 'fs';
+import { CONFIG } from '../config.js';
+
+/** Exact phrase required to purge every journal entry (Settings danger zone). */
+export const DELETE_ALL_JOURNAL_ENTRIES_CONFIRM = 'DELETE ALL JOURNAL ENTRIES';
 
 /**
  * Recompute an inventory item's dispositionType and quantity based on remaining
@@ -593,6 +609,99 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			updated: targetIds.length,
 			ids: targetIds,
 			set: data.set
+		};
+	});
+
+	// GET /api/journal-entries/count — lightweight count for Settings UI
+	// Registered before /:id so "count" is not parsed as an ID.
+	fastify.get('/count', async () => {
+		const rows = await db.select({ value: count() }).from(journalEntries);
+		return { count: Number(rows[0]?.value ?? 0) };
+	});
+
+	// POST /api/journal-entries/delete-all — purge every journal entry (Settings)
+	// Registered before /:id so the path is not treated as an ID.
+	fastify.post<{ Body: { confirmation?: string } }>('/delete-all', async (request, reply) => {
+		const confirmation = request.body?.confirmation?.trim() ?? '';
+		if (confirmation !== DELETE_ALL_JOURNAL_ENTRIES_CONFIRM) {
+			return reply.status(400).send({
+				error: 'Bad Request',
+				message: `Confirmation phrase required: type exactly "${DELETE_ALL_JOURNAL_ENTRIES_CONFIRM}"`
+			});
+		}
+
+		const allEntries = await db
+			.select({
+				id: journalEntries.id,
+				inventoryItemId: journalEntries.inventoryItemId
+			})
+			.from(journalEntries);
+
+		const deletedCount = allEntries.length;
+		const linkedItemIds = [
+			...new Set(
+				allEntries
+					.map((e) => e.inventoryItemId)
+					.filter((id): id is number => id != null && id > 0)
+			)
+		];
+
+		// Journal-linked attachments (files + rows); CASCADE would drop rows but not files
+		const journalAttachments = await db
+			.select()
+			.from(attachments)
+			.where(isNotNull(attachments.journalEntryId));
+
+		let attachmentsDeleted = 0;
+		for (const att of journalAttachments) {
+			const filePath = join(process.cwd(), CONFIG.ATTACHMENTS_PATH, att.storedFilename);
+			try {
+				if (existsSync(filePath)) {
+					await unlink(filePath);
+				}
+			} catch {
+				// Continue even if a file is missing or unreadable
+			}
+			attachmentsDeleted++;
+		}
+
+		if (journalAttachments.length > 0) {
+			await db.delete(attachments).where(isNotNull(attachments.journalEntryId));
+		}
+
+		// Delete all journal entries
+		await db.delete(journalEntries);
+
+		// Restore inventory disposition flags that were driven by journal links
+		for (const itemId of linkedItemIds) {
+			await recomputeItemDisposition(itemId);
+		}
+
+		const batchId = generateBatchId();
+		await logAudit({
+			operation: 'DELETE',
+			resourceType: 'journal_entry',
+			resourceId: batchId,
+			source: 'Web UI',
+			batchId,
+			batchSummary: `Deleted all journal entries (${deletedCount} entries, ${attachmentsDeleted} attachments)`,
+			description: `Purged all journal entries from Settings (${deletedCount} entries, ${attachmentsDeleted} journal attachments)`,
+			oldData: {
+				deletedCount,
+				attachmentsDeleted,
+				linkedInventoryItems: linkedItemIds.length
+			}
+		});
+
+		await saveDatabase();
+
+		return {
+			deleted: deletedCount,
+			attachmentsDeleted,
+			message:
+				deletedCount === 0
+					? 'No journal entries to delete.'
+					: `Deleted ${deletedCount} journal entr${deletedCount === 1 ? 'y' : 'ies'} and ${attachmentsDeleted} attachment${attachmentsDeleted === 1 ? '' : 's'}.`
 		};
 	});
 

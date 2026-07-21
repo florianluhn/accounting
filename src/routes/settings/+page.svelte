@@ -1,5 +1,15 @@
 <script lang="ts">
-	import { currenciesAPI, type Currency, backupAPI, type BackupStatus, settingsAPI, bookingsAPI, type BookingConfig, type BookingPlatform } from '$lib/api';
+	import {
+		currenciesAPI,
+		type Currency,
+		backupAPI,
+		type BackupStatus,
+		settingsAPI,
+		bookingsAPI,
+		type BookingConfig,
+		type BookingPlatform,
+		journalEntriesAPI
+	} from '$lib/api';
 	import { modules, branding, financialYear, applyModuleSettings, setAppLogo } from '$lib/modules.svelte';
 	import {
 		MONTH_NAMES,
@@ -8,11 +18,20 @@
 		getFinancialYear
 	} from '$lib/financial-year';
 
+	const DELETE_ALL_JOURNAL_CONFIRM = 'DELETE ALL JOURNAL ENTRIES';
+
 	let currencies = $state<Currency[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 	let showAddModal = $state(false);
 	let editingCurrency = $state<Currency | null>(null);
+
+	// Danger zone: delete all journal entries
+	let journalEntryCount = $state<number | null>(null);
+	let deleteAllConfirmText = $state('');
+	let deleteAllLoading = $state(false);
+	let deleteAllMessage = $state('');
+	let deleteAllError = $state('');
 
 	// App logo
 	let logoUploading = $state(false);
@@ -55,7 +74,51 @@
 		loadBackupStatus();
 		loadModuleSettings();
 		loadBookingSettings();
+		loadJournalEntryCount();
 	});
+
+	async function loadJournalEntryCount() {
+		try {
+			const result = await journalEntriesAPI.count();
+			journalEntryCount = result.count;
+		} catch (e) {
+			console.error('Failed to load journal entry count:', e);
+			journalEntryCount = null;
+		}
+	}
+
+	async function deleteAllJournalEntries() {
+		if (deleteAllConfirmText.trim() !== DELETE_ALL_JOURNAL_CONFIRM) {
+			deleteAllError = `Type exactly: ${DELETE_ALL_JOURNAL_CONFIRM}`;
+			return;
+		}
+
+		const countLabel =
+			journalEntryCount === null
+				? 'all'
+				: String(journalEntryCount);
+		if (
+			!confirm(
+				`This will permanently delete ${countLabel} journal entr${journalEntryCount === 1 ? 'y' : 'ies'} and their journal attachments.\n\nAccounts, vendors, customers, budgets, and other master data are kept.\n\nThis cannot be undone. Continue?`
+			)
+		) {
+			return;
+		}
+
+		try {
+			deleteAllLoading = true;
+			deleteAllError = '';
+			deleteAllMessage = '';
+			const result = await journalEntriesAPI.deleteAll(DELETE_ALL_JOURNAL_CONFIRM);
+			deleteAllMessage = result.message;
+			deleteAllConfirmText = '';
+			await loadJournalEntryCount();
+		} catch (e) {
+			deleteAllError = e instanceof Error ? e.message : 'Failed to delete journal entries';
+		} finally {
+			deleteAllLoading = false;
+		}
+	}
 
 	async function handleLogoUpload(event: Event) {
 		const input = event.target as HTMLInputElement;
@@ -847,7 +910,7 @@
 	</div>
 
 	<!-- Database Info -->
-	<div class="card bg-base-100 shadow-xl">
+	<div class="card bg-base-100 shadow-xl mb-6">
 		<div class="card-body">
 			<h2 class="card-title text-2xl mb-4">Database Information</h2>
 			<div class="stats shadow">
@@ -859,7 +922,91 @@
 					<div class="stat-title">Attachments Path</div>
 					<div class="stat-value text-lg">./data/attachments</div>
 				</div>
+				<div class="stat">
+					<div class="stat-title">Journal entries</div>
+					<div class="stat-value text-lg">
+						{journalEntryCount === null ? '—' : journalEntryCount.toLocaleString()}
+					</div>
+				</div>
 			</div>
+		</div>
+	</div>
+
+	<!-- Danger zone: delete all journal entries -->
+	<div class="card bg-base-100 shadow-xl border border-error/30 mb-6">
+		<div class="card-body">
+			<h2 class="card-title text-2xl text-error">Danger zone</h2>
+			<p class="text-sm text-base-content/70 mb-4">
+				Permanently delete <strong>all journal entries</strong>. Use this to wipe transaction history
+				while keeping accounts, currencies, vendors, customers, budgets, and other settings.
+				Journal-linked attachment files are removed as well. This cannot be undone — export a CSV or
+				run a backup first if you need a copy.
+			</p>
+
+			<div class="alert alert-warning mb-4">
+				<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+					/>
+				</svg>
+				<span>
+					Currently
+					<strong>
+						{journalEntryCount === null ? '…' : journalEntryCount.toLocaleString()}
+					</strong>
+					journal entr{journalEntryCount === 1 ? 'y' : 'ies'} in the database.
+				</span>
+			</div>
+
+			{#if deleteAllError}
+				<div class="alert alert-error mb-4">
+					<span>{deleteAllError}</span>
+				</div>
+			{/if}
+			{#if deleteAllMessage}
+				<div class="alert alert-success mb-4">
+					<span>{deleteAllMessage}</span>
+				</div>
+			{/if}
+
+			<div class="form-control max-w-xl mb-4">
+				<label class="label" for="delete-all-confirm">
+					<span class="label-text">
+						Type <code class="text-error font-semibold">{DELETE_ALL_JOURNAL_CONFIRM}</code> to enable
+						deletion
+					</span>
+				</label>
+				<input
+					id="delete-all-confirm"
+					type="text"
+					class="input input-bordered input-error font-mono text-sm"
+					bind:value={deleteAllConfirmText}
+					placeholder={DELETE_ALL_JOURNAL_CONFIRM}
+					autocomplete="off"
+					disabled={deleteAllLoading || journalEntryCount === 0}
+				/>
+			</div>
+
+			<button
+				type="button"
+				class="btn btn-error w-fit"
+				onclick={deleteAllJournalEntries}
+				disabled={
+					deleteAllLoading ||
+					journalEntryCount === 0 ||
+					deleteAllConfirmText.trim() !== DELETE_ALL_JOURNAL_CONFIRM
+				}
+			>
+				{#if deleteAllLoading}
+					<span class="loading loading-spinner"></span>
+					Deleting…
+				{:else}
+					Delete all journal entries
+				{/if}
+			</button>
 		</div>
 	</div>
 </div>

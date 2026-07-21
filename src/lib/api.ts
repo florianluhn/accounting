@@ -487,6 +487,26 @@ export const journalEntriesAPI = {
 		});
 	},
 
+	/** Count of all journal entries (Settings / danger zone). */
+	async count(): Promise<{ count: number }> {
+		return apiFetch('/api/journal-entries/count');
+	},
+
+	/**
+	 * Delete every journal entry. Requires confirmation phrase
+	 * `DELETE ALL JOURNAL ENTRIES`. Also removes journal-linked attachment files.
+	 */
+	async deleteAll(confirmation: string): Promise<{
+		deleted: number;
+		attachmentsDeleted: number;
+		message: string;
+	}> {
+		return apiFetch('/api/journal-entries/delete-all', {
+			method: 'POST',
+			body: JSON.stringify({ confirmation })
+		});
+	},
+
 	async metaValues(): Promise<{ categories: string[]; descriptions: string[] }> {
 		return apiFetch('/api/journal-entries/meta/values');
 	},
