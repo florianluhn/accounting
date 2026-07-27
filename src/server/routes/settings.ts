@@ -18,9 +18,11 @@ const SETTING_KEYS = [
 	'checkReferences'
 ] as const;
 const FINANCIAL_YEAR_START_MONTH_KEY = 'financialYearStartMonth';
+const ORGANIZATION_NAME_KEY = 'organizationName';
 const LOGO_SETTING_KEY = 'app_logo_filename';
 const LOGO_MIME_KEY = 'app_logo_mime';
 const ALLOWED_LOGO_MIMES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif', 'image/svg+xml']);
+const MAX_ORGANIZATION_NAME_LENGTH = 120;
 
 function parseFinancialYearStartMonth(value: string | null | undefined): number {
 	const n = parseInt(value ?? '1', 10);
@@ -64,6 +66,7 @@ async function getAllSettings() {
 		budgets: (map.budgets ?? 'false') === 'true',
 		checkReferences: (map.checkReferences ?? 'false') === 'true',
 		financialYearStartMonth: parseFinancialYearStartMonth(map[FINANCIAL_YEAR_START_MONTH_KEY]),
+		organizationName: (map[ORGANIZATION_NAME_KEY] ?? '').trim(),
 		hasLogo: !!(map[LOGO_SETTING_KEY] && map[LOGO_SETTING_KEY].length > 0)
 	};
 }
@@ -75,7 +78,7 @@ export default async function settingsRoutes(fastify: FastifyInstance) {
 	});
 
 	// PUT /api/settings
-	fastify.put<{ Body: Record<string, boolean | number> }>('/', async (request) => {
+	fastify.put<{ Body: Record<string, boolean | number | string> }>('/', async (request) => {
 		const body = request.body;
 		for (const key of SETTING_KEYS) {
 			if (key in body && typeof body[key] === 'boolean') {
@@ -88,6 +91,10 @@ export default async function settingsRoutes(fastify: FastifyInstance) {
 		) {
 			const month = parseFinancialYearStartMonth(String(body[FINANCIAL_YEAR_START_MONTH_KEY]));
 			await setSetting(FINANCIAL_YEAR_START_MONTH_KEY, String(month));
+		}
+		if (ORGANIZATION_NAME_KEY in body && typeof body[ORGANIZATION_NAME_KEY] === 'string') {
+			const name = body[ORGANIZATION_NAME_KEY].trim().slice(0, MAX_ORGANIZATION_NAME_LENGTH);
+			await setSetting(ORGANIZATION_NAME_KEY, name);
 		}
 		await saveDatabase();
 		return getAllSettings();

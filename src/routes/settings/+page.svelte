@@ -33,12 +33,15 @@
 	let deleteAllMessage = $state('');
 	let deleteAllError = $state('');
 
-	// App logo
+	// App logo & organization name
 	let logoUploading = $state(false);
 	let logoMessage = $state('');
 	let logoPreviewUrl = $derived(
 		branding.hasLogo ? settingsAPI.getLogoUrl(branding.logoVersion) : ''
 	);
+	let organizationNameDraft = $state('');
+	let organizationNameSaving = $state(false);
+	let organizationNameMessage = $state('');
 
 	// Backup state
 	let backupStatus = $state<BackupStatus | null>(null);
@@ -231,8 +234,28 @@
 		try {
 			const s = await settingsAPI.get();
 			applyModuleSettings(s);
+			organizationNameDraft = branding.organizationName;
 		} catch (e) {
 			console.error('Failed to load module settings:', e);
+		}
+	}
+
+	async function saveOrganizationName() {
+		try {
+			organizationNameSaving = true;
+			organizationNameMessage = '';
+			const updated = await settingsAPI.update({
+				organizationName: organizationNameDraft.trim()
+			});
+			applyModuleSettings(updated);
+			organizationNameDraft = branding.organizationName;
+			organizationNameMessage = branding.organizationName
+				? `Name saved. Reports will show e.g. "Profit & Loss Statement ${branding.organizationName}".`
+				: 'Name cleared. Reports will use the default title only.';
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to save organization name';
+		} finally {
+			organizationNameSaving = false;
 		}
 	}
 
@@ -408,10 +431,58 @@
 		</div>
 	{/if}
 
-	<!-- App logo / branding -->
+	<!-- App branding (name + logo) -->
 	<div class="card bg-base-100 shadow-xl mb-6">
 		<div class="card-body">
-			<h2 class="card-title text-2xl">App logo</h2>
+			<h2 class="card-title text-2xl">Branding</h2>
+			<p class="text-sm text-base-content/60 mb-4">
+				Set the organization name used on financial reports, and the logo shown in the app header.
+			</p>
+
+			<div class="form-control w-full max-w-md mb-6">
+				<label class="label" for="organization-name">
+					<span class="label-text font-medium">Organization name</span>
+				</label>
+				<div class="flex flex-col sm:flex-row gap-2">
+					<input
+						id="organization-name"
+						type="text"
+						class="input input-bordered w-full"
+						placeholder="e.g. Acme Co"
+						maxlength="120"
+						bind:value={organizationNameDraft}
+						onkeydown={(e) => {
+							if (e.key === 'Enter') {
+								e.preventDefault();
+								saveOrganizationName();
+							}
+						}}
+					/>
+					<button
+						type="button"
+						class="btn btn-primary shrink-0"
+						onclick={saveOrganizationName}
+						disabled={organizationNameSaving}
+					>
+						{#if organizationNameSaving}
+							<span class="loading loading-spinner loading-sm"></span>
+						{/if}
+						Save
+					</button>
+				</div>
+				<span class="label-text-alt text-base-content/50 mt-1">
+					Appears next to report titles (e.g. “Profit &amp; Loss Statement Acme Co”).
+				</span>
+				{#if organizationNameMessage}
+					<div class="alert alert-success text-sm py-2 mt-2">
+						<span>{organizationNameMessage}</span>
+					</div>
+				{/if}
+			</div>
+
+			<div class="divider my-2"></div>
+
+			<h3 class="font-semibold text-lg mb-2">App logo</h3>
 			<p class="text-sm text-base-content/60 mb-4">
 				Upload a picture that appears in the top-left of the app (sidebar and mobile header).
 			</p>

@@ -1186,6 +1186,8 @@ export interface AppSettings {
 	checkReferences: boolean;
 	/** Month the financial year starts (1 = January … 12 = December). End month is start − 1. */
 	financialYearStartMonth: number;
+	/** Organization / entity name shown on financial reports (e.g. "P&L Statement Acme Co"). */
+	organizationName: string;
 	hasLogo?: boolean;
 }
 

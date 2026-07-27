@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { modules, financialYear, applyModuleSettings } from '$lib/modules.svelte';
+	import { modules, branding, financialYear, applyModuleSettings } from '$lib/modules.svelte';
 	import {
 		reportsAPI,
 		currenciesAPI,
@@ -22,6 +22,7 @@
 		getFinancialYearBounds,
 		toLocalDateString
 	} from '$lib/financial-year';
+	import { exportReportPdf } from '$lib/report-pdf';
 
 	type ReportType = 'balance-sheet' | 'profit-loss' | 'trial-balance';
 
@@ -185,6 +186,40 @@
 		const month = String(d.getUTCMonth() + 1).padStart(2, '0');
 		const day = String(d.getUTCDate()).padStart(2, '0');
 		return `${month}/${day}/${year}`;
+	}
+
+	/** Report title with optional organization name (e.g. "Profit & Loss Statement Acme Co"). */
+	function reportHeading(base: string): string {
+		const name = branding.organizationName.trim();
+		return name ? `${base} ${name}` : base;
+	}
+
+	let hasGeneratedReport = $derived(
+		(activeReport === 'balance-sheet' && !!balanceSheet) ||
+			(activeReport === 'profit-loss' && !!profitLoss) ||
+			(activeReport === 'trial-balance' && !!trialBalance)
+	);
+
+	function handleExportPdf() {
+		try {
+			error = '';
+			const currency = currencies.find((c) => c.code === selectedCurrency);
+			exportReportPdf({
+				type: activeReport,
+				organizationName: branding.organizationName,
+				currencySymbol: currency?.symbol || selectedCurrency,
+				currencyCode: selectedCurrency,
+				includeBudgets: modules.budgets && activeReport === 'profit-loss',
+				expandedGLAccounts,
+				expandedSubledgers,
+				subledgerCategories,
+				balanceSheet,
+				profitLoss,
+				trialBalance
+			});
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to export PDF';
+		}
 	}
 
 	function toggleGLAccount(glAccountId: number) {
@@ -432,6 +467,19 @@
 						Generate Report
 					{/if}
 				</button>
+				{#if hasGeneratedReport}
+					<button
+						type="button"
+						class="btn btn-outline"
+						onclick={handleExportPdf}
+						title="Export a clean PDF matching the current expanded view"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+						</svg>
+						Export PDF
+					</button>
+				{/if}
 			</div>
 		</div>
 	</div>
@@ -441,8 +489,13 @@
 		{#if balanceSheet}
 			<div class="card bg-base-100 shadow-xl mb-6">
 				<div class="card-body">
+					<div class="flex justify-end mb-2 print:hidden">
+						<button type="button" class="btn btn-sm btn-outline" onclick={handleExportPdf}>
+							Export PDF
+						</button>
+					</div>
 					<div class="text-center mb-6">
-						<h2 class="text-2xl font-bold">Balance Sheet</h2>
+						<h2 class="text-2xl font-bold">{reportHeading('Balance Sheet')}</h2>
 						<p class="text-base-content/70">As of {formatDate(balanceSheet.asOfDate)}</p>
 						<p class="text-base-content/70">Currency: {balanceSheet.currencyCode}</p>
 					</div>
@@ -654,8 +707,13 @@
 		{#if profitLoss}
 			<div class="card bg-base-100 shadow-xl mb-6">
 				<div class="card-body">
+					<div class="flex justify-end mb-2 print:hidden">
+						<button type="button" class="btn btn-sm btn-outline" onclick={handleExportPdf}>
+							Export PDF
+						</button>
+					</div>
 					<div class="text-center mb-6">
-						<h2 class="text-2xl font-bold">Profit & Loss Statement</h2>
+						<h2 class="text-2xl font-bold">{reportHeading('Profit & Loss Statement')}</h2>
 						<p class="text-base-content/70">
 							{formatDate(profitLoss.startDate)} to {formatDate(profitLoss.endDate)}
 						</p>
@@ -1026,8 +1084,13 @@
 		{#if trialBalance}
 			<div class="card bg-base-100 shadow-xl mb-6">
 				<div class="card-body">
+					<div class="flex justify-end mb-2 print:hidden">
+						<button type="button" class="btn btn-sm btn-outline" onclick={handleExportPdf}>
+							Export PDF
+						</button>
+					</div>
 					<div class="text-center mb-6">
-						<h2 class="text-2xl font-bold">Trial Balance</h2>
+						<h2 class="text-2xl font-bold">{reportHeading('Trial Balance')}</h2>
 						<p class="text-base-content/70">As of {formatDate(trialBalance.asOfDate)}</p>
 						<p class="text-base-content/70">Currency: {trialBalance.currencyCode}</p>
 					</div>

@@ -28,7 +28,9 @@ export const modules = $state<ModuleSettings>({
 export const branding = $state({
 	hasLogo: false,
 	/** Bump to force <img> reload after upload/delete */
-	logoVersion: 0
+	logoVersion: 0,
+	/** Entity name shown next to report titles (e.g. "Profit & Loss Statement Acme Co"). */
+	organizationName: ''
 });
 
 /** App-wide financial year (1 = January … 12 = December). Default calendar year. */
@@ -40,6 +42,7 @@ export function applyModuleSettings(
 	settings: Partial<ModuleSettings> & {
 		hasLogo?: boolean;
 		financialYearStartMonth?: number;
+		organizationName?: string;
 	}
 ) {
 	if (settings.vendors !== undefined) modules.vendors = settings.vendors;
@@ -51,6 +54,9 @@ export function applyModuleSettings(
 	if (settings.budgets !== undefined) modules.budgets = settings.budgets;
 	if (settings.checkReferences !== undefined) modules.checkReferences = settings.checkReferences;
 	if (settings.hasLogo !== undefined) branding.hasLogo = settings.hasLogo;
+	if (settings.organizationName !== undefined) {
+		branding.organizationName = String(settings.organizationName).trim();
+	}
 	if (settings.financialYearStartMonth !== undefined) {
 		const m = Math.round(Number(settings.financialYearStartMonth));
 		financialYear.startMonth = Number.isFinite(m) && m >= 1 && m <= 12 ? m : 1;
