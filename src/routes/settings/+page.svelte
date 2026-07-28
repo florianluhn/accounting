@@ -11,7 +11,8 @@
 		journalEntriesAPI,
 		financialYearsAPI,
 		type ClosedFinancialYear,
-		type YearClosePreview
+		type YearClosePreview,
+		type OpenYearPreview
 	} from '$lib/api';
 	import { modules, branding, financialYear, applyModuleSettings, setAppLogo } from '$lib/modules.svelte';
 	import {
@@ -76,7 +77,7 @@
 	let editingPlatformFeeRate = $state(0);
 	let editingPlatformWithholdsTaxes = $state(false);
 
-	// Year-end close
+	// Year-end close / open
 	let closedYears = $state<ClosedFinancialYear[]>([]);
 	let closeFyYear = $state(getFinancialYear(new Date(), 1) - 1);
 	let closePreview = $state<YearClosePreview | null>(null);
@@ -84,6 +85,11 @@
 	let closeLoading = $state(false);
 	let closeMessage = $state('');
 	let closeError = $state('');
+	let openPreview = $state<OpenYearPreview | null>(null);
+	let openPreviewLoading = $state(false);
+	let openLoading = $state(false);
+	let openMessage = $state('');
+	let openError = $state('');
 
 	$effect(() => {
 		loadCurrencies();
@@ -292,7 +298,7 @@
 				`Period: ${closePreview.periodStart} → ${closePreview.periodEnd}\n` +
 				`Net income/(loss): ${ni}\n` +
 				`Will create equity account: ${closePreview.label}\n\n` +
-				`This posts year-end closing entries and permanently locks all journal activity in that period. Continue?`
+				`This posts year-end closing entries and locks all journal activity in that period. Continue?`
 		);
 		if (!ok) return;
 
@@ -303,12 +309,61 @@
 			const result = await financialYearsAPI.close(closeFyYear);
 			closeMessage = `Closed ${result.label}. Net income ${formatCloseAmount(result.netIncome)} posted to equity. The period ${result.periodStart} – ${result.periodEnd} is now locked.`;
 			closePreview = null;
+			openPreview = null;
 			await loadClosedYears();
 			closePreview = await financialYearsAPI.preview(closeFyYear);
 		} catch (e) {
 			closeError = e instanceof Error ? e.message : 'Failed to close financial year';
 		} finally {
 			closeLoading = false;
+		}
+	}
+
+	async function loadOpenPreview(fyYear: number) {
+		try {
+			openPreviewLoading = true;
+			openError = '';
+			openMessage = '';
+			openPreview = await financialYearsAPI.openPreview(fyYear);
+		} catch (e) {
+			openPreview = null;
+			openError = e instanceof Error ? e.message : 'Failed to load open-year preview';
+		} finally {
+			openPreviewLoading = false;
+		}
+	}
+
+	async function confirmOpenYear() {
+		if (!openPreview || !openPreview.canOpen) return;
+
+		const label = formatFinancialYearLabel(openPreview.fyYear, openPreview.startMonth);
+		const ok = confirm(
+			`Open ${label} and reverse year-end close?\n\n` +
+				`This will permanently delete ${openPreview.closingEntryCount} year-end close journal posting(s),\n` +
+				`remove equity account ${openPreview.label}, and unlock the period ${openPreview.periodStart} – ${openPreview.periodEnd}.\n\n` +
+				`Stored close NI: ${formatCloseAmount(openPreview.storedNetIncome)}\n` +
+				`Posted to RE: ${formatCloseAmount(openPreview.postedToRetainedEarnings)}\n` +
+				`Current recalculated P&L: ${formatCloseAmount(openPreview.recalculatedNetIncome)}\n\n` +
+				`Continue?`
+		);
+		if (!ok) return;
+
+		try {
+			openLoading = true;
+			openError = '';
+			openMessage = '';
+			const result = await financialYearsAPI.open(openPreview.fyYear);
+			openMessage =
+				`Opened ${result.label}. Deleted ${result.deletedJournalEntries} closing posting(s)` +
+				(result.deletedRetainedEarningsAccount ? ' and removed the retained earnings account.' : '.') +
+				` Period ${result.periodStart} – ${result.periodEnd} is unlocked.`;
+			openPreview = null;
+			closePreview = null;
+			await loadClosedYears();
+		} catch (e) {
+			openError = e instanceof Error ? e.message : 'Failed to open financial year';
+		} finally {
+			openLoading = false;
 		}
 	}
 
@@ -891,6 +946,10 @@
 			{#if closedYears.length > 0}
 				<div class="mt-6">
 					<h4 class="font-medium mb-2">Closed years</h4>
+					<p class="text-sm text-base-content/60 mb-3">
+						Use <strong>Review / open</strong> to compare P&amp;L vs closing postings, then reverse the close completely if needed.
+						Open years from newest to oldest.
+					</p>
 					<div class="overflow-x-auto">
 						<table class="table table-sm">
 							<thead>
@@ -899,6 +958,7 @@
 									<th>Period</th>
 									<th>Equity account</th>
 									<th class="text-right">Net income</th>
+									<th></th>
 								</tr>
 							</thead>
 							<tbody>
@@ -918,10 +978,144 @@
 										>
 											{formatCloseAmount(cy.netIncome)}
 										</td>
+										<td class="text-right">
+											<button
+												type="button"
+												class="btn btn-ghost btn-xs"
+												onclick={() => loadOpenPreview(cy.fyYear)}
+												disabled={openPreviewLoading || openLoading}
+											>
+												Review / open
+											</button>
+										</td>
 									</tr>
 								{/each}
 							</tbody>
 						</table>
+					</div>
+				</div>
+			{/if}
+
+			{#if openError}
+				<div class="alert alert-error text-sm py-2 mt-4">
+					<span>{openError}</span>
+				</div>
+			{/if}
+			{#if openMessage}
+				<div class="alert alert-success text-sm py-2 mt-4">
+					<span>{openMessage}</span>
+				</div>
+			{/if}
+			{#if openPreviewLoading}
+				<div class="mt-4 text-sm text-base-content/60">
+					<span class="loading loading-spinner loading-sm"></span> Loading reconcile…
+				</div>
+			{/if}
+
+			{#if openPreview}
+				<div class="rounded-box border border-warning/40 bg-warning/5 p-4 space-y-3 max-w-3xl mt-4">
+					<div class="flex flex-wrap items-center gap-2">
+						<span class="font-medium">
+							{formatFinancialYearLabel(openPreview.fyYear, openPreview.startMonth)}
+						</span>
+						<span class="badge badge-warning badge-sm">Closed — reverse available</span>
+						{#if !openPreview.canOpen}
+							<span class="badge badge-error badge-sm">
+								Open {openPreview.blockedByLaterYears.join(', ')} first
+							</span>
+						{/if}
+					</div>
+					<p class="text-sm text-base-content/70">
+						{openPreview.periodStart} → {openPreview.periodEnd}
+						· Equity: {openPreview.retainedEarningsAccountNumber || '—'}
+						{openPreview.retainedEarningsAccountName
+							? ` (${openPreview.retainedEarningsAccountName})`
+							: ''}
+					</p>
+
+					<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+						<div class="p-3 rounded-lg bg-base-100 border border-base-300">
+							<div class="text-base-content/50 text-xs uppercase">Stored at close</div>
+							<div class="font-mono font-bold text-lg">{formatCloseAmount(openPreview.storedNetIncome)}</div>
+						</div>
+						<div class="p-3 rounded-lg bg-base-100 border border-base-300">
+							<div class="text-base-content/50 text-xs uppercase">Posted to RE (sum of closings)</div>
+							<div class="font-mono font-bold text-lg">{formatCloseAmount(openPreview.postedToRetainedEarnings)}</div>
+						</div>
+						<div class="p-3 rounded-lg bg-base-100 border border-base-300">
+							<div class="text-base-content/50 text-xs uppercase">Recalculated P&amp;L now</div>
+							<div class="font-mono font-bold text-lg">{formatCloseAmount(openPreview.recalculatedNetIncome)}</div>
+						</div>
+					</div>
+
+					{#if Math.abs(openPreview.storedVsRecalcDiff) >= 0.005 || Math.abs(openPreview.postedVsRecalcDiff) >= 0.005}
+						<div class="alert alert-warning text-sm py-2">
+							<span>
+								Difference found:
+								stored vs recalculated = <strong class="font-mono">{formatCloseAmount(openPreview.storedVsRecalcDiff)}</strong>,
+								posted vs recalculated = <strong class="font-mono">{formatCloseAmount(openPreview.postedVsRecalcDiff)}</strong>.
+								After reverse, run P&amp;L for {openPreview.periodStart}–{openPreview.periodEnd} and compare account totals.
+							</span>
+						</div>
+					{:else}
+						<div class="alert alert-success text-sm py-2">
+							<span>Stored, posted, and recalculated net income all match.</span>
+						</div>
+					{/if}
+
+					<details class="text-sm" open={Math.abs(openPreview.postedVsRecalcDiff) >= 0.005}>
+						<summary class="cursor-pointer text-base-content/70">
+							{openPreview.closingEntryCount} year-end close posting(s) that will be deleted
+						</summary>
+						<div class="overflow-x-auto mt-2 max-h-56">
+							<table class="table table-xs">
+								<thead>
+									<tr>
+										<th>ID</th>
+										<th>Description</th>
+										<th class="text-right">Amount (USD)</th>
+										<th class="text-right">Effect on RE</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each openPreview.closingEntries as e}
+										<tr>
+											<td class="font-mono">{e.id}</td>
+											<td class="max-w-xs truncate" title={e.description}>{e.description}</td>
+											<td class="text-right font-mono">{formatCloseAmount(e.amountInUSD)}</td>
+											<td class="text-right font-mono">{formatCloseAmount(e.reEffect)}</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					</details>
+
+					<div class="flex flex-wrap gap-2">
+						<button
+							type="button"
+							class="btn btn-error"
+							onclick={confirmOpenYear}
+							disabled={!openPreview.canOpen || openLoading}
+						>
+							{#if openLoading}
+								<span class="loading loading-spinner loading-sm"></span>
+								Reversing...
+							{:else}
+								Open year &amp; reverse all close postings
+							{/if}
+						</button>
+						<button
+							type="button"
+							class="btn btn-ghost"
+							onclick={() => {
+								openPreview = null;
+								openError = '';
+							}}
+							disabled={openLoading}
+						>
+							Dismiss
+						</button>
 					</div>
 				</div>
 			{/if}

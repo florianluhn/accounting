@@ -5,6 +5,8 @@ import {
 	closeFinancialYear,
 	listClosedYears,
 	previewYearClose,
+	previewOpenYear,
+	openFinancialYear,
 	repairYearEndCloseEntryDates,
 	YearCloseError,
 	getFinancialYearStartMonth
@@ -18,8 +20,16 @@ const fyYearSchema = z.object({
 
 function handleYearCloseError(error: unknown, reply: any) {
 	if (error instanceof YearCloseError) {
+		const name =
+			error.statusCode === 403
+				? 'Forbidden'
+				: error.statusCode === 409
+					? 'Conflict'
+					: error.statusCode === 404
+						? 'Not Found'
+						: 'Bad Request';
 		return reply.status(error.statusCode).send({
-			error: error.statusCode === 403 ? 'Forbidden' : error.statusCode === 409 ? 'Conflict' : 'Bad Request',
+			error: name,
 			message: error.message
 		});
 	}
@@ -41,6 +51,18 @@ export default async function financialYearsRoutes(fastify: FastifyInstance) {
 				fyYear: request.query.fyYear
 			});
 			return await previewYearClose(parsed.fyYear);
+		} catch (error) {
+			return handleYearCloseError(error, reply);
+		}
+	});
+
+	// GET /api/financial-years/open-preview?fyYear=2025 — reconcile + reverse preview
+	fastify.get<{ Querystring: { fyYear?: string } }>('/open-preview', async (request, reply) => {
+		try {
+			const parsed = fyYearSchema.parse({
+				fyYear: request.query.fyYear
+			});
+			return await previewOpenYear(parsed.fyYear);
 		} catch (error) {
 			return handleYearCloseError(error, reply);
 		}
@@ -80,6 +102,27 @@ export default async function financialYearsRoutes(fastify: FastifyInstance) {
 			});
 			await saveDatabase();
 			return reply.status(201).send(result);
+		} catch (error) {
+			return handleYearCloseError(error, reply);
+		}
+	});
+
+	// POST /api/financial-years/open  { fyYear: 2025 } — full reverse of year-end close
+	fastify.post<{ Body: { fyYear: number } }>('/open', async (request, reply) => {
+		try {
+			const { fyYear } = fyYearSchema.parse(request.body);
+			const result = await openFinancialYear(fyYear);
+			await logAudit({
+				operation: 'DELETE',
+				resourceType: 'journal_entry',
+				resourceId: result.fyYear,
+				source: 'Web UI',
+				batchSummary: `Reopened FY ${result.fyYear}: deleted ${result.deletedJournalEntries} year-end close entries`,
+				description: `Opened financial year ${result.fyYear}: removed ${result.deletedJournalEntries} closing postings and unlocked the period`,
+				oldData: result
+			});
+			await saveDatabase();
+			return result;
 		} catch (error) {
 			return handleYearCloseError(error, reply);
 		}

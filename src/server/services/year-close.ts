@@ -12,7 +12,7 @@ import {
 	currencies,
 	appSettings
 } from '../db/schema.js';
-import { eq, and, gte, lte, sql, desc, or } from 'drizzle-orm';
+import { eq, and, gte, lte, gt, sql, desc, or } from 'drizzle-orm';
 import {
 	formatFinancialYearLabel,
 	getFinancialYearBounds,
@@ -70,12 +70,22 @@ function round2(n: number): number {
 	return Math.round(n * 100) / 100;
 }
 
-function startOfLocalDay(d: Date): Date {
-	return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+/**
+ * Day bounds matching the P&L report (UTC start/end of calendar day).
+ * FY bounds are converted via local YYYY-MM-DD so they match date pickers.
+ */
+export function utcDayStartFromLocalDate(d: Date): Date {
+	const iso = toLocalDateString(d); // YYYY-MM-DD in local calendar
+	const bound = new Date(iso); // parses as UTC midnight
+	bound.setUTCHours(0, 0, 0, 0);
+	return bound;
 }
 
-function endOfLocalDay(d: Date): Date {
-	return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+export function utcDayEndFromLocalDate(d: Date): Date {
+	const iso = toLocalDateString(d);
+	const bound = new Date(iso);
+	bound.setUTCHours(23, 59, 59, 999);
+	return bound;
 }
 
 /**
@@ -84,15 +94,15 @@ function endOfLocalDay(d: Date): Date {
  * and pollutes the next year's P&L when reports use UTC day bounds).
  */
 export function yearEndCloseEntryDate(fyEndLocal: Date): Date {
-	return new Date(
-		Date.UTC(fyEndLocal.getFullYear(), fyEndLocal.getMonth(), fyEndLocal.getDate(), 12, 0, 0, 0)
-	);
+	const iso = toLocalDateString(fyEndLocal);
+	const [y, m, day] = iso.split('-').map(Number);
+	return new Date(Date.UTC(y, m - 1, day, 12, 0, 0, 0));
 }
 
 /** Inclusive check that `date` falls within a closed financial year range. */
 export function isDateInRange(date: Date, start: Date, end: Date): boolean {
 	const t = date.getTime();
-	return t >= startOfLocalDay(start).getTime() && t <= endOfLocalDay(end).getTime();
+	return t >= utcDayStartFromLocalDate(start).getTime() && t <= utcDayEndFromLocalDate(end).getTime();
 }
 
 export async function getFinancialYearStartMonth(): Promise<number> {
@@ -170,8 +180,9 @@ async function periodBalances(
 		balance: number;
 	}>
 > {
-	const start = startOfLocalDay(startDate);
-	const end = endOfLocalDay(endDate);
+	// Same UTC day bounds as GET /api/reports/profit-loss
+	const start = utcDayStartFromLocalDate(startDate);
+	const end = utcDayEndFromLocalDate(endDate);
 
 	const accounts = await db
 		.select({
@@ -194,7 +205,7 @@ async function periodBalances(
 		.from(journalEntries)
 		.where(and(gte(journalEntries.entryDate, start), lte(journalEntries.entryDate, end)));
 
-	// Ignore prior year-end close postings when computing what to close
+	// Ignore year-end close postings when computing operating P&L / what to close
 	const operatingEntries = entries.filter((e) => e.category !== YEAR_END_CLOSE_CATEGORY);
 
 	return accounts.map((account) => {
@@ -220,6 +231,17 @@ async function periodBalances(
 			balance: round2(balance)
 		};
 	});
+}
+
+/** Net effect of a closing entry on the retained-earnings equity account (credit − debit). */
+function reEffectOnEntry(
+	entry: { debitAccountId: number; creditAccountId: number; amountInUSD: number },
+	reAccountId: number
+): number {
+	let effect = 0;
+	if (entry.creditAccountId === reAccountId) effect += entry.amountInUSD;
+	if (entry.debitAccountId === reAccountId) effect -= entry.amountInUSD;
+	return round2(effect);
 }
 
 export async function previewYearClose(fyYear: number): Promise<ClosePreview> {
@@ -459,6 +481,234 @@ export async function closeFinancialYear(fyYear: number): Promise<ClosedYearInfo
 export async function hasAnyClosedYear(): Promise<boolean> {
 	const rows = await db.select({ id: closedFinancialYears.id }).from(closedFinancialYears).limit(1);
 	return rows.length > 0;
+}
+
+export interface YearCloseEntryDetail {
+	id: number;
+	entryDate: Date | string;
+	amountInUSD: number;
+	description: string;
+	debitAccountId: number;
+	creditAccountId: number;
+	/** Effect on retained earnings equity (credit increases). */
+	reEffect: number;
+}
+
+export interface OpenYearPreview {
+	fyYear: number;
+	startMonth: number;
+	label: string;
+	periodStart: string;
+	periodEnd: string;
+	/** Net income stored when the year was closed. */
+	storedNetIncome: number;
+	/** Sum of closing journal effects on the RE equity account. */
+	postedToRetainedEarnings: number;
+	/** Current recalculated operating P&L for the same period (excl. year-end close). */
+	recalculatedNetIncome: number;
+	/** storedNetIncome − recalculatedNetIncome */
+	storedVsRecalcDiff: number;
+	/** postedToRetainedEarnings − recalculatedNetIncome */
+	postedVsRecalcDiff: number;
+	closingEntryCount: number;
+	closingEntries: YearCloseEntryDetail[];
+	/** Must reverse later years before this one. */
+	blockedByLaterYears: number[];
+	canOpen: boolean;
+	retainedEarningsAccountId: number;
+	retainedEarningsAccountNumber: string | null;
+	retainedEarningsAccountName: string | null;
+}
+
+export interface OpenYearResult {
+	fyYear: number;
+	label: string;
+	deletedJournalEntries: number;
+	deletedEntryIds: number[];
+	deletedRetainedEarningsAccount: boolean;
+	retainedEarningsAccountId: number;
+	periodStart: string;
+	periodEnd: string;
+	storedNetIncome: number;
+	postedToRetainedEarnings: number;
+	recalculatedNetIncome: number;
+}
+
+async function getClosingEntriesForYear(cy: {
+	retainedEarningsAccountId: number;
+	fyYear: number;
+	startMonth: number;
+	label: string;
+}): Promise<YearCloseEntryDetail[]> {
+	// Prefer entries tagged as year-end close that touch the RE account.
+	// Also catch same-period entries with matching description prefix if category was edited.
+	const entries = await db
+		.select()
+		.from(journalEntries)
+		.where(
+			and(
+				eq(journalEntries.category, YEAR_END_CLOSE_CATEGORY),
+				or(
+					eq(journalEntries.debitAccountId, cy.retainedEarningsAccountId),
+					eq(journalEntries.creditAccountId, cy.retainedEarningsAccountId)
+				)
+			)
+		);
+
+	return entries
+		.map((e) => ({
+			id: e.id,
+			entryDate: e.entryDate,
+			amountInUSD: e.amountInUSD,
+			description: e.description,
+			debitAccountId: e.debitAccountId,
+			creditAccountId: e.creditAccountId,
+			reEffect: reEffectOnEntry(e, cy.retainedEarningsAccountId)
+		}))
+		.sort((a, b) => a.id - b.id);
+}
+
+/**
+ * Preview reverse of a year-end close: what would be deleted and how numbers compare.
+ */
+export async function previewOpenYear(fyYear: number): Promise<OpenYearPreview> {
+	if (!Number.isInteger(fyYear) || fyYear < 1900 || fyYear > 2100) {
+		throw new YearCloseError('Invalid financial year');
+	}
+
+	const rows = await db
+		.select()
+		.from(closedFinancialYears)
+		.where(eq(closedFinancialYears.fyYear, fyYear))
+		.limit(1);
+
+	if (rows.length === 0) {
+		throw new YearCloseError(
+			`${formatFinancialYearLabel(fyYear, await getFinancialYearStartMonth())} is not closed`,
+			404
+		);
+	}
+
+	const cy = rows[0];
+	const { start, end } = getFinancialYearBounds(cy.fyYear, cy.startMonth);
+	const closingEntries = await getClosingEntriesForYear(cy);
+	const postedToRetainedEarnings = round2(
+		closingEntries.reduce((s, e) => s + e.reEffect, 0)
+	);
+
+	const balances = await periodBalances(start, end);
+	const fullRevenue = round2(
+		balances.filter((b) => b.glAccountType === 'Profit').reduce((s, b) => s + b.balance, 0)
+	);
+	const fullExpenses = round2(
+		balances.filter((b) => b.glAccountType === 'Loss').reduce((s, b) => s + b.balance, 0)
+	);
+	const recalculatedNetIncome = round2(fullRevenue - fullExpenses);
+
+	const later = await db
+		.select({ fyYear: closedFinancialYears.fyYear })
+		.from(closedFinancialYears)
+		.where(gt(closedFinancialYears.fyYear, fyYear));
+	const blockedByLaterYears = later.map((r) => r.fyYear).sort((a, b) => a - b);
+
+	const [reAcc] = await db
+		.select({
+			accountNumber: subledgerAccounts.accountNumber,
+			name: subledgerAccounts.name
+		})
+		.from(subledgerAccounts)
+		.where(eq(subledgerAccounts.id, cy.retainedEarningsAccountId))
+		.limit(1);
+
+	return {
+		fyYear: cy.fyYear,
+		startMonth: cy.startMonth,
+		label: cy.label,
+		periodStart: toLocalDateString(start),
+		periodEnd: toLocalDateString(end),
+		storedNetIncome: cy.netIncome,
+		postedToRetainedEarnings,
+		recalculatedNetIncome,
+		storedVsRecalcDiff: round2(cy.netIncome - recalculatedNetIncome),
+		postedVsRecalcDiff: round2(postedToRetainedEarnings - recalculatedNetIncome),
+		closingEntryCount: closingEntries.length,
+		closingEntries,
+		blockedByLaterYears,
+		canOpen: blockedByLaterYears.length === 0,
+		retainedEarningsAccountId: cy.retainedEarningsAccountId,
+		retainedEarningsAccountNumber: reAcc?.accountNumber ?? null,
+		retainedEarningsAccountName: reAcc?.name ?? null
+	};
+}
+
+/**
+ * Fully reverse a year-end close:
+ * - delete all year-end close journal entries for that year
+ * - remove the closed-year lock
+ * - delete the Retained Earnings equity subledger if unused
+ *
+ * Later closed years must be opened first (newest → oldest).
+ */
+export async function openFinancialYear(fyYear: number): Promise<OpenYearResult> {
+	const preview = await previewOpenYear(fyYear);
+
+	if (!preview.canOpen) {
+		throw new YearCloseError(
+			`Open later closed year(s) first: ${preview.blockedByLaterYears.join(', ')}`,
+			409
+		);
+	}
+
+	const entryIds = preview.closingEntries.map((e) => e.id);
+
+	// Delete closing journal entries (year is still "closed" so normal journal API would block —
+	// we delete here directly as the reopen operation).
+	for (const id of entryIds) {
+		await db.delete(journalEntries).where(eq(journalEntries.id, id));
+	}
+
+	// Remove lock
+	await db.delete(closedFinancialYears).where(eq(closedFinancialYears.fyYear, fyYear));
+
+	// Delete RE subledger only if no remaining journal lines reference it
+	let deletedReAccount = false;
+	const remaining = await db
+		.select({ id: journalEntries.id })
+		.from(journalEntries)
+		.where(
+			or(
+				eq(journalEntries.debitAccountId, preview.retainedEarningsAccountId),
+				eq(journalEntries.creditAccountId, preview.retainedEarningsAccountId)
+			)
+		)
+		.limit(1);
+
+	if (remaining.length === 0) {
+		await db
+			.delete(subledgerAccounts)
+			.where(eq(subledgerAccounts.id, preview.retainedEarningsAccountId));
+		deletedReAccount = true;
+	} else {
+		// Deactivate orphaned RE account that still has unexpected links
+		await db
+			.update(subledgerAccounts)
+			.set({ isActive: false, name: `${preview.label} (reopened)` })
+			.where(eq(subledgerAccounts.id, preview.retainedEarningsAccountId));
+	}
+
+	return {
+		fyYear: preview.fyYear,
+		label: preview.label,
+		deletedJournalEntries: entryIds.length,
+		deletedEntryIds: entryIds,
+		deletedRetainedEarningsAccount: deletedReAccount,
+		retainedEarningsAccountId: preview.retainedEarningsAccountId,
+		periodStart: preview.periodStart,
+		periodEnd: preview.periodEnd,
+		storedNetIncome: preview.storedNetIncome,
+		postedToRetainedEarnings: preview.postedToRetainedEarnings,
+		recalculatedNetIncome: preview.recalculatedNetIncome
+	};
 }
 
 /**

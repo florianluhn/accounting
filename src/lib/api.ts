@@ -1261,11 +1261,57 @@ export interface YearClosePreview {
 	}>;
 }
 
+export interface YearCloseEntryDetail {
+	id: number;
+	entryDate: Date | string;
+	amountInUSD: number;
+	description: string;
+	debitAccountId: number;
+	creditAccountId: number;
+	reEffect: number;
+}
+
+/** Preview of reversing a year-end close + reconcile figures. */
+export interface OpenYearPreview {
+	fyYear: number;
+	startMonth: number;
+	label: string;
+	periodStart: string;
+	periodEnd: string;
+	storedNetIncome: number;
+	postedToRetainedEarnings: number;
+	recalculatedNetIncome: number;
+	storedVsRecalcDiff: number;
+	postedVsRecalcDiff: number;
+	closingEntryCount: number;
+	closingEntries: YearCloseEntryDetail[];
+	blockedByLaterYears: number[];
+	canOpen: boolean;
+	retainedEarningsAccountId: number;
+	retainedEarningsAccountNumber: string | null;
+	retainedEarningsAccountName: string | null;
+}
+
+export interface OpenYearResult {
+	fyYear: number;
+	label: string;
+	deletedJournalEntries: number;
+	deletedEntryIds: number[];
+	deletedRetainedEarningsAccount: boolean;
+	retainedEarningsAccountId: number;
+	periodStart: string;
+	periodEnd: string;
+	storedNetIncome: number;
+	postedToRetainedEarnings: number;
+	recalculatedNetIncome: number;
+}
+
 export interface FinancialYearStatus {
 	startMonth: number;
 	currentFyYear: number;
 	currentLabel: string;
 	closedYears: ClosedFinancialYear[];
+	repairedEntryDates?: number;
 }
 
 export const financialYearsAPI = {
@@ -1280,6 +1326,17 @@ export const financialYearsAPI = {
 	},
 	async close(fyYear: number): Promise<ClosedFinancialYear> {
 		return apiFetch('/api/financial-years/close', {
+			method: 'POST',
+			body: JSON.stringify({ fyYear })
+		});
+	},
+	/** Reconcile + list closing postings that would be removed. */
+	async openPreview(fyYear: number): Promise<OpenYearPreview> {
+		return apiFetch(`/api/financial-years/open-preview?fyYear=${fyYear}`);
+	},
+	/** Fully reverse year-end close (delete closing posts, unlock year). */
+	async open(fyYear: number): Promise<OpenYearResult> {
+		return apiFetch('/api/financial-years/open', {
 			method: 'POST',
 			body: JSON.stringify({ fyYear })
 		});
