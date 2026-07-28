@@ -12,12 +12,15 @@ import {
 	currencies,
 	appSettings
 } from '../db/schema.js';
-import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
+import { eq, and, gte, lte, sql, desc, or } from 'drizzle-orm';
 import {
 	formatFinancialYearLabel,
 	getFinancialYearBounds,
 	toLocalDateString
 } from '../../lib/financial-year.js';
+
+/** Journal category used for year-end closing entries (excluded from P&L reports). */
+export const YEAR_END_CLOSE_CATEGORY = 'Year-end close';
 
 export class YearCloseError extends Error {
 	statusCode: number;
@@ -73,6 +76,17 @@ function startOfLocalDay(d: Date): Date {
 
 function endOfLocalDay(d: Date): Date {
 	return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+}
+
+/**
+ * Posting date for year-end close entries: noon UTC on the last calendar day of the FY.
+ * Using 23:59 local shifts into the next day in UTC for many timezones (shows as 01/01
+ * and pollutes the next year's P&L when reports use UTC day bounds).
+ */
+export function yearEndCloseEntryDate(fyEndLocal: Date): Date {
+	return new Date(
+		Date.UTC(fyEndLocal.getFullYear(), fyEndLocal.getMonth(), fyEndLocal.getDate(), 12, 0, 0, 0)
+	);
 }
 
 /** Inclusive check that `date` falls within a closed financial year range. */
@@ -180,9 +194,12 @@ async function periodBalances(
 		.from(journalEntries)
 		.where(and(gte(journalEntries.entryDate, start), lte(journalEntries.entryDate, end)));
 
+	// Ignore prior year-end close postings when computing what to close
+	const operatingEntries = entries.filter((e) => e.category !== YEAR_END_CLOSE_CATEGORY);
+
 	return accounts.map((account) => {
 		let balance = 0;
-		for (const entry of entries) {
+		for (const entry of operatingEntries) {
 			const amount = entry.amountInUSD;
 			if (entry.debitAccountId === account.id) {
 				// Debit increases Loss; decreases Profit
@@ -336,7 +353,8 @@ export async function closeFinancialYear(fyYear: number): Promise<ClosedYearInfo
 	}
 
 	const { start, end } = getFinancialYearBounds(fyYear, preview.startMonth);
-	const closeDate = endOfLocalDay(end);
+	// Last day of closed FY at noon UTC — must NOT land on day 1 of the next year
+	const closeDate = yearEndCloseEntryDate(end);
 
 	const { id: equityGlId } = await ensureEquityGlAccount();
 	const currencyCode = await getDefaultCurrencyCode();
@@ -404,7 +422,7 @@ export async function closeFinancialYear(fyYear: number): Promise<ClosedYearInfo
 			debitAccountId,
 			creditAccountId,
 			description: `Year-end close ${formatFinancialYearLabel(fyYear, preview.startMonth)} — ${line.accountNumber} ${line.accountName}`,
-			category: 'Year-end close',
+			category: YEAR_END_CLOSE_CATEGORY,
 			comment: `Close ${line.glAccountType} account to ${preview.label}`
 		});
 	}
@@ -441,4 +459,46 @@ export async function closeFinancialYear(fyYear: number): Promise<ClosedYearInfo
 export async function hasAnyClosedYear(): Promise<boolean> {
 	const rows = await db.select({ id: closedFinancialYears.id }).from(closedFinancialYears).limit(1);
 	return rows.length > 0;
+}
+
+/**
+ * Move existing year-end close journal entries onto noon UTC of the closed year's
+ * last day (repairs entries that shifted to 01/01 of the next year via timezone).
+ * Returns number of entries updated.
+ */
+export async function repairYearEndCloseEntryDates(): Promise<number> {
+	const rows = await db.select().from(closedFinancialYears);
+	let fixed = 0;
+
+	for (const cy of rows) {
+		const { end } = getFinancialYearBounds(cy.fyYear, cy.startMonth);
+		const correctDate = yearEndCloseEntryDate(end);
+		const correctMs = correctDate.getTime();
+
+		const entries = await db
+			.select()
+			.from(journalEntries)
+			.where(
+				and(
+					eq(journalEntries.category, YEAR_END_CLOSE_CATEGORY),
+					or(
+						eq(journalEntries.debitAccountId, cy.retainedEarningsAccountId),
+						eq(journalEntries.creditAccountId, cy.retainedEarningsAccountId)
+					)
+				)
+			);
+
+		for (const entry of entries) {
+			const current = entry.entryDate instanceof Date ? entry.entryDate : new Date(entry.entryDate);
+			if (current.getTime() !== correctMs) {
+				await db
+					.update(journalEntries)
+					.set({ entryDate: correctDate })
+					.where(eq(journalEntries.id, entry.id));
+				fixed++;
+			}
+		}
+	}
+
+	return fixed;
 }

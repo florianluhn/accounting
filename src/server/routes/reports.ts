@@ -49,7 +49,8 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 	async function calculateBalances(
 		startDate?: Date,
 		endDate?: Date,
-		currencyCode: string = 'USD'
+		currencyCode: string = 'USD',
+		options?: { excludeYearEndClose?: boolean }
 	): Promise<AccountBalance[]> {
 		// Get all subledger accounts with their GL accounts (excluding Opening Balance accounts from reports)
 		const accounts = await db
@@ -84,6 +85,12 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			const endOfDay = new Date(endDate);
 			endOfDay.setUTCHours(23, 59, 59, 999);
 			conditions.push(lte(journalEntries.entryDate, endOfDay));
+		}
+		// Year-end close transfers are equity movements — never part of operating P&L
+		if (options?.excludeYearEndClose) {
+			conditions.push(
+				sql`(${journalEntries.category} IS NULL OR ${journalEntries.category} != 'Year-end close')`
+			);
 		}
 
 		// Get all journal entries in date range
@@ -236,8 +243,10 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		async (request, reply) => {
 			const { startDate, endDate, currencyCode } = dateRangeSchema.parse(request.query);
 
-			// P&L shows performance over a period
-			const balances = await calculateBalances(startDate, endDate, currencyCode);
+			// P&L shows operating performance — exclude year-end close transfers to RE
+			const balances = await calculateBalances(startDate, endDate, currencyCode, {
+				excludeYearEndClose: true
+			});
 
 			// Budgets are keyed by financial-year start year (settings → financial year start month).
 			// Prefer the period start so Mar–Feb ranges map to the correct FY.

@@ -5,11 +5,12 @@ import {
 	closeFinancialYear,
 	listClosedYears,
 	previewYearClose,
-	YearCloseError
+	repairYearEndCloseEntryDates,
+	YearCloseError,
+	getFinancialYearStartMonth
 } from '../services/year-close.js';
 import { logAudit } from '../services/audit.js';
 import { getFinancialYear, formatFinancialYearLabel } from '../../lib/financial-year.js';
-import { getFinancialYearStartMonth } from '../services/year-close.js';
 
 const fyYearSchema = z.object({
 	fyYear: z.coerce.number().int().min(1900).max(2100)
@@ -28,7 +29,9 @@ function handleYearCloseError(error: unknown, reply: any) {
 export default async function financialYearsRoutes(fastify: FastifyInstance) {
 	// GET /api/financial-years/closed
 	fastify.get('/closed', async () => {
-		return { years: await listClosedYears() };
+		const repaired = await repairYearEndCloseEntryDates();
+		if (repaired > 0) await saveDatabase();
+		return { years: await listClosedYears(), repairedEntryDates: repaired };
 	});
 
 	// GET /api/financial-years/preview?fyYear=2025
@@ -45,6 +48,10 @@ export default async function financialYearsRoutes(fastify: FastifyInstance) {
 
 	// GET /api/financial-years/status — current FY + closed list (for UI)
 	fastify.get('/status', async () => {
+		// One-time style repair: shift any close entries that landed on 01/01 next year
+		const repaired = await repairYearEndCloseEntryDates();
+		if (repaired > 0) await saveDatabase();
+
 		const startMonth = await getFinancialYearStartMonth();
 		const currentFyYear = getFinancialYear(new Date(), startMonth);
 		const years = await listClosedYears();
@@ -52,7 +59,8 @@ export default async function financialYearsRoutes(fastify: FastifyInstance) {
 			startMonth,
 			currentFyYear,
 			currentLabel: formatFinancialYearLabel(currentFyYear, startMonth),
-			closedYears: years
+			closedYears: years,
+			repairedEntryDates: repaired
 		};
 	});
 
