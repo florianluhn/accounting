@@ -197,8 +197,9 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			const totalLiabilities = liabilities.reduce((sum, g) => sum + g.totalBalance, 0);
 			const totalEquity = equity.reduce((sum, g) => sum + g.totalBalance, 0);
 
-			// Calculate retained earnings (from Profit and Loss accounts)
-			// Retained Earnings = Revenue (Profit) - Expenses (Loss)
+			// Unclosed net income still sitting in P&L accounts (after year-end close,
+			// closed years are zeroed into equity "Retained Earnings YYYY" accounts).
+			// Labelled as current-period earnings on the balance sheet.
 			const revenue = balances.filter((b) => b.glAccountType === 'Profit');
 			const expenses = balances.filter((b) => b.glAccountType === 'Loss');
 			const totalRevenue = revenue.reduce((sum, a) => sum + a.balance, 0);
@@ -218,7 +219,9 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				},
 				equity: {
 					accounts: equity,
+					/** Net income not yet closed into a Retained Earnings equity account. */
 					retainedEarnings,
+					retainedEarningsLabel: 'Net Income (unclosed)',
 					total: totalEquity + retainedEarnings
 				},
 				totalLiabilitiesAndEquity: totalLiabilities + totalEquity + retainedEarnings,

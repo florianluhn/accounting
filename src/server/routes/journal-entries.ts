@@ -15,10 +15,21 @@ import { eq, and, gte, lte, desc, or, isNull, isNotNull, ne, inArray, count } fr
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { logAudit, generateBatchId } from '../services/audit.js';
+import { assertDateNotInClosedYear, YearCloseError } from '../services/year-close.js';
 import { join } from 'path';
 import { unlink } from 'fs/promises';
 import { existsSync } from 'fs';
 import { CONFIG } from '../config.js';
+
+function closedYearReply(error: unknown, reply: any) {
+	if (error instanceof YearCloseError) {
+		return reply.status(error.statusCode).send({
+			error: error.statusCode === 403 ? 'Forbidden' : 'Bad Request',
+			message: error.message
+		});
+	}
+	return null;
+}
 
 /** Exact phrase required to purge every journal entry (Settings danger zone). */
 export const DELETE_ALL_JOURNAL_ENTRIES_CONFIRM = 'DELETE ALL JOURNAL ENTRIES';
@@ -413,6 +424,17 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			return { preview: false, count: 0, updated: 0, ...responseBase };
 		}
 
+		// Refuse mass updates that touch entries in a closed financial year
+		try {
+			for (const row of matched) {
+				await assertDateNotInClosedYear(row.entryDate);
+			}
+		} catch (e) {
+			const r = closedYearReply(e, reply);
+			if (r) return r;
+			throw e;
+		}
+
 		let updated: { id: number }[];
 
 		if (data.field === 'copy_description_to_category') {
@@ -484,7 +506,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 				amount: journalEntries.amount,
 				currencyCode: journalEntries.currencyCode,
 				debitAccountId: journalEntries.debitAccountId,
-				creditAccountId: journalEntries.creditAccountId
+				creditAccountId: journalEntries.creditAccountId,
+				entryDate: journalEntries.entryDate
 			})
 			.from(journalEntries)
 			.where(inArray(journalEntries.id, ids));
@@ -494,6 +517,19 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 				error: 'Not Found',
 				message: 'No matching journal entries found for the selected IDs'
 			});
+		}
+
+		try {
+			for (const row of existing) {
+				await assertDateNotInClosedYear(row.entryDate);
+			}
+			if (data.set.entryDate) {
+				await assertDateNotInClosedYear(data.set.entryDate);
+			}
+		} catch (e) {
+			const r = closedYearReply(e, reply);
+			if (r) return r;
+			throw e;
 		}
 
 		// Validate accounts if provided
@@ -738,6 +774,14 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 		async (request, reply) => {
 			const validatedData = createJournalEntrySchema.parse(request.body);
 
+			try {
+				await assertDateNotInClosedYear(validatedData.entryDate);
+			} catch (e) {
+				const r = closedYearReply(e, reply);
+				if (r) return r;
+				throw e;
+			}
+
 			// Check if debit account exists
 			const debitAccount = await db
 				.select()
@@ -856,6 +900,18 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 				error: 'Not Found',
 				message: `Journal entry ${id} not found`
 			});
+		}
+
+		// Block edits when the existing or new date falls in a closed year
+		try {
+			await assertDateNotInClosedYear(existing[0].entryDate);
+			if (validatedData.entryDate) {
+				await assertDateNotInClosedYear(validatedData.entryDate);
+			}
+		} catch (e) {
+			const r = closedYearReply(e, reply);
+			if (r) return r;
+			throw e;
 		}
 
 		// Validate debit and credit accounts are different if both provided
@@ -1006,6 +1062,14 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 		}
 
 		const oldEntry = existing[0];
+
+		try {
+			await assertDateNotInClosedYear(oldEntry.entryDate);
+		} catch (e) {
+			const r = closedYearReply(e, reply);
+			if (r) return r;
+			throw e;
+		}
 
 		// Delete journal entry
 		await db.delete(journalEntries).where(eq(journalEntries.id, id));
@@ -1229,6 +1293,14 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 				const entryDate = new Date(record.Date);
 				if (isNaN(entryDate.getTime())) {
 					throw new Error(`Invalid date: ${record.Date}`);
+				}
+
+				// Block imports into closed financial years
+				try {
+					await assertDateNotInClosedYear(entryDate);
+				} catch (e) {
+					if (e instanceof YearCloseError) throw e;
+					throw e;
 				}
 
 				// Find debit account by account number

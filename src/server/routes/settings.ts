@@ -6,6 +6,7 @@ import { join, extname } from 'path';
 import { mkdir, writeFile, unlink, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { CONFIG } from '../config.js';
+import { hasAnyClosedYear } from '../services/year-close.js';
 
 const SETTING_KEYS = [
 	'vendors',
@@ -78,7 +79,7 @@ export default async function settingsRoutes(fastify: FastifyInstance) {
 	});
 
 	// PUT /api/settings
-	fastify.put<{ Body: Record<string, boolean | number | string> }>('/', async (request) => {
+	fastify.put<{ Body: Record<string, boolean | number | string> }>('/', async (request, reply) => {
 		const body = request.body;
 		for (const key of SETTING_KEYS) {
 			if (key in body && typeof body[key] === 'boolean') {
@@ -90,6 +91,16 @@ export default async function settingsRoutes(fastify: FastifyInstance) {
 			typeof body[FINANCIAL_YEAR_START_MONTH_KEY] === 'number'
 		) {
 			const month = parseFinancialYearStartMonth(String(body[FINANCIAL_YEAR_START_MONTH_KEY]));
+			const current = parseFinancialYearStartMonth(
+				(await getSetting(FINANCIAL_YEAR_START_MONTH_KEY)) ?? '1'
+			);
+			if (month !== current && (await hasAnyClosedYear())) {
+				return reply.status(409).send({
+					error: 'Conflict',
+					message:
+						'Cannot change the financial year start month after one or more years have been closed. Closed-year date ranges are locked to the start month used at close time.'
+				});
+			}
 			await setSetting(FINANCIAL_YEAR_START_MONTH_KEY, String(month));
 		}
 		if (ORGANIZATION_NAME_KEY in body && typeof body[ORGANIZATION_NAME_KEY] === 'string') {

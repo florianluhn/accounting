@@ -1170,6 +1170,40 @@ function migrateBudgets(): void {
 	}
 }
 
+function migrateClosedFinancialYears(): void {
+	try {
+		const tableCheck = sqlite.exec(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name='closed_financial_years'"
+		);
+		if (tableCheck.length === 0 || tableCheck[0].values.length === 0) {
+			console.log('Creating closed_financial_years table...');
+			sqlite.run(`
+				CREATE TABLE IF NOT EXISTS closed_financial_years (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					fy_year INTEGER NOT NULL UNIQUE,
+					start_month INTEGER NOT NULL,
+					net_income REAL NOT NULL,
+					retained_earnings_account_id INTEGER NOT NULL REFERENCES subledger_accounts(id),
+					label TEXT NOT NULL,
+					closed_at INTEGER NOT NULL DEFAULT (unixepoch())
+				)
+			`);
+			sqlite.run(
+				'CREATE INDEX IF NOT EXISTS idx_closed_fy_year ON closed_financial_years(fy_year)'
+			);
+			sqlite.run(
+				'CREATE INDEX IF NOT EXISTS idx_closed_fy_re_account ON closed_financial_years(retained_earnings_account_id)'
+			);
+			console.log('✓ closed_financial_years table created successfully');
+		} else {
+			console.log('✓ closed_financial_years table already exists');
+		}
+	} catch (error) {
+		console.error('Failed to migrate closed_financial_years:', error);
+		throw error;
+	}
+}
+
 migrateAuditLogs();
 migrateVendors();
 migrateTimeEntries();
@@ -1185,6 +1219,7 @@ migrateAttachmentsInventoryItem();
 migrateFixedAssets();
 migrateBudgets();
 migrateCheckReference();
+migrateClosedFinancialYears();
 
 setupTriggers();
 

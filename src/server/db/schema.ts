@@ -468,6 +468,38 @@ export const appSettings = sqliteTable('app_settings', {
 });
 
 // ========================================
+// Closed Financial Years (year-end close lock + RE tracking)
+// ========================================
+export const closedFinancialYears = sqliteTable(
+	'closed_financial_years',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		/** Financial-year start year (e.g. 2025 for FY 2025 or FY 2025–2026). */
+		fyYear: integer('fy_year').notNull().unique(),
+		/** FY start month (1–12) in effect when the year was closed. */
+		startMonth: integer('start_month').notNull(),
+		/** Net income transferred to retained earnings (revenue − expenses). */
+		netIncome: real('net_income').notNull(),
+		/** Equity subledger that holds this year's retained earnings. */
+		retainedEarningsAccountId: integer('retained_earnings_account_id')
+			.notNull()
+			.references(() => subledgerAccounts.id, { onDelete: 'restrict' }),
+		/** Display label, e.g. "Retained Earnings 2025". */
+		label: text('label').notNull(),
+		closedAt: integer('closed_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`)
+	},
+	(table) => ({
+		fyYearIdx: index('idx_closed_fy_year').on(table.fyYear),
+		reAccountIdx: index('idx_closed_fy_re_account').on(table.retainedEarningsAccountId)
+	})
+);
+
+export type ClosedFinancialYear = typeof closedFinancialYears.$inferSelect;
+export type NewClosedFinancialYear = typeof closedFinancialYears.$inferInsert;
+
+// ========================================
 // Booking Platforms Table
 // ========================================
 export const bookingPlatforms = sqliteTable(

@@ -831,7 +831,10 @@ export interface BalanceSheetReport {
 	};
 	equity: {
 		accounts: GLAccountGroup[];
+		/** Net income still in P&L (not yet closed to a year-specific RE account). */
 		retainedEarnings: number;
+		/** Display label for the unclosed earnings line (e.g. "Net Income (unclosed)"). */
+		retainedEarningsLabel?: string;
 		total: number;
 	};
 	totalLiabilitiesAndEquity: number;
@@ -1218,6 +1221,68 @@ export const settingsAPI = {
 	},
 	async deleteLogo(): Promise<{ success: boolean; hasLogo: boolean }> {
 		return apiFetch('/api/settings/logo', { method: 'DELETE' });
+	}
+};
+
+// ========================================
+// Financial Years / Year-end close API
+// ========================================
+
+export interface ClosedFinancialYear {
+	id: number;
+	fyYear: number;
+	startMonth: number;
+	netIncome: number;
+	retainedEarningsAccountId: number;
+	label: string;
+	closedAt: Date | string | null;
+	periodStart: string;
+	periodEnd: string;
+}
+
+export interface YearClosePreview {
+	fyYear: number;
+	startMonth: number;
+	label: string;
+	periodStart: string;
+	periodEnd: string;
+	totalRevenue: number;
+	totalExpenses: number;
+	netIncome: number;
+	profitAccountCount: number;
+	lossAccountCount: number;
+	alreadyClosed: boolean;
+	lines: Array<{
+		accountId: number;
+		accountNumber: string;
+		accountName: string;
+		glAccountType: string;
+		balance: number;
+	}>;
+}
+
+export interface FinancialYearStatus {
+	startMonth: number;
+	currentFyYear: number;
+	currentLabel: string;
+	closedYears: ClosedFinancialYear[];
+}
+
+export const financialYearsAPI = {
+	async status(): Promise<FinancialYearStatus> {
+		return apiFetch('/api/financial-years/status');
+	},
+	async listClosed(): Promise<{ years: ClosedFinancialYear[] }> {
+		return apiFetch('/api/financial-years/closed');
+	},
+	async preview(fyYear: number): Promise<YearClosePreview> {
+		return apiFetch(`/api/financial-years/preview?fyYear=${fyYear}`);
+	},
+	async close(fyYear: number): Promise<ClosedFinancialYear> {
+		return apiFetch('/api/financial-years/close', {
+			method: 'POST',
+			body: JSON.stringify({ fyYear })
+		});
 	}
 };
 

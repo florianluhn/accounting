@@ -5,6 +5,7 @@ import { fixedAssets, journalEntries, subledgerAccounts, glAccounts } from '../d
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { logAudit } from '../services/audit.js';
 import { generateSchedule, getEligibleMonths } from '../services/depreciation.js';
+import { assertDateNotInClosedYear, YearCloseError } from '../services/year-close.js';
 
 // ─── Validation schemas ────────────────────────────────────────────────────
 
@@ -396,6 +397,18 @@ export default async function fixedAssetsRoutes(fastify: FastifyInstance) {
 		const [yearStr, monthStr] = month.split('-');
 		const entryDate = new Date(Date.UTC(parseInt(yearStr), parseInt(monthStr) - 1, 1));
 
+		try {
+			await assertDateNotInClosedYear(entryDate);
+		} catch (e) {
+			if (e instanceof YearCloseError) {
+				return reply.status(e.statusCode).send({
+					error: e.statusCode === 403 ? 'Forbidden' : 'Bad Request',
+					message: e.message
+				});
+			}
+			throw e;
+		}
+
 		const newEntry = await db.insert(journalEntries).values({
 			entryDate,
 			amount,
@@ -469,6 +482,16 @@ export default async function fixedAssetsRoutes(fastify: FastifyInstance) {
 				const amount = scheduleEntry.monthlyAmount;
 				const [yearStr, monthStr] = month.split('-');
 				const entryDate = new Date(Date.UTC(parseInt(yearStr), parseInt(monthStr) - 1, 1));
+
+				try {
+					await assertDateNotInClosedYear(entryDate);
+				} catch (e) {
+					if (e instanceof YearCloseError) {
+						errors.push(`${asset.name}: ${e.message}`);
+						continue;
+					}
+					throw e;
+				}
 
 				await db.insert(journalEntries).values({
 					entryDate,
@@ -546,6 +569,16 @@ export default async function fixedAssetsRoutes(fastify: FastifyInstance) {
 			const amount = scheduleEntry.monthlyAmount;
 			const [yearStr, monthStr] = month.split('-');
 			const entryDate = new Date(Date.UTC(parseInt(yearStr), parseInt(monthStr) - 1, 1));
+
+			try {
+				await assertDateNotInClosedYear(entryDate);
+			} catch (e) {
+				if (e instanceof YearCloseError) {
+					// Skip months that fall in a closed year
+					continue;
+				}
+				throw e;
+			}
 
 			const newEntry = await db.insert(journalEntries).values({
 				entryDate,

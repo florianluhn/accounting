@@ -262,7 +262,7 @@ function buildBalanceSheetHtml(report: BalanceSheetReport, opts: ReportPdfOption
 				${renderGlGroups(report.equity.accounts, opts, false)}
 				<table class="lines"><tbody>
 					<tr class="sub-row">
-						<td class="label">Retained Earnings</td>
+						<td class="label">${escapeHtml(report.equity.retainedEarningsLabel || 'Net Income (unclosed)')}</td>
 						${moneyCell(report.equity.retainedEarnings, symbol)}
 					</tr>
 				</tbody></table>

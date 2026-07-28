@@ -620,7 +620,9 @@
 							<table class="table table-sm">
 								<tbody>
 									<tr>
-										<td class="text-sm">Retained Earnings</td>
+										<td class="text-sm">
+											{balanceSheet.equity.retainedEarningsLabel || 'Net Income (unclosed)'}
+										</td>
 										<td class="text-right font-mono">
 											{formatCurrency(balanceSheet.equity.retainedEarnings)}
 										</td>

@@ -8,12 +8,16 @@
 		bookingsAPI,
 		type BookingConfig,
 		type BookingPlatform,
-		journalEntriesAPI
+		journalEntriesAPI,
+		financialYearsAPI,
+		type ClosedFinancialYear,
+		type YearClosePreview
 	} from '$lib/api';
 	import { modules, branding, financialYear, applyModuleSettings, setAppLogo } from '$lib/modules.svelte';
 	import {
 		MONTH_NAMES,
 		financialYearEndMonth,
+		formatFinancialYearLabel,
 		formatFinancialYearRange,
 		getFinancialYear
 	} from '$lib/financial-year';
@@ -72,12 +76,22 @@
 	let editingPlatformFeeRate = $state(0);
 	let editingPlatformWithholdsTaxes = $state(false);
 
+	// Year-end close
+	let closedYears = $state<ClosedFinancialYear[]>([]);
+	let closeFyYear = $state(getFinancialYear(new Date(), 1) - 1);
+	let closePreview = $state<YearClosePreview | null>(null);
+	let closePreviewLoading = $state(false);
+	let closeLoading = $state(false);
+	let closeMessage = $state('');
+	let closeError = $state('');
+
 	$effect(() => {
 		loadCurrencies();
 		loadBackupStatus();
 		loadModuleSettings();
 		loadBookingSettings();
 		loadJournalEntryCount();
+		loadClosedYears();
 	});
 
 	async function loadJournalEntryCount() {
@@ -235,8 +249,66 @@
 			const s = await settingsAPI.get();
 			applyModuleSettings(s);
 			organizationNameDraft = branding.organizationName;
+			// Default close target: previous financial year
+			closeFyYear = getFinancialYear(new Date(), financialYear.startMonth) - 1;
 		} catch (e) {
 			console.error('Failed to load module settings:', e);
+		}
+	}
+
+	async function loadClosedYears() {
+		try {
+			const status = await financialYearsAPI.status();
+			closedYears = status.closedYears;
+		} catch (e) {
+			console.error('Failed to load closed years:', e);
+		}
+	}
+
+	async function loadClosePreview() {
+		try {
+			closePreviewLoading = true;
+			closeError = '';
+			closePreview = await financialYearsAPI.preview(closeFyYear);
+		} catch (e) {
+			closePreview = null;
+			closeError = e instanceof Error ? e.message : 'Failed to load close preview';
+		} finally {
+			closePreviewLoading = false;
+		}
+	}
+
+	function formatCloseAmount(amount: number): string {
+		return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+	}
+
+	async function confirmCloseYear() {
+		if (!closePreview || closePreview.alreadyClosed) return;
+
+		const label = formatFinancialYearLabel(closePreview.fyYear, closePreview.startMonth);
+		const ni = formatCloseAmount(closePreview.netIncome);
+		const ok = confirm(
+			`Close ${label}?\n\n` +
+				`Period: ${closePreview.periodStart} → ${closePreview.periodEnd}\n` +
+				`Net income/(loss): ${ni}\n` +
+				`Will create equity account: ${closePreview.label}\n\n` +
+				`This posts year-end closing entries and permanently locks all journal activity in that period. Continue?`
+		);
+		if (!ok) return;
+
+		try {
+			closeLoading = true;
+			closeError = '';
+			closeMessage = '';
+			const result = await financialYearsAPI.close(closeFyYear);
+			closeMessage = `Closed ${result.label}. Net income ${formatCloseAmount(result.netIncome)} posted to equity. The period ${result.periodStart} – ${result.periodEnd} is now locked.`;
+			closePreview = null;
+			await loadClosedYears();
+			closePreview = await financialYearsAPI.preview(closeFyYear);
+		} catch (e) {
+			closeError = e instanceof Error ? e.message : 'Failed to close financial year';
+		} finally {
+			closeLoading = false;
 		}
 	}
 
@@ -648,6 +720,7 @@
 						id="fy-start-month"
 						class="select select-bordered"
 						value={String(financialYear.startMonth)}
+						disabled={closedYears.length > 0}
 						onchange={(e) => {
 							const v = parseInt((e.currentTarget as HTMLSelectElement).value, 10);
 							financialYear.startMonth = Number.isFinite(v) && v >= 1 && v <= 12 ? v : 1;
@@ -658,6 +731,13 @@
 							<option value={String(i + 1)}>{name}</option>
 						{/each}
 					</select>
+					{#if closedYears.length > 0}
+						<label class="label">
+							<span class="label-text-alt text-warning">
+								Locked after a year has been closed
+							</span>
+						</label>
+					{/if}
 				</div>
 				<div class="form-control">
 					<label class="label">
@@ -686,6 +766,163 @@
 			{#if financialYearMessage}
 				<div class="alert alert-success text-sm py-2 mt-3">
 					<span>{financialYearMessage}</span>
+				</div>
+			{/if}
+
+			<div class="divider"></div>
+
+			<h3 class="font-semibold text-lg mb-1">Close financial year</h3>
+			<p class="text-sm text-base-content/60 mb-4">
+				Transfer the year’s net income or loss into a dedicated equity account
+				(e.g. <span class="font-medium">Retained Earnings 2025</span>) on the balance sheet.
+				After closing, no journal postings, edits, or deletions are allowed in that period.
+			</p>
+
+			<div class="flex flex-wrap gap-3 items-end mb-4">
+				<div class="form-control">
+					<label class="label" for="close-fy-year">
+						<span class="label-text">Financial year to close</span>
+					</label>
+					<input
+						id="close-fy-year"
+						type="number"
+						class="input input-bordered w-36"
+						min="1900"
+						max="2100"
+						bind:value={closeFyYear}
+					/>
+					<label class="label">
+						<span class="label-text-alt text-base-content/50">
+							Start year of the FY (e.g. 2025)
+						</span>
+					</label>
+				</div>
+				<button
+					type="button"
+					class="btn btn-outline"
+					onclick={loadClosePreview}
+					disabled={closePreviewLoading || closeLoading}
+				>
+					{#if closePreviewLoading}
+						<span class="loading loading-spinner loading-sm"></span>
+					{/if}
+					Preview close
+				</button>
+			</div>
+
+			{#if closeError}
+				<div class="alert alert-error text-sm py-2 mb-3">
+					<span>{closeError}</span>
+				</div>
+			{/if}
+			{#if closeMessage}
+				<div class="alert alert-success text-sm py-2 mb-3">
+					<span>{closeMessage}</span>
+				</div>
+			{/if}
+
+			{#if closePreview}
+				<div class="rounded-box border border-base-300 bg-base-200/50 p-4 space-y-2 max-w-2xl">
+					<div class="font-medium">
+						{formatFinancialYearLabel(closePreview.fyYear, closePreview.startMonth)}
+						{#if closePreview.alreadyClosed}
+							<span class="badge badge-success badge-sm ml-2">Already closed</span>
+						{/if}
+					</div>
+					<p class="text-sm text-base-content/70">
+						{closePreview.periodStart} → {closePreview.periodEnd}
+					</p>
+					<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+						<div>
+							<span class="text-base-content/50">Revenue</span>
+							<div class="font-mono font-medium">{formatCloseAmount(closePreview.totalRevenue)}</div>
+						</div>
+						<div>
+							<span class="text-base-content/50">Expenses</span>
+							<div class="font-mono font-medium">{formatCloseAmount(closePreview.totalExpenses)}</div>
+						</div>
+						<div>
+							<span class="text-base-content/50">Net income/(loss)</span>
+							<div
+								class="font-mono font-bold"
+								class:text-success={closePreview.netIncome > 0}
+								class:text-error={closePreview.netIncome < 0}
+							>
+								{formatCloseAmount(closePreview.netIncome)}
+							</div>
+						</div>
+					</div>
+					<p class="text-sm">
+						Equity account to create:
+						<span class="font-semibold">{closePreview.label}</span>
+						· {closePreview.profitAccountCount + closePreview.lossAccountCount} P&amp;L account(s) to close
+					</p>
+					{#if closePreview.lines.length > 0}
+						<details class="text-sm">
+							<summary class="cursor-pointer text-base-content/70">View closing lines</summary>
+							<ul class="mt-2 space-y-1 max-h-48 overflow-y-auto">
+								{#each closePreview.lines as line}
+									<li class="flex justify-between gap-4 font-mono text-xs">
+										<span>{line.accountNumber} — {line.accountName}</span>
+										<span>{formatCloseAmount(line.balance)}</span>
+									</li>
+								{/each}
+							</ul>
+						</details>
+					{/if}
+					{#if !closePreview.alreadyClosed}
+						<button
+							type="button"
+							class="btn btn-primary mt-2"
+							onclick={confirmCloseYear}
+							disabled={closeLoading}
+						>
+							{#if closeLoading}
+								<span class="loading loading-spinner loading-sm"></span>
+								Closing...
+							{:else}
+								Close financial year
+							{/if}
+						</button>
+					{/if}
+				</div>
+			{/if}
+
+			{#if closedYears.length > 0}
+				<div class="mt-6">
+					<h4 class="font-medium mb-2">Closed years</h4>
+					<div class="overflow-x-auto">
+						<table class="table table-sm">
+							<thead>
+								<tr>
+									<th>Year</th>
+									<th>Period</th>
+									<th>Equity account</th>
+									<th class="text-right">Net income</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each closedYears as cy}
+									<tr>
+										<td class="font-medium">
+											{formatFinancialYearLabel(cy.fyYear, cy.startMonth)}
+										</td>
+										<td class="text-sm text-base-content/70">
+											{cy.periodStart} – {cy.periodEnd}
+										</td>
+										<td>{cy.label}</td>
+										<td
+											class="text-right font-mono"
+											class:text-success={cy.netIncome > 0}
+											class:text-error={cy.netIncome < 0}
+										>
+											{formatCloseAmount(cy.netIncome)}
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
 				</div>
 			{/if}
 		</div>

@@ -76,6 +76,7 @@ import settingsRoutes from './routes/settings.js';
 import bookingsRoutes from './routes/bookings.js';
 import fixedAssetsRoutes from './routes/fixed-assets.js';
 import budgetsRoutes from './routes/budgets.js';
+import financialYearsRoutes from './routes/financial-years.js';
 
 await fastify.register(currenciesRoutes, { prefix: '/api/currencies' });
 await fastify.register(glAccountsRoutes, { prefix: '/api/gl-accounts' });
@@ -93,6 +94,7 @@ await fastify.register(settingsRoutes, { prefix: '/api/settings' });
 await fastify.register(bookingsRoutes, { prefix: '/api/bookings' });
 await fastify.register(fixedAssetsRoutes, { prefix: '/api/fixed-assets' });
 await fastify.register(budgetsRoutes, { prefix: '/api/budgets' });
+await fastify.register(financialYearsRoutes, { prefix: '/api/financial-years' });
 
 // ========================================
 // Error Handler
