@@ -856,6 +856,21 @@ export interface ProfitLossReport {
 	netIncome: number;
 }
 
+export interface MonthlyOverviewPoint {
+	year: number;
+	month: number;
+	label: string;
+	startDate: Date;
+	endDate: Date;
+	netIncome: number;
+	totalEquity: number;
+}
+
+export interface MonthlyOverviewReport {
+	currencyCode: string;
+	months: MonthlyOverviewPoint[];
+}
+
 export interface TrialBalanceReport {
 	asOfDate: Date;
 	currencyCode: string;
@@ -902,6 +917,18 @@ export const reportsAPI = {
 
 		const queryString = query.toString();
 		return apiFetch(`/api/reports/profit-loss${queryString ? `?${queryString}` : ''}`);
+	},
+
+	async monthlyOverview(params?: {
+		months?: number;
+		currencyCode?: string;
+	}): Promise<MonthlyOverviewReport> {
+		const query = new URLSearchParams();
+		if (params?.months != null) query.set('months', String(params.months));
+		if (params?.currencyCode) query.set('currencyCode', params.currencyCode);
+
+		const queryString = query.toString();
+		return apiFetch(`/api/reports/monthly-overview${queryString ? `?${queryString}` : ''}`);
 	},
 
 	async trialBalance(params?: { endDate?: Date; currencyCode?: string }): Promise<TrialBalanceReport> {

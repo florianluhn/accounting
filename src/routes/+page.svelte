@@ -6,6 +6,7 @@
 		currenciesAPI,
 		type BalanceSheetReport,
 		type ProfitLossReport,
+		type MonthlyOverviewReport,
 		type JournalEntry,
 		type SubledgerAccount,
 		type Currency,
@@ -14,12 +15,14 @@
 
 	let balanceSheet = $state<BalanceSheetReport | null>(null);
 	let profitLoss = $state<ProfitLossReport | null>(null);
+	let monthlyOverview = $state<MonthlyOverviewReport | null>(null);
 	let journalEntries = $state<JournalEntry[]>([]);
 	let subledgerAccounts = $state<SubledgerAccount[]>([]);
 	let currencies = $state<Currency[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 	let selectedCurrency = $state('USD');
+	let hoveredMonthIndex = $state<number | null>(null);
 
 	// P&L drill-down state
 	let expandedGLAccounts = $state<Set<number>>(new Set());
@@ -53,10 +56,11 @@
 				selectedCurrency = defaultCurrency.code;
 			}
 
-			// Load balance sheet, P&L, journal entries, and subledger accounts in parallel
+			// Load balance sheet, P&L, monthly trend, journal entries, and subledger accounts in parallel
 			await Promise.all([
 				loadBalanceSheet(),
 				loadProfitLoss(),
+				loadMonthlyOverview(),
 				loadJournalEntries(),
 				loadSubledgerAccounts()
 			]);
@@ -88,6 +92,18 @@
 			profitLoss = await reportsAPI.profitLoss({ startDate: startOfMonth, endDate: endOfToday, currencyCode: selectedCurrency });
 		} catch (e) {
 			console.error('Error loading profit & loss:', e);
+		}
+	}
+
+	async function loadMonthlyOverview() {
+		try {
+			monthlyOverview = await reportsAPI.monthlyOverview({
+				months: 11,
+				currencyCode: selectedCurrency
+			});
+		} catch (e) {
+			console.error('Error loading monthly overview:', e);
+			monthlyOverview = null;
 		}
 	}
 
@@ -123,7 +139,7 @@
 		expandedGLAccounts = new Set();
 		expandedSubledgers = new Set();
 		subledgerCategories = new Map();
-		await Promise.all([loadBalanceSheet(), loadProfitLoss()]);
+		await Promise.all([loadBalanceSheet(), loadProfitLoss(), loadMonthlyOverview()]);
 	}
 
 	function getCurrentMonthName(): string {
@@ -223,6 +239,88 @@
 	function countSubledgerAccounts(groups: { subledgerAccounts: any[] }[]): number {
 		return groups.reduce((sum, g) => sum + g.subledgerAccounts.length, 0);
 	}
+
+	// Equity chart geometry (viewBox coordinates)
+	const chartW = 640;
+	const chartH = 220;
+	const chartPad = { top: 18, right: 16, bottom: 36, left: 58 };
+
+	let equityChart = $derived.by(() => {
+		const points = monthlyOverview?.months ?? [];
+		if (points.length === 0) return null;
+
+		const values = points.map((p) => p.totalEquity);
+		const minV = Math.min(...values);
+		const maxV = Math.max(...values);
+		const span = maxV - minV;
+		// Pad the range so a flat line still has room
+		const pad = span === 0 ? Math.max(Math.abs(maxV) * 0.1, 1) : span * 0.12;
+		const yMin = minV - pad;
+		const yMax = maxV + pad;
+		const yRange = yMax - yMin || 1;
+
+		const plotW = chartW - chartPad.left - chartPad.right;
+		const plotH = chartH - chartPad.top - chartPad.bottom;
+		const n = points.length;
+
+		const coords = points.map((p, i) => {
+			const x = chartPad.left + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+			const y = chartPad.top + plotH - ((p.totalEquity - yMin) / yRange) * plotH;
+			return { x, y, ...p };
+		});
+
+		const linePath = coords
+			.map((c, i) => `${i === 0 ? 'M' : 'L'} ${c.x.toFixed(2)} ${c.y.toFixed(2)}`)
+			.join(' ');
+
+		const areaPath =
+			coords.length > 0
+				? `${linePath} L ${coords[coords.length - 1].x.toFixed(2)} ${(chartPad.top + plotH).toFixed(2)} L ${coords[0].x.toFixed(2)} ${(chartPad.top + plotH).toFixed(2)} Z`
+				: '';
+
+		// Nice y-axis ticks
+		const tickCount = 4;
+		const ticks = Array.from({ length: tickCount }, (_, i) => {
+			const t = i / (tickCount - 1);
+			const value = yMax - t * yRange;
+			const y = chartPad.top + t * plotH;
+			return { value, y };
+		});
+
+		return { coords, linePath, areaPath, ticks, yMin, yMax };
+	});
+
+	function compactCurrency(amount: number): string {
+		const currency = currencies.find((c) => c.code === selectedCurrency);
+		const symbol = currency?.symbol || selectedCurrency;
+		const abs = Math.abs(amount);
+		const sign = amount < 0 ? '-' : '';
+		if (abs >= 1_000_000) {
+			return `${sign}${symbol}${(abs / 1_000_000).toFixed(1)}M`;
+		}
+		if (abs >= 10_000) {
+			return `${sign}${symbol}${(abs / 1_000).toFixed(1)}k`;
+		}
+		if (abs >= 1_000) {
+			return `${sign}${symbol}${(abs / 1_000).toFixed(2)}k`;
+		}
+		return `${sign}${symbol}${abs.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+	}
+
+	/** "Jan 2025" → "Jan '25" for tight chart axis labels */
+	function shortMonthLabel(label: string): string {
+		return label.replace(/ (\d{4})$/, (_m, y: string) => ` '${y.slice(2)}`);
+	}
+
+	let activeMonthIndex = $derived(
+		hoveredMonthIndex ?? (monthlyOverview?.months.length ? monthlyOverview.months.length - 1 : null)
+	);
+
+	let activeMonth = $derived(
+		activeMonthIndex != null && monthlyOverview
+			? monthlyOverview.months[activeMonthIndex]
+			: null
+	);
 </script>
 
 <div class="page-shell">
@@ -479,6 +577,193 @@
 						</div>
 						<div class="text-xs font-semibold uppercase tracking-wider mt-1 {profitLoss.netIncome >= 0 ? 'text-success/80' : 'text-error/80'}">
 							{profitLoss.netIncome >= 0 ? 'Profit' : 'Loss'}
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Past 11 months: net income list + equity trend (line chart) -->
+	{#if !loading && monthlyOverview && monthlyOverview.months.length > 0}
+		<div class="card mb-6 overflow-hidden">
+			<div class="card-body">
+				<div class="flex flex-wrap items-start justify-between gap-3 mb-1">
+					<div>
+						<p class="section-label mb-1">History</p>
+						<h2 class="card-title text-xl">Past 11 months</h2>
+						<p class="text-sm text-base-content/55 mt-1">
+							Monthly net income with total equity at each month-end
+						</p>
+					</div>
+					{#if activeMonth}
+						<div class="rounded-2xl border border-base-300/60 bg-base-200/40 px-4 py-3 min-w-[10.5rem] text-right">
+							<p class="text-2xs font-bold uppercase tracking-wider text-base-content/45 mb-0.5">
+								{activeMonth.label}
+							</p>
+							<p class="text-xs font-semibold text-base-content/55 mb-1">Equity</p>
+							<p class="font-mono font-bold text-lg tracking-tight text-accent">
+								{formatCurrency(activeMonth.totalEquity)}
+							</p>
+							<p class="text-xs font-semibold text-base-content/55 mt-2 mb-0.5">Net income</p>
+							<p class="font-mono font-bold text-sm tracking-tight {activeMonth.netIncome >= 0 ? 'text-success' : 'text-error'}">
+								{formatCurrency(activeMonth.netIncome)}
+							</p>
+						</div>
+					{/if}
+				</div>
+
+				<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-2">
+					<!-- Month list -->
+					<div class="lg:col-span-4 xl:col-span-3">
+						<div class="rounded-2xl border border-base-300/50 overflow-hidden max-h-[22rem] overflow-y-auto">
+							{#each monthlyOverview.months as point, i}
+								<button
+									type="button"
+									class="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left transition-colors border-b border-base-300/40 last:border-b-0
+										{activeMonthIndex === i
+										? 'bg-primary/10 ring-1 ring-inset ring-primary/20'
+										: 'hover:bg-base-200/70'}"
+									onmouseenter={() => (hoveredMonthIndex = i)}
+									onfocus={() => (hoveredMonthIndex = i)}
+									onmouseleave={() => (hoveredMonthIndex = null)}
+									onblur={() => (hoveredMonthIndex = null)}
+								>
+									<div class="min-w-0">
+										<p class="text-sm font-semibold tracking-tight truncate">{point.label}</p>
+										<p class="text-2xs font-medium uppercase tracking-wider mt-0.5 {point.netIncome >= 0 ? 'text-success/75' : 'text-error/75'}">
+											{point.netIncome >= 0 ? 'Profit' : 'Loss'}
+										</p>
+									</div>
+									<span class="font-mono text-sm font-bold tabular-nums shrink-0 {point.netIncome >= 0 ? 'text-success' : 'text-error'}">
+										{formatCurrency(point.netIncome)}
+									</span>
+								</button>
+							{/each}
+						</div>
+					</div>
+
+					<!-- Equity line / area chart -->
+					<div class="lg:col-span-8 xl:col-span-9 min-w-0">
+						<div class="rounded-2xl border border-base-300/50 bg-gradient-to-b from-base-200/30 to-transparent px-2 sm:px-3 py-3">
+							<div class="flex items-center justify-between gap-2 px-2 mb-1">
+								<p class="text-2xs font-bold uppercase tracking-wider text-base-content/45">
+									Total equity
+								</p>
+								<div class="flex items-center gap-1.5 text-2xs font-medium text-base-content/45">
+									<span class="inline-block w-3 h-0.5 rounded-full bg-accent"></span>
+									Month-end position
+								</div>
+							</div>
+
+							{#if equityChart}
+								<div class="relative w-full" style="aspect-ratio: {chartW} / {chartH};">
+									<svg
+										viewBox="0 0 {chartW} {chartH}"
+										class="w-full h-full block"
+										role="img"
+										aria-label="Total equity over the past 11 months"
+									>
+										<defs>
+											<linearGradient id="equityAreaFill" x1="0" y1="0" x2="0" y2="1">
+												<stop offset="0%" stop-color="oklch(var(--a))" stop-opacity="0.28" />
+												<stop offset="100%" stop-color="oklch(var(--a))" stop-opacity="0.02" />
+											</linearGradient>
+											<linearGradient id="equityLineStroke" x1="0" y1="0" x2="1" y2="0">
+												<stop offset="0%" stop-color="oklch(var(--a))" stop-opacity="0.75" />
+												<stop offset="100%" stop-color="oklch(var(--p))" stop-opacity="0.95" />
+											</linearGradient>
+										</defs>
+
+										<!-- Grid + y ticks -->
+										{#each equityChart.ticks as tick}
+											<line
+												x1={chartPad.left}
+												y1={tick.y}
+												x2={chartW - chartPad.right}
+												y2={tick.y}
+												stroke="oklch(var(--b3))"
+												stroke-opacity="0.55"
+												stroke-width="1"
+												stroke-dasharray="3 4"
+											/>
+											<text
+												x={chartPad.left - 8}
+												y={tick.y + 3.5}
+												text-anchor="end"
+												class="fill-base-content"
+												fill-opacity="0.45"
+												font-size="10"
+												font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+											>
+												{compactCurrency(tick.value)}
+											</text>
+										{/each}
+
+										<!-- Area fill -->
+										<path d={equityChart.areaPath} fill="url(#equityAreaFill)" />
+
+										<!-- Line -->
+										<path
+											d={equityChart.linePath}
+											fill="none"
+											stroke="url(#equityLineStroke)"
+											stroke-width="2.5"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										/>
+
+										<!-- Points + x labels -->
+										{#each equityChart.coords as c, i}
+											{@const isActive = activeMonthIndex === i}
+											<!-- Hit target -->
+											<rect
+												x={c.x - (equityChart.coords.length > 1 ? (chartW - chartPad.left - chartPad.right) / (equityChart.coords.length - 1) / 2 : 24)}
+												y={chartPad.top}
+												width={equityChart.coords.length > 1 ? (chartW - chartPad.left - chartPad.right) / (equityChart.coords.length - 1) : 48}
+												height={chartH - chartPad.top - chartPad.bottom}
+												fill="transparent"
+												class="cursor-pointer"
+												onmouseenter={() => (hoveredMonthIndex = i)}
+												onmouseleave={() => (hoveredMonthIndex = null)}
+												role="presentation"
+											/>
+											{#if isActive}
+												<line
+													x1={c.x}
+													y1={chartPad.top}
+													x2={c.x}
+													y2={chartH - chartPad.bottom}
+													stroke="oklch(var(--a))"
+													stroke-opacity="0.35"
+													stroke-width="1.5"
+													stroke-dasharray="2 3"
+												/>
+											{/if}
+											<circle
+												cx={c.x}
+												cy={c.y}
+												r={isActive ? 5.5 : 3.5}
+												fill="oklch(var(--b1))"
+												stroke="oklch(var(--a))"
+												stroke-width={isActive ? 2.5 : 1.75}
+												class="transition-all"
+											/>
+											<text
+												x={c.x}
+												y={chartH - 12}
+												text-anchor="middle"
+												class="fill-base-content"
+												fill-opacity={isActive ? 0.85 : 0.45}
+												font-size="10"
+												font-weight={isActive ? '700' : '500'}
+											>
+												{shortMonthLabel(c.label)}
+											</text>
+										{/each}
+									</svg>
+								</div>
+							{/if}
 						</div>
 					</div>
 				</div>

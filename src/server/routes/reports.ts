@@ -297,6 +297,137 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		}
 	);
 
+	// GET /api/reports/monthly-overview - Past N complete months of net income + equity
+	// Single-pass over journal entries (avoids N× full report recalculations).
+	const monthlyOverviewSchema = z.object({
+		months: z.coerce.number().int().min(1).max(24).default(11),
+		currencyCode: z.string().length(3).default('USD')
+	});
+
+	fastify.get<{ Querystring: z.infer<typeof monthlyOverviewSchema> }>(
+		'/monthly-overview',
+		async (request) => {
+			const { months, currencyCode } = monthlyOverviewSchema.parse(request.query);
+
+			const now = new Date();
+			// Complete calendar months only (exclude the current, still-open month)
+			const monthWindows: Array<{
+				year: number;
+				month: number; // 1–12
+				startDate: Date;
+				endDate: Date;
+				label: string;
+			}> = [];
+
+			for (let i = months; i >= 1; i--) {
+				const anchor = new Date(now.getFullYear(), now.getMonth() - i, 1);
+				const year = anchor.getFullYear();
+				const month = anchor.getMonth() + 1;
+				const startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
+				const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+				const label = startDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+				monthWindows.push({ year, month, startDate, endDate, label });
+			}
+
+			const rangeEnd = monthWindows[monthWindows.length - 1]?.endDate ?? now;
+
+			const accounts = await db
+				.select({
+					id: subledgerAccounts.id,
+					glAccountType: glAccounts.type
+				})
+				.from(subledgerAccounts)
+				.innerJoin(glAccounts, eq(subledgerAccounts.glAccountId, glAccounts.id))
+				.where(
+					and(
+						eq(subledgerAccounts.isActive, true),
+						sql`${glAccounts.type} != 'Opening Balance'`
+					)
+				);
+
+			const accountTypeById = new Map(accounts.map((a) => [a.id, a.glAccountType]));
+			const debitNormalTypes = new Set(['Asset', 'Cash', 'Accounts Receivable', 'Loss']);
+
+			// All entries through the end of the last complete month (equity is cumulative)
+			const endOfRange = new Date(rangeEnd);
+			endOfRange.setUTCHours(23, 59, 59, 999);
+			const entries = await db
+				.select()
+				.from(journalEntries)
+				.where(lte(journalEntries.entryDate, endOfRange));
+
+			function signedDelta(accountId: number, isDebit: boolean, amount: number): number {
+				const type = accountTypeById.get(accountId);
+				if (!type) return 0;
+				const debitNormal = debitNormalTypes.has(type);
+				if (isDebit) return debitNormal ? amount : -amount;
+				return debitNormal ? -amount : amount;
+			}
+
+			const series = monthWindows.map((window) => {
+				// Match calculateBalances date normalization (UTC day bounds)
+				const startBound = new Date(window.startDate);
+				startBound.setUTCHours(0, 0, 0, 0);
+				const endBound = new Date(window.endDate);
+				endBound.setUTCHours(23, 59, 59, 999);
+				const startMs = startBound.getTime();
+				const endMs = endBound.getTime();
+
+				let periodRevenue = 0;
+				let periodExpenses = 0;
+				let equityTotal = 0;
+				let unclosedRevenue = 0;
+				let unclosedExpenses = 0;
+
+				for (const entry of entries) {
+					const entryMs = new Date(entry.entryDate).getTime();
+					if (entryMs > endMs) continue;
+
+					const isYearEndClose = entry.category === 'Year-end close';
+					const inPeriod = entryMs >= startMs && entryMs <= endMs;
+					const amount = entry.amountInUSD;
+
+					const debitType = accountTypeById.get(entry.debitAccountId);
+					const creditType = accountTypeById.get(entry.creditAccountId);
+
+					// Monthly net income (operating P&L only)
+					if (inPeriod && !isYearEndClose) {
+						if (debitType === 'Profit') periodRevenue += signedDelta(entry.debitAccountId, true, amount);
+						if (creditType === 'Profit') periodRevenue += signedDelta(entry.creditAccountId, false, amount);
+						if (debitType === 'Loss') periodExpenses += signedDelta(entry.debitAccountId, true, amount);
+						if (creditType === 'Loss') periodExpenses += signedDelta(entry.creditAccountId, false, amount);
+					}
+
+					// Cumulative equity + unclosed earnings as of month-end (matches balance sheet)
+					if (debitType === 'Equity') equityTotal += signedDelta(entry.debitAccountId, true, amount);
+					if (creditType === 'Equity') equityTotal += signedDelta(entry.creditAccountId, false, amount);
+					if (debitType === 'Profit') unclosedRevenue += signedDelta(entry.debitAccountId, true, amount);
+					if (creditType === 'Profit') unclosedRevenue += signedDelta(entry.creditAccountId, false, amount);
+					if (debitType === 'Loss') unclosedExpenses += signedDelta(entry.debitAccountId, true, amount);
+					if (creditType === 'Loss') unclosedExpenses += signedDelta(entry.creditAccountId, false, amount);
+				}
+
+				const netIncome = periodRevenue - periodExpenses;
+				const totalEquity = equityTotal + (unclosedRevenue - unclosedExpenses);
+
+				return {
+					year: window.year,
+					month: window.month,
+					label: window.label,
+					startDate: window.startDate,
+					endDate: window.endDate,
+					netIncome,
+					totalEquity
+				};
+			});
+
+			return {
+				currencyCode,
+				months: series
+			};
+		}
+	);
+
 	// GET /api/reports/subledger-categories/:id - Category breakdown for a subledger account
 	fastify.get<{
 		Params: { id: string };
