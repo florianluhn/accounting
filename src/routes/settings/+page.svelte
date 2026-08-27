@@ -396,6 +396,7 @@
 				timeTracking: modules.timeTracking,
 				bookings: modules.bookings,
 				fixedAssets: modules.fixedAssets,
+				investments: modules.investments,
 				budgets: modules.budgets,
 				checkReferences: modules.checkReferences
 			});
@@ -1169,6 +1170,13 @@
 						<div class="text-xs text-base-content/50">Fixed assets management</div>
 					</div>
 					<input type="checkbox" class="toggle toggle-primary" bind:checked={modules.fixedAssets} onchange={saveModuleSettings} />
+				</label>
+				<label class="flex items-center justify-between p-3 bg-base-200 rounded-box cursor-pointer">
+					<div>
+						<div class="font-medium">Investments</div>
+						<div class="text-xs text-base-content/50">Stocks, crypto, bullion and other holdings</div>
+					</div>
+					<input type="checkbox" class="toggle toggle-primary" bind:checked={modules.investments} onchange={saveModuleSettings} />
 				</label>
 				<label class="flex items-center justify-between p-3 bg-base-200 rounded-box cursor-pointer">
 					<div>

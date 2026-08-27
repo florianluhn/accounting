@@ -15,6 +15,7 @@ const SETTING_KEYS = [
 	'timeTracking',
 	'bookings',
 	'fixedAssets',
+	'investments',
 	'budgets',
 	'checkReferences'
 ] as const;
@@ -64,6 +65,7 @@ async function getAllSettings() {
 		timeTracking: (map.timeTracking ?? 'true') === 'true',
 		bookings: (map.bookings ?? 'true') === 'true',
 		fixedAssets: (map.fixedAssets ?? 'true') === 'true',
+		investments: (map.investments ?? 'true') === 'true',
 		budgets: (map.budgets ?? 'false') === 'true',
 		checkReferences: (map.checkReferences ?? 'false') === 'true',
 		financialYearStartMonth: parseFinancialYearStartMonth(map[FINANCIAL_YEAR_START_MONTH_KEY]),

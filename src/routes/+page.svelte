@@ -188,7 +188,8 @@
 				try {
 					const result = await reportsAPI.subledgerCategories(accountId, {
 						startDate: plStartDate,
-						endDate: plEndDate
+						endDate: plEndDate,
+						currencyCode: selectedCurrency
 					});
 					const catMap = new Map(subledgerCategories);
 					catMap.set(accountId, result.categories);
@@ -214,7 +215,8 @@
 			const result = await reportsAPI.categoryEntries(accountId, {
 				startDate: plStartDate,
 				endDate: plEndDate,
-				category
+				category,
+				currencyCode: selectedCurrency
 			});
 			modalEntries = result.entries;
 		} catch (e) {

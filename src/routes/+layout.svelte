@@ -43,6 +43,7 @@
 		{ href: '/customers', label: 'Customers', icon: 'customers', module: 'customers' },
 		{ href: '/inventory', label: 'Inventory', icon: 'inventory', module: 'inventory' },
 		{ href: '/assets', label: 'Fixed Assets', icon: 'assets', module: 'fixedAssets' },
+		{ href: '/investments', label: 'Investments', icon: 'investments', module: 'investments' },
 		{ href: '/timetracking', label: 'Time Tracking', icon: 'time', module: 'timeTracking' },
 		{ href: '/bookings', label: 'Bookings', icon: 'bookings', module: 'bookings' },
 		{ href: '/budgets', label: 'Budgets', icon: 'budgets', module: 'budgets' },
@@ -209,6 +210,8 @@
 										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
 									{:else if item.icon === 'assets'}
 										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0H5m14 0h2M5 21H3m4-10h.01M9 11h.01M13 11h.01M17 11h.01M7 15h.01M11 15h.01M15 15h.01"/></svg>
+									{:else if item.icon === 'investments'}
+										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
 									{:else if item.icon === 'time'}
 										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
 									{:else if item.icon === 'bookings'}

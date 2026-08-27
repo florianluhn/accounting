@@ -200,6 +200,13 @@
 			(activeReport === 'trial-balance' && !!trialBalance)
 	);
 
+	async function handleCurrencyChange() {
+		// Re-run the active report so amounts convert into the newly selected currency
+		if (hasGeneratedReport) {
+			await generateReport();
+		}
+	}
+
 	function handleExportPdf() {
 		try {
 			error = '';
@@ -250,7 +257,8 @@
 				try {
 					const result = await reportsAPI.subledgerCategories(accountId, {
 						startDate: parseLocalDateStart(startDate),
-						endDate: parseLocalDateEnd(endDate)
+						endDate: parseLocalDateEnd(endDate),
+						currencyCode: selectedCurrency
 					});
 					const catMap = new Map(subledgerCategories);
 					catMap.set(accountId, result.categories);
@@ -276,7 +284,8 @@
 			const result = await reportsAPI.categoryEntries(accountId, {
 				startDate: parseLocalDateStart(startDate),
 				endDate: parseLocalDateEnd(endDate),
-				category
+				category,
+				currencyCode: selectedCurrency
 			});
 			modalEntries = result.entries;
 		} catch (e) {
@@ -446,7 +455,11 @@
 					<label class="label">
 						<span class="label-text">Currency</span>
 					</label>
-					<select class="select select-bordered" bind:value={selectedCurrency}>
+					<select
+						class="select select-bordered"
+						bind:value={selectedCurrency}
+						onchange={handleCurrencyChange}
+					>
 						{#each currencies as currency}
 							<option value={currency.code}>
 								{currency.code} - {currency.name}

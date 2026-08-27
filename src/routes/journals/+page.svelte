@@ -8,6 +8,7 @@
 		customersAPI,
 		inventoryAPI,
 		fixedAssetsAPI,
+		investmentsAPI,
 		type JournalEntry,
 		type SubledgerAccount,
 		type Currency,
@@ -15,7 +16,8 @@
 		type Vendor,
 		type Customer,
 		type InventoryItem,
-		type FixedAsset
+		type FixedAsset,
+		type Investment
 	} from '$lib/api';
 	import { modules } from '$lib/modules.svelte';
 
@@ -26,6 +28,7 @@
 	let customers = $state<Customer[]>([]);
 	let finishedGoodItems = $state<(InventoryItem & { categoryName: string })[]>([]);
 	let fixedAssets = $state<FixedAsset[]>([]);
+	let investments = $state<Investment[]>([]);
 	let entryAttachments = $state<Map<number, Attachment[]>>(new Map());
 	let loading = $state(true);
 	let error = $state('');
@@ -52,7 +55,9 @@
 		customerId: 0,
 		inventoryItemId: 0,
 		inventoryLinkType: '' as '' | 'sale' | 'own_use' | 'gift',
-		fixedAssetId: 0
+		fixedAssetId: 0,
+		investmentId: 0,
+		investmentQuantity: ''
 	});
 	let selectedFiles = $state<File[]>([]);
 	let extraAmounts = $state<string[]>([]);
@@ -148,7 +153,8 @@
 			loadVendors(),
 			loadCustomers(),
 			loadFinishedGoodItems(),
-			loadFixedAssets()
+			loadFixedAssets(),
+			loadInvestments()
 		]);
 	}
 
@@ -165,6 +171,16 @@
 		try {
 			if (modules.fixedAssets) {
 				fixedAssets = await fixedAssetsAPI.list();
+			}
+		} catch (e) {
+			// non-critical
+		}
+	}
+
+	async function loadInvestments() {
+		try {
+			if (modules.investments) {
+				investments = await investmentsAPI.list();
 			}
 		} catch (e) {
 			// non-critical
@@ -326,7 +342,9 @@
 			customerId: 0,
 			inventoryItemId: 0,
 			inventoryLinkType: '' as '' | 'sale' | 'own_use' | 'gift',
-			fixedAssetId: 0
+			fixedAssetId: 0,
+			investmentId: 0,
+			investmentQuantity: ''
 		};
 		editingEntry = null;
 		selectedFiles = [];
@@ -353,7 +371,10 @@
 			customerId: entry.customerId || 0,
 			inventoryItemId: entry.inventoryItemId || 0,
 			inventoryLinkType: (entry.inventoryLinkType as '' | 'sale' | 'own_use' | 'gift') || '',
-			fixedAssetId: entry.fixedAssetId || 0
+			fixedAssetId: entry.fixedAssetId || 0,
+			investmentId: entry.investmentId || 0,
+			investmentQuantity:
+				entry.investmentQuantity != null ? String(entry.investmentQuantity) : ''
 		};
 		editingEntry = entry;
 		extraAmounts = [];
@@ -419,8 +440,20 @@
 				inventoryItemId: formData.inventoryItemId || null,
 				inventoryLinkType: formData.inventoryItemId && formData.inventoryLinkType ? formData.inventoryLinkType : null,
 				fixedAssetId: formData.fixedAssetId || null,
-				isDepreciation: false // Always false here, depreciation is posted via fixed assets directly
+				isDepreciation: false, // Always false here, depreciation is posted via fixed assets directly
+				investmentId: formData.investmentId || null,
+				investmentQuantity: formData.investmentId
+					? parseFloat(String(formData.investmentQuantity).trim())
+					: null
 			};
+
+			if (formData.investmentId) {
+				const qty = baseData.investmentQuantity;
+				if (qty == null || isNaN(qty) || qty === 0) {
+					error = 'Enter a non-zero quantity for the selected investment (buy = positive, sell = negative)';
+					return;
+				}
+			}
 
 			let firstEntryId: number;
 
@@ -441,8 +474,15 @@
 				const created = await journalEntriesAPI.create({ ...baseData, amount: allAmounts[0] });
 				firstEntryId = created.id;
 
+				// Extra split amounts share accounts/description but not investment quantity
+				// (quantity applies once to the primary buy/sell posting).
+				const extraBase = {
+					...baseData,
+					investmentId: null as number | null,
+					investmentQuantity: null as number | null
+				};
 				for (let i = 1; i < allAmounts.length; i++) {
-					await journalEntriesAPI.create({ ...baseData, amount: allAmounts[i] });
+					await journalEntriesAPI.create({ ...extraBase, amount: allAmounts[i] });
 				}
 			}
 
@@ -1196,6 +1236,15 @@
 												Asset: #{entry.fixedAssetId}
 											</span>
 										{/if}
+										{#if entry.investmentId}
+											{@const inv = investments.find((i) => i.id === entry.investmentId)}
+											<span class="badge badge-accent badge-sm mt-1 block w-fit max-w-full truncate" title={inv?.name || `Investment #${entry.investmentId}`}>
+												{inv?.name || `Investment #${entry.investmentId}`}
+												{#if entry.investmentQuantity != null}
+													· qty {(entry.investmentQuantity > 0 ? '+' : '') + entry.investmentQuantity}
+												{/if}
+											</span>
+										{/if}
 									</td>
 									<td class="align-top">
 										<div class="flex flex-col gap-1">
@@ -1505,6 +1554,39 @@
 								{/each}
 							</select>
 						</div>
+					{/if}
+
+					<!-- Investment link -->
+					{#if modules.investments && investments.length > 0}
+						<div class="form-control col-span-2">
+							<label class="label">
+								<span class="label-text">Investment (Optional)</span>
+								<span class="label-text-alt text-xs text-base-content/50">Stocks, crypto, bullion…</span>
+							</label>
+							<select class="select select-bordered" bind:value={formData.investmentId}>
+								<option value={0}>No investment linked</option>
+								{#each investments as inv}
+									<option value={inv.id}>
+										{inv.name}{inv.symbol ? ` (${inv.symbol})` : ''} — {inv.category}
+									</option>
+								{/each}
+							</select>
+						</div>
+						{#if formData.investmentId}
+							<div class="form-control col-span-2">
+								<label class="label">
+									<span class="label-text">Quantity</span>
+									<span class="label-text-alt text-xs text-base-content/50">Buy = positive · Sell = negative</span>
+								</label>
+								<input
+									type="number"
+									class="input input-bordered font-mono"
+									step="any"
+									bind:value={formData.investmentQuantity}
+									placeholder="e.g. 10 or -4"
+								/>
+							</div>
+						{/if}
 					{/if}
 
 					<!-- Finished Good Item link -->

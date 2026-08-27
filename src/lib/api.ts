@@ -426,6 +426,9 @@ export interface JournalEntry {
 	inventoryItemName?: string | null;
 	fixedAssetId?: number | null;
 	isDepreciation?: boolean;
+	investmentId?: number | null;
+	/** Signed quantity when linked to an investment (buy = +, sell = −). */
+	investmentQuantity?: number | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -443,6 +446,7 @@ export const journalEntriesAPI = {
 		customerId?: number;
 		inventoryItemId?: number;
 		fixedAssetId?: number;
+		investmentId?: number;
 		/** Exact check / reference number */
 		checkReference?: string;
 	}): Promise<JournalEntry[]> {
@@ -457,6 +461,7 @@ export const journalEntriesAPI = {
 		if (params?.customerId) query.set('customerId', String(params.customerId));
 		if (params?.inventoryItemId) query.set('inventoryItemId', String(params.inventoryItemId));
 		if (params?.fixedAssetId) query.set('fixedAssetId', String(params.fixedAssetId));
+		if (params?.investmentId) query.set('investmentId', String(params.investmentId));
 		if (params?.checkReference) query.set('checkReference', params.checkReference);
 
 		const queryString = query.toString();
@@ -954,11 +959,12 @@ export const reportsAPI = {
 
 	async subledgerCategories(
 		accountId: number,
-		params?: { startDate?: Date; endDate?: Date }
+		params?: { startDate?: Date; endDate?: Date; currencyCode?: string }
 	): Promise<{ categories: CategoryBreakdown[] }> {
 		const query = new URLSearchParams();
 		if (params?.startDate) query.set('startDate', params.startDate.toISOString());
 		if (params?.endDate) query.set('endDate', params.endDate.toISOString());
+		if (params?.currencyCode) query.set('currencyCode', params.currencyCode);
 
 		const queryString = query.toString();
 		return apiFetch(`/api/reports/subledger-categories/${accountId}${queryString ? `?${queryString}` : ''}`);
@@ -966,12 +972,13 @@ export const reportsAPI = {
 
 	async categoryEntries(
 		accountId: number,
-		params?: { startDate?: Date; endDate?: Date; category?: string }
+		params?: { startDate?: Date; endDate?: Date; category?: string; currencyCode?: string }
 	): Promise<{ entries: JournalEntry[] }> {
 		const query = new URLSearchParams();
 		if (params?.startDate) query.set('startDate', params.startDate.toISOString());
 		if (params?.endDate) query.set('endDate', params.endDate.toISOString());
 		if (params?.category) query.set('category', params.category);
+		if (params?.currencyCode) query.set('currencyCode', params.currencyCode);
 
 		const queryString = query.toString();
 		return apiFetch(`/api/reports/category-entries/${accountId}${queryString ? `?${queryString}` : ''}`);
@@ -1212,6 +1219,7 @@ export interface AppSettings {
 	timeTracking: boolean;
 	bookings: boolean;
 	fixedAssets: boolean;
+	investments: boolean;
 	budgets: boolean;
 	checkReferences: boolean;
 	/** Month the financial year starts (1 = January … 12 = December). End month is start − 1. */
@@ -1798,6 +1806,106 @@ export const fixedAssetsAPI = {
 		return apiFetch(`/api/fixed-assets/${id}/depreciate-past`, {
 			method: 'POST',
 			body: JSON.stringify({ throughMonth })
+		});
+	}
+};
+
+// ========================================
+// Investments API (stocks, crypto, bullion, …)
+// ========================================
+
+export interface Investment {
+	id: number;
+	name: string;
+	symbol: string | null;
+	category: string;
+	unit: string | null;
+	assetAccountId: number;
+	assetAccountName: string;
+	assetAccountGlType?: string;
+	currentPrice: number;
+	description: string | null;
+	quantity: number;
+	costBasis: number;
+	avgCost: number;
+	marketValue: number;
+	unrealizedPL: number;
+	unrealizedPLPercent: number | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface InvestmentCategorySummary {
+	category: string;
+	investmentCount: number;
+	quantity: number;
+	costBasis: number;
+	marketValue: number;
+	unrealizedPL: number;
+	unrealizedPLPercent: number | null;
+}
+
+export interface InvestmentSummary {
+	overall: {
+		investmentCount: number;
+		costBasis: number;
+		marketValue: number;
+		unrealizedPL: number;
+		unrealizedPLPercent: number | null;
+	};
+	byCategory: InvestmentCategorySummary[];
+	categories: string[];
+}
+
+export type CreateInvestmentPayload = {
+	name: string;
+	symbol?: string | null;
+	category: string;
+	unit?: string | null;
+	assetAccountId: number;
+	currentPrice?: number;
+	description?: string | null;
+};
+
+export type UpdateInvestmentPayload = Partial<CreateInvestmentPayload>;
+
+export const investmentsAPI = {
+	async list(params?: { category?: string }): Promise<Investment[]> {
+		const query = new URLSearchParams();
+		if (params?.category) query.set('category', params.category);
+		const qs = query.toString();
+		return apiFetch(`/api/investments${qs ? `?${qs}` : ''}`);
+	},
+
+	async summary(): Promise<InvestmentSummary> {
+		return apiFetch('/api/investments/summary');
+	},
+
+	async categories(): Promise<string[]> {
+		return apiFetch('/api/investments/categories');
+	},
+
+	async get(id: number): Promise<Investment> {
+		return apiFetch(`/api/investments/${id}`);
+	},
+
+	async create(data: CreateInvestmentPayload): Promise<Investment> {
+		return apiFetch('/api/investments', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+
+	async update(id: number, data: UpdateInvestmentPayload): Promise<Investment> {
+		return apiFetch(`/api/investments/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify(data)
+		});
+	},
+
+	async delete(id: number): Promise<void> {
+		return apiFetch(`/api/investments/${id}`, {
+			method: 'DELETE'
 		});
 	}
 };

@@ -922,6 +922,106 @@ function migrateAttachmentsInventoryItem(): void {
 	}
 }
 
+function migrateInvestments(): void {
+	try {
+		const tableCheck = sqlite.exec(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name='investments'"
+		);
+		if (tableCheck.length === 0 || tableCheck[0].values.length === 0) {
+			console.log('Creating investments table...');
+			sqlite.run(`
+				CREATE TABLE IF NOT EXISTS investments (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					name TEXT NOT NULL,
+					symbol TEXT,
+					category TEXT NOT NULL,
+					unit TEXT,
+					asset_account_id INTEGER NOT NULL REFERENCES subledger_accounts(id) ON DELETE RESTRICT,
+					current_price REAL NOT NULL DEFAULT 0,
+					description TEXT,
+					created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+					updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+				)
+			`);
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_investments_name ON investments(name)');
+			sqlite.run('CREATE INDEX IF NOT EXISTS idx_investments_category ON investments(category)');
+			sqlite.run(
+				'CREATE INDEX IF NOT EXISTS idx_investments_asset_account ON investments(asset_account_id)'
+			);
+			sqlite.run(`
+				CREATE TRIGGER IF NOT EXISTS update_investments_timestamp
+				AFTER UPDATE ON investments
+				FOR EACH ROW
+				BEGIN
+					UPDATE investments SET updated_at = unixepoch() WHERE id = NEW.id;
+				END;
+			`);
+			console.log('✓ investments table created');
+		} else {
+			console.log('✓ investments table already exists');
+		}
+
+		const jeCols = sqlite.exec('PRAGMA table_info(journal_entries)');
+		if (jeCols.length > 0) {
+			const colNames = jeCols[0].values.map((c: any) => c[1]);
+			if (!colNames.includes('investment_id')) {
+				sqlite.run('ALTER TABLE journal_entries ADD COLUMN investment_id INTEGER');
+				sqlite.run(
+					'CREATE INDEX IF NOT EXISTS idx_journal_entries_investment ON journal_entries(investment_id)'
+				);
+				console.log('✓ Added investment_id to journal_entries');
+			}
+			if (!colNames.includes('investment_quantity')) {
+				sqlite.run('ALTER TABLE journal_entries ADD COLUMN investment_quantity REAL');
+				console.log('✓ Added investment_quantity to journal_entries');
+			}
+		}
+
+		const auditCheck = sqlite.exec(
+			"SELECT sql FROM sqlite_master WHERE type='table' AND name='audit_logs'"
+		);
+		if (auditCheck.length > 0 && auditCheck[0].values.length > 0) {
+			const createSql = auditCheck[0].values[0][0] as string;
+			if (!createSql.includes("'investment'")) {
+				console.log('Updating audit_logs to support investment resource type...');
+				const resourceTypes =
+					"'currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment', 'vendor', 'customer', 'time_entry', 'inventory_category', 'inventory_item', 'fixed_asset', 'investment'";
+				sqlite.run(`
+					CREATE TABLE IF NOT EXISTS audit_logs_new (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						operation TEXT NOT NULL CHECK(operation IN ('CREATE', 'UPDATE', 'DELETE')),
+						resource_type TEXT NOT NULL CHECK(resource_type IN (${resourceTypes})),
+						resource_id TEXT NOT NULL,
+						source TEXT NOT NULL DEFAULT 'Web UI' CHECK(source IN ('Web UI', 'CSV Import', 'API')),
+						batch_id TEXT,
+						batch_summary TEXT,
+						old_data TEXT,
+						new_data TEXT,
+						timestamp INTEGER NOT NULL DEFAULT (unixepoch()),
+						description TEXT
+					)
+				`);
+				sqlite.run('INSERT INTO audit_logs_new SELECT * FROM audit_logs');
+				sqlite.run('DROP TABLE audit_logs');
+				sqlite.run('ALTER TABLE audit_logs_new RENAME TO audit_logs');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)');
+				sqlite.run(
+					'CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type, resource_id)'
+				);
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_operation ON audit_logs(operation)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_source ON audit_logs(source)');
+				sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_batch ON audit_logs(batch_id)');
+				console.log('✓ audit_logs updated to support investment resource type');
+			}
+		}
+
+		sqlite.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('investments', 'true')`);
+	} catch (error) {
+		console.error('Failed to migrate investments:', error);
+		throw error;
+	}
+}
+
 function migrateFixedAssets(): void {
 	try {
 		// Create fixed_assets table
@@ -1032,6 +1132,7 @@ function migrateAppSettings(): void {
 			inventory: 'true',
 			timeTracking: 'true',
 			fixedAssets: 'true',
+			investments: 'true',
 			financialYearStartMonth: '1'
 		};
 		for (const [key, value] of Object.entries(defaults)) {
@@ -1217,6 +1318,7 @@ migrateBookings();
 migrateAttachmentsBookings();
 migrateAttachmentsInventoryItem();
 migrateFixedAssets();
+migrateInvestments();
 migrateBudgets();
 migrateCheckReference();
 migrateClosedFinancialYears();

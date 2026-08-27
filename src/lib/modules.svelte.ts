@@ -8,6 +8,7 @@ export interface ModuleSettings {
 	timeTracking: boolean;
 	bookings: boolean;
 	fixedAssets: boolean;
+	investments: boolean;
 	budgets: boolean;
 	/** Check / reference numbers on journal entries for matching related postings */
 	checkReferences: boolean;
@@ -20,6 +21,7 @@ export const modules = $state<ModuleSettings>({
 	timeTracking: true,
 	bookings: true,
 	fixedAssets: true,
+	investments: true,
 	budgets: false,
 	checkReferences: false
 });
@@ -51,6 +53,7 @@ export function applyModuleSettings(
 	if (settings.timeTracking !== undefined) modules.timeTracking = settings.timeTracking;
 	if (settings.bookings !== undefined) modules.bookings = settings.bookings;
 	if (settings.fixedAssets !== undefined) modules.fixedAssets = settings.fixedAssets;
+	if (settings.investments !== undefined) modules.investments = settings.investments;
 	if (settings.budgets !== undefined) modules.budgets = settings.budgets;
 	if (settings.checkReferences !== undefined) modules.checkReferences = settings.checkReferences;
 	if (settings.hasLogo !== undefined) branding.hasLogo = settings.hasLogo;

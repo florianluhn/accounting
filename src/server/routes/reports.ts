@@ -16,6 +16,32 @@ async function getFinancialYearStartMonth(): Promise<number> {
 	return n;
 }
 
+/**
+ * Exchange rate stored as: 1 unit of currency = `exchangeRate` USD.
+ * Journal amounts are stored in USD (`amountInUSD`); convert for reporting with
+ * `amountInUSD / rate`.
+ */
+async function getExchangeRateToUsd(currencyCode: string): Promise<number> {
+	const code = (currencyCode || 'USD').toUpperCase();
+	if (code === 'USD') return 1;
+
+	const rows = await db
+		.select({ exchangeRate: currencies.exchangeRate })
+		.from(currencies)
+		.where(eq(currencies.code, code))
+		.limit(1);
+
+	const rate = rows[0]?.exchangeRate;
+	if (rate == null || !Number.isFinite(rate) || rate <= 0) {
+		return 1;
+	}
+	return rate;
+}
+
+function fromUsd(amountInUSD: number, exchangeRateToUsd: number): number {
+	return amountInUSD / exchangeRateToUsd;
+}
+
 // Validation schemas
 const dateRangeSchema = z.object({
 	startDate: z.coerce.date().optional(),
@@ -100,21 +126,24 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		}
 		const entries = await entriesQuery;
 
+		// Convert stored USD amounts into the requested reporting currency
+		const exchangeRate = await getExchangeRateToUsd(currencyCode);
+
 		// Calculate balances for each account
 		const balances: AccountBalance[] = accounts.map((account) => {
 			let balance = 0;
 
 			// Sum debits and credits
 			for (const entry of entries) {
-				const amountInUSD = entry.amountInUSD;
+				const amount = fromUsd(entry.amountInUSD, exchangeRate);
 
 				if (entry.debitAccountId === account.id) {
 					// Debit increases: Assets, Expenses (Loss)
 					// Debit decreases: Liabilities, Equity, Revenue (Profit)
 					if (['Asset', 'Cash', 'Accounts Receivable', 'Loss'].includes(account.glAccountType)) {
-						balance += amountInUSD;
+						balance += amount;
 					} else {
-						balance -= amountInUSD;
+						balance -= amount;
 					}
 				}
 
@@ -122,9 +151,9 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 					// Credit decreases: Assets, Expenses (Loss)
 					// Credit increases: Liabilities, Equity, Revenue (Profit)
 					if (['Asset', 'Cash', 'Accounts Receivable', 'Loss'].includes(account.glAccountType)) {
-						balance -= amountInUSD;
+						balance -= amount;
 					} else {
-						balance += amountInUSD;
+						balance += amount;
 					}
 				}
 			}
@@ -263,9 +292,14 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				budgetMap.set(b.subledgerAccountId, b.amount);
 			}
 
+			// Budgets are stored in the same base units as historical USD reporting;
+			// convert them into the selected reporting currency alongside balances.
+			const exchangeRate = await getExchangeRateToUsd(currencyCode);
+
 			// Add budget to each balance
 			for (const balance of balances) {
-				balance.budget = budgetMap.get(balance.accountId) || 0;
+				const budgetAmount = budgetMap.get(balance.accountId) || 0;
+				balance.budget = fromUsd(budgetAmount, exchangeRate);
 			}
 
 			// Filter for Profit and Loss accounts, then group by GL account
@@ -347,6 +381,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 
 			const accountTypeById = new Map(accounts.map((a) => [a.id, a.glAccountType]));
 			const debitNormalTypes = new Set(['Asset', 'Cash', 'Accounts Receivable', 'Loss']);
+			const exchangeRate = await getExchangeRateToUsd(currencyCode);
 
 			// All entries through the end of the last complete month (equity is cumulative)
 			const endOfRange = new Date(rangeEnd);
@@ -385,7 +420,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 
 					const isYearEndClose = entry.category === 'Year-end close';
 					const inPeriod = entryMs >= startMs && entryMs <= endMs;
-					const amount = entry.amountInUSD;
+					const amount = fromUsd(entry.amountInUSD, exchangeRate);
 
 					const debitType = accountTypeById.get(entry.debitAccountId);
 					const creditType = accountTypeById.get(entry.creditAccountId);
@@ -431,7 +466,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 	// GET /api/reports/subledger-categories/:id - Category breakdown for a subledger account
 	fastify.get<{
 		Params: { id: string };
-		Querystring: { startDate?: string; endDate?: string };
+		Querystring: { startDate?: string; endDate?: string; currencyCode?: string };
 	}>('/subledger-categories/:id', async (request, reply) => {
 		const accountId = parseInt(request.params.id);
 
@@ -462,6 +497,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 
 		const glAccountType = account[0].glAccountType;
 		const isDebitNormal = ['Asset', 'Cash', 'Accounts Receivable', 'Loss'].includes(glAccountType);
+		const exchangeRate = await getExchangeRateToUsd(request.query.currencyCode || 'USD');
 
 		// Build conditions for date range
 		const conditions: any[] = [
@@ -494,13 +530,14 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 
 		for (const entry of entries) {
 			const category = entry.category || 'Uncategorized';
+			const amountInCurrency = fromUsd(entry.amountInUSD, exchangeRate);
 			let amount = 0;
 
 			if (entry.debitAccountId === accountId) {
-				amount = isDebitNormal ? entry.amountInUSD : -entry.amountInUSD;
+				amount = isDebitNormal ? amountInCurrency : -amountInCurrency;
 			}
 			if (entry.creditAccountId === accountId) {
-				amount = isDebitNormal ? -entry.amountInUSD : entry.amountInUSD;
+				amount = isDebitNormal ? -amountInCurrency : amountInCurrency;
 			}
 
 			categoryMap.set(category, (categoryMap.get(category) || 0) + amount);
@@ -517,7 +554,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 	// GET /api/reports/category-entries/:id - Journal entries for a subledger account filtered by category
 	fastify.get<{
 		Params: { id: string };
-		Querystring: { startDate?: string; endDate?: string; category?: string };
+		Querystring: { startDate?: string; endDate?: string; category?: string; currencyCode?: string };
 	}>('/category-entries/:id', async (request, reply) => {
 		const accountId = parseInt(request.params.id);
 		const categoryFilter = request.query.category;
@@ -557,13 +594,22 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			}
 		}
 
+		const exchangeRate = await getExchangeRateToUsd(request.query.currencyCode || 'USD');
+
 		const entries = await db
 			.select()
 			.from(journalEntries)
 			.where(and(...conditions))
 			.orderBy(desc(journalEntries.entryDate));
 
-		return { entries };
+		// Return amounts converted into the requested reporting currency
+		// (UI formats `amountInUSD` with the selected currency symbol).
+		return {
+			entries: entries.map((entry) => ({
+				...entry,
+				amountInUSD: fromUsd(entry.amountInUSD, exchangeRate)
+			}))
+		};
 	});
 
 	// GET /api/reports/trial-balance - Trial Balance Report

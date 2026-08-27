@@ -4,7 +4,19 @@ import { auditLogs } from '../db/schema.js';
 
 // Types for audit operations
 export type AuditOperation = 'CREATE' | 'UPDATE' | 'DELETE';
-export type ResourceType = 'currency' | 'gl_account' | 'subledger_account' | 'journal_entry' | 'attachment' | 'vendor' | 'customer' | 'time_entry' | 'inventory_category' | 'inventory_item';
+export type ResourceType =
+	| 'currency'
+	| 'gl_account'
+	| 'subledger_account'
+	| 'journal_entry'
+	| 'attachment'
+	| 'vendor'
+	| 'customer'
+	| 'time_entry'
+	| 'inventory_category'
+	| 'inventory_item'
+	| 'fixed_asset'
+	| 'investment';
 export type AuditSource = 'Web UI' | 'CSV Import' | 'API';
 
 interface LogAuditParams {

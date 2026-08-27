@@ -120,6 +120,9 @@ export const journalEntries = sqliteTable(
 		inventoryLinkType: text('inventory_link_type'), // 'sale' | 'own_use'
 		fixedAssetId: integer('fixed_asset_id'), // optional link to a fixed asset
 		isDepreciation: integer('is_depreciation', { mode: 'boolean' }).notNull().default(false), // true if this is an auto-posted depreciation entry
+		investmentId: integer('investment_id'), // optional link to an investment holding
+		/** Signed quantity for the linked investment (buy = positive, sell = negative). */
+		investmentQuantity: real('investment_quantity'),
 		createdAt: integer('created_at', { mode: 'timestamp' })
 			.notNull()
 			.default(sql`(unixepoch())`),
@@ -137,7 +140,8 @@ export const journalEntries = sqliteTable(
 		vendorIdx: index('idx_journal_entries_vendor').on(table.vendorId),
 		customerIdx: index('idx_journal_entries_customer').on(table.customerId),
 		inventoryItemIdx: index('idx_journal_entries_inventory_item').on(table.inventoryItemId),
-		fixedAssetIdx: index('idx_journal_entries_fixed_asset').on(table.fixedAssetId)
+		fixedAssetIdx: index('idx_journal_entries_fixed_asset').on(table.fixedAssetId),
+		investmentIdx: index('idx_journal_entries_investment').on(table.investmentId)
 	})
 );
 
@@ -460,6 +464,43 @@ export type FixedAsset = typeof fixedAssets.$inferSelect;
 export type NewFixedAsset = typeof fixedAssets.$inferInsert;
 
 // ========================================
+// Investments Table (stocks, crypto, bullion, etc.)
+// ========================================
+export const investments = sqliteTable(
+	'investments',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		name: text('name').notNull(),
+		symbol: text('symbol'),
+		/** User-defined category (e.g. Stock, Crypto, Bullion) — type-ahead from existing values. */
+		category: text('category').notNull(),
+		/** Display unit for quantity (shares, oz, g, …). */
+		unit: text('unit'),
+		/** Subledger account this holding rolls into on the balance sheet. */
+		assetAccountId: integer('asset_account_id')
+			.notNull()
+			.references(() => subledgerAccounts.id, { onDelete: 'restrict' }),
+		/** Memo market price per unit — overview only, not booked to the GL. */
+		currentPrice: real('current_price').notNull().default(0),
+		description: text('description'),
+		createdAt: integer('created_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer('updated_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`)
+	},
+	(table) => ({
+		nameIdx: index('idx_investments_name').on(table.name),
+		categoryIdx: index('idx_investments_category').on(table.category),
+		assetAccIdx: index('idx_investments_asset_account').on(table.assetAccountId)
+	})
+);
+
+export type Investment = typeof investments.$inferSelect;
+export type NewInvestment = typeof investments.$inferInsert;
+
+// ========================================
 // App Settings Table (key-value)
 // ========================================
 export const appSettings = sqliteTable('app_settings', {
@@ -573,7 +614,20 @@ export const auditLogs = sqliteTable(
 		id: integer('id').primaryKey({ autoIncrement: true }),
 		operation: text('operation', { enum: ['CREATE', 'UPDATE', 'DELETE'] }).notNull(),
 		resourceType: text('resource_type', {
-			enum: ['currency', 'gl_account', 'subledger_account', 'journal_entry', 'attachment', 'vendor', 'customer', 'time_entry', 'inventory_category', 'inventory_item']
+			enum: [
+				'currency',
+				'gl_account',
+				'subledger_account',
+				'journal_entry',
+				'attachment',
+				'vendor',
+				'customer',
+				'time_entry',
+				'inventory_category',
+				'inventory_item',
+				'fixed_asset',
+				'investment'
+			]
 		}).notNull(),
 		resourceId: text('resource_id').notNull(),
 		source: text('source', { enum: ['Web UI', 'CSV Import', 'API'] }).notNull().default('Web UI'),

@@ -9,13 +9,15 @@ import {
 	vendors,
 	inventoryItems,
 	customers,
-	attachments
+	attachments,
+	investments
 } from '../db/schema.js';
 import { eq, and, gte, lte, desc, or, isNull, isNotNull, ne, inArray, count } from 'drizzle-orm';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { logAudit, generateBatchId } from '../services/audit.js';
 import { assertDateNotInClosedYear, YearCloseError } from '../services/year-close.js';
+import { assertInvestmentQuantityOk } from './investments.js';
 import { join } from 'path';
 import { unlink } from 'fs/promises';
 import { existsSync } from 'fs';
@@ -81,14 +83,25 @@ const createJournalEntrySchema = z.object({
 	inventoryItemId: z.number().int().positive().nullable().optional(),
 	inventoryLinkType: z.enum(['sale', 'own_use', 'gift']).nullable().optional(),
 	fixedAssetId: z.number().int().positive().nullable().optional(),
-	isDepreciation: z.boolean().optional()
+	isDepreciation: z.boolean().optional(),
+	investmentId: z.number().int().positive().nullable().optional(),
+	/** Signed quantity when linked to an investment (buy = +, sell = −). */
+	investmentQuantity: z.number().nullable().optional()
 }).refine((data) => data.debitAccountId !== data.creditAccountId, {
 	message: 'Debit and credit accounts must be different',
 	path: ['creditAccountId']
 }).refine((data) => data.amount > 0 || !!data.inventoryItemId, {
 	message: 'Amount can only be 0 when linked to an inventory item disposition',
 	path: ['amount']
-});
+}).refine(
+	(data) =>
+		!data.investmentId ||
+		(data.investmentQuantity != null && data.investmentQuantity !== 0),
+	{
+		message: 'Quantity is required (and cannot be zero) when an investment is selected',
+		path: ['investmentQuantity']
+	}
+);
 
 const updateJournalEntrySchema = z.object({
 	entryDate: z.coerce.date().optional(),
@@ -105,7 +118,9 @@ const updateJournalEntrySchema = z.object({
 	inventoryItemId: z.number().int().positive().nullable().optional(),
 	inventoryLinkType: z.enum(['sale', 'own_use', 'gift']).nullable().optional(),
 	fixedAssetId: z.number().int().positive().nullable().optional(),
-	isDepreciation: z.boolean().optional()
+	isDepreciation: z.boolean().optional(),
+	investmentId: z.number().int().positive().nullable().optional(),
+	investmentQuantity: z.number().nullable().optional()
 });
 
 /** Mass-change: find all entries matching a field value and replace it. */
@@ -228,6 +243,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			customerId?: string;
 			inventoryItemId?: string;
 			fixedAssetId?: string;
+			investmentId?: string;
 			checkReference?: string;
 		}
 	}>('/', async (request, reply) => {
@@ -252,6 +268,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			inventoryItemName: inventoryItems.name,
 			fixedAssetId: journalEntries.fixedAssetId,
 			isDepreciation: journalEntries.isDepreciation,
+			investmentId: journalEntries.investmentId,
+			investmentQuantity: journalEntries.investmentQuantity,
 			createdAt: journalEntries.createdAt,
 			updatedAt: journalEntries.updatedAt
 		}).from(journalEntries)
@@ -329,6 +347,13 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			const fixedAssetId = parseInt(request.query.fixedAssetId);
 			if (!isNaN(fixedAssetId)) {
 				conditions.push(eq(journalEntries.fixedAssetId, fixedAssetId));
+			}
+		}
+
+		if (request.query.investmentId) {
+			const investmentId = parseInt(request.query.investmentId);
+			if (!isNaN(investmentId)) {
+				conditions.push(eq(journalEntries.investmentId, investmentId));
 			}
 		}
 
@@ -834,6 +859,33 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 					? String(validatedData.checkReference).trim()
 					: null;
 
+			const investmentId = validatedData.investmentId ?? null;
+			const investmentQuantity =
+				investmentId != null ? (validatedData.investmentQuantity ?? null) : null;
+
+			if (investmentId != null) {
+				const inv = await db
+					.select({ id: investments.id })
+					.from(investments)
+					.where(eq(investments.id, investmentId))
+					.limit(1);
+				if (inv.length === 0) {
+					return reply.status(404).send({
+						error: 'Not Found',
+						message: `Investment ${investmentId} not found`
+					});
+				}
+				const qtyCheck = await assertInvestmentQuantityOk({
+					investmentId,
+					quantity: investmentQuantity as number,
+					amountInUSD,
+					entryDate: validatedData.entryDate
+				});
+				if (!qtyCheck.ok) {
+					return reply.status(400).send({ error: 'Bad Request', message: qtyCheck.message });
+				}
+			}
+
 			// Insert new journal entry
 			const newEntry = await db
 				.insert(journalEntries)
@@ -845,7 +897,9 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 					inventoryItemId: validatedData.inventoryItemId ?? null,
 					inventoryLinkType: linkType,
 					fixedAssetId: validatedData.fixedAssetId ?? null,
-					isDepreciation: validatedData.isDepreciation ?? false
+					isDepreciation: validatedData.isDepreciation ?? false,
+					investmentId,
+					investmentQuantity
 				})
 				.returning();
 
@@ -987,7 +1041,51 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			updateData.amountInUSD = Math.round(amount * currency[0].exchangeRate * 100) / 100;
 		}
 
+		// Clear quantity when investment is unlinked
+		if (validatedData.investmentId === null) {
+			updateData.investmentQuantity = null;
+		}
+
 		const oldEntry = existing[0];
+		const nextInvestmentId =
+			validatedData.investmentId !== undefined ? validatedData.investmentId : oldEntry.investmentId;
+		const nextQuantity =
+			validatedData.investmentQuantity !== undefined
+				? validatedData.investmentQuantity
+				: oldEntry.investmentQuantity;
+		const nextAmountInUSD =
+			updateData.amountInUSD !== undefined ? updateData.amountInUSD : oldEntry.amountInUSD;
+		const nextEntryDate = validatedData.entryDate ?? oldEntry.entryDate;
+
+		if (nextInvestmentId != null) {
+			if (nextQuantity == null || nextQuantity === 0) {
+				return reply.status(400).send({
+					error: 'Bad Request',
+					message: 'Quantity is required (and cannot be zero) when an investment is selected'
+				});
+			}
+			const inv = await db
+				.select({ id: investments.id })
+				.from(investments)
+				.where(eq(investments.id, nextInvestmentId))
+				.limit(1);
+			if (inv.length === 0) {
+				return reply.status(404).send({
+					error: 'Not Found',
+					message: `Investment ${nextInvestmentId} not found`
+				});
+			}
+			const qtyCheck = await assertInvestmentQuantityOk({
+				investmentId: nextInvestmentId,
+				quantity: nextQuantity,
+				amountInUSD: nextAmountInUSD,
+				entryDate: nextEntryDate instanceof Date ? nextEntryDate : new Date(nextEntryDate),
+				excludeEntryId: id
+			});
+			if (!qtyCheck.ok) {
+				return reply.status(400).send({ error: 'Bad Request', message: qtyCheck.message });
+			}
+		}
 
 		// Update journal entry
 		const updated = await db
