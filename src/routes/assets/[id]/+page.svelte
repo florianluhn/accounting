@@ -216,7 +216,7 @@
 			<div class="stat bg-base-100 shadow rounded-xl p-4">
 				<div class="stat-title text-xs">Initial Value</div>
 				<div class="stat-value text-xl text-primary">{fmt(asset.initialValue)}</div>
-				<div class="stat-desc">from linked journal entries</div>
+				<div class="stat-desc">from asset-account entries</div>
 			</div>
 			<div class="stat bg-base-100 shadow rounded-xl p-4">
 				<div class="stat-title text-xs">Accumulated Depreciation</div>
@@ -304,7 +304,7 @@
 			</div>
 		{:else if asset.activationDate}
 			<div class="alert alert-info mb-6">
-				<span>No depreciation schedule available. The asset may have $0 initial value (no linked journal entries yet).</span>
+				<span>No depreciation schedule available. The asset may have $0 initial value (no journal entries to the asset account yet).</span>
 			</div>
 		{:else}
 			<div class="alert alert-warning mb-6">
@@ -315,13 +315,14 @@
 		<!-- Linked Journal Entries -->
 		<div class="card bg-base-100 shadow-xl">
 			<div class="card-body">
-				<div class="flex items-center gap-3 mb-4">
+				<div class="flex items-center gap-3 mb-1">
 					<h2 class="card-title">Journal Entries</h2>
 					<span class="badge badge-outline">{entries.length}</span>
 				</div>
+				<p class="text-xs text-base-content/50 mb-4">Only capitalization entries (those that use the asset account) affect depreciable cost. Related entries such as loans are linked for tracking only.</p>
 				{#if entries.length === 0}
 					<div class="text-base-content/40 text-sm py-4 text-center">
-						No journal entries linked to this asset yet. When creating a journal entry, link it to this asset to track its cost basis.
+						No journal entries linked to this asset yet.
 					</div>
 				{:else}
 					<div class="overflow-x-auto">
@@ -347,8 +348,10 @@
 										<td>
 											{#if entry.isDepreciation}
 												<span class="badge badge-warning badge-xs">Depreciation</span>
-											{:else}
+											{:else if entry.debitAccountId === asset.assetAccountId || entry.creditAccountId === asset.assetAccountId}
 												<span class="badge badge-info badge-xs">Capitalization</span>
+											{:else}
+												<span class="badge badge-ghost badge-xs" title="Linked to this asset but does not affect depreciable cost">Related</span>
 											{/if}
 										</td>
 									</tr>

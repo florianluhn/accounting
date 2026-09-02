@@ -5,6 +5,44 @@ export interface DepreciationScheduleEntry {
 	remainingValue: number;
 }
 
+export interface AssetJournalForBasis {
+	amountInUSD: number;
+	isDepreciation: boolean | number;
+	debitAccountId: number;
+	creditAccountId: number;
+}
+
+/**
+ * Cost basis includes only journals that debit/credit the asset's own account.
+ * Related entries (loans, financing, etc.) may be linked for tracking without
+ * changing depreciable value.
+ */
+export function aggregateAssetValues(
+	entries: AssetJournalForBasis[],
+	assetAccountId: number
+): { initialValue: number; accumulatedDepreciation: number; remainingValue: number } {
+	let initialValue = 0;
+	let accumulatedDepreciation = 0;
+
+	for (const e of entries) {
+		if (e.isDepreciation) {
+			accumulatedDepreciation += e.amountInUSD;
+		} else if (e.debitAccountId === assetAccountId) {
+			initialValue += e.amountInUSD;
+		} else if (e.creditAccountId === assetAccountId) {
+			initialValue -= e.amountInUSD;
+		}
+	}
+
+	initialValue = round2(initialValue);
+	accumulatedDepreciation = round2(accumulatedDepreciation);
+	return {
+		initialValue,
+		accumulatedDepreciation,
+		remainingValue: round2(initialValue - accumulatedDepreciation),
+	};
+}
+
 type Method = 'SL' | '200DB' | '150DB' | 'Immediate';
 type Convention = 'half_year' | 'mid_month' | 'mid_quarter';
 
