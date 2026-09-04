@@ -3,7 +3,7 @@ import { z } from 'zod';
 import db from '../db/connection.js';
 import { journalEntries, subledgerAccounts, glAccounts, currencies, budgets, appSettings } from '../db/schema.js';
 import { eq, and, lte, gte, sql, desc } from 'drizzle-orm';
-import { getFinancialYearUTC } from '../../lib/financial-year.js';
+import { getFinancialYearUTC, getUtcCalendarMonthBounds } from '../../lib/financial-year.js';
 
 async function getFinancialYearStartMonth(): Promise<number> {
 	const rows = await db
@@ -357,9 +357,12 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				const anchor = new Date(now.getFullYear(), now.getMonth() - i, 1);
 				const year = anchor.getFullYear();
 				const month = anchor.getMonth() + 1;
-				const startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
-				const endDate = new Date(year, month, 0, 23, 59, 59, 999);
-				const label = startDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+				const { start: startDate, end: endDate } = getUtcCalendarMonthBounds(year, month);
+				const label = startDate.toLocaleDateString('en-US', {
+					month: 'short',
+					year: 'numeric',
+					timeZone: 'UTC'
+				});
 				monthWindows.push({ year, month, startDate, endDate, label });
 			}
 

@@ -64,6 +64,21 @@ export function toLocalDateString(date: Date): string {
 	return `${year}-${month}-${day}`;
 }
 
+/**
+ * First and last calendar days of `year`/`month` as UTC-midnight Dates.
+ * Same construction as the reports date picker (`new Date('YYYY-MM-DD')`), so
+ * backend UTC day-bound expansion includes the full month and matches P&L.
+ * `month` is 1–12.
+ */
+export function getUtcCalendarMonthBounds(year: number, month: number): { start: Date; end: Date } {
+	const m = clampMonth(month);
+	const mm = String(m).padStart(2, '0');
+	const start = new Date(`${year}-${mm}-01`);
+	const lastDay = new Date(Date.UTC(year, m, 0)).getUTCDate();
+	const end = new Date(`${year}-${mm}-${String(lastDay).padStart(2, '0')}`);
+	return { start, end };
+}
+
 /** Human label, e.g. "FY 2025" or "FY 2025–2026" when year spans two calendars. */
 export function formatFinancialYearLabel(fyYear: number, startMonth: number): string {
 	const m = clampMonth(startMonth);

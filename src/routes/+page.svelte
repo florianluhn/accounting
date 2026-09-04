@@ -12,6 +12,7 @@
 		type Currency,
 		type CategoryBreakdown
 	} from '$lib/api';
+	import { getUtcCalendarMonthBounds, toLocalDateString } from '$lib/financial-year';
 
 	let balanceSheet = $state<BalanceSheetReport | null>(null);
 	let profitLoss = $state<ProfitLossReport | null>(null);
@@ -72,10 +73,19 @@
 		}
 	}
 
+	/** UTC-midnight Dates for a local YYYY-MM-DD — same as the reports date picker. */
+	function utcCalendarDate(date: Date): Date {
+		return new Date(toLocalDateString(date));
+	}
+
+	function currentMonthBounds() {
+		const now = new Date();
+		return getUtcCalendarMonthBounds(now.getFullYear(), now.getMonth() + 1);
+	}
+
 	async function loadBalanceSheet() {
 		try {
-			const now = new Date();
-			const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+			const endDate = utcCalendarDate(new Date());
 			balanceSheet = await reportsAPI.balanceSheet({ endDate, currencyCode: selectedCurrency });
 		} catch (e) {
 			console.error('Error loading balance sheet:', e);
@@ -84,12 +94,14 @@
 
 	async function loadProfitLoss() {
 		try {
-			const now = new Date();
-			const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
-			const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-			plStartDate = startOfMonth;
-			plEndDate = endOfToday;
-			profitLoss = await reportsAPI.profitLoss({ startDate: startOfMonth, endDate: endOfToday, currencyCode: selectedCurrency });
+			const { start, end } = currentMonthBounds();
+			plStartDate = start;
+			plEndDate = end;
+			profitLoss = await reportsAPI.profitLoss({
+				startDate: start,
+				endDate: end,
+				currencyCode: selectedCurrency
+			});
 		} catch (e) {
 			console.error('Error loading profit & loss:', e);
 		}
@@ -109,10 +121,10 @@
 
 	async function loadJournalEntries() {
 		try {
-			const now = new Date();
-			const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
-			const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-			journalEntries = await journalEntriesAPI.list({ startDate: startOfMonth, endDate: endOfToday });
+			const { start, end } = currentMonthBounds();
+			const endOfDay = new Date(end);
+			endOfDay.setUTCHours(23, 59, 59, 999);
+			journalEntries = await journalEntriesAPI.list({ startDate: start, endDate: endOfDay });
 		} catch (e) {
 			console.error('Error loading journal entries:', e);
 		}
@@ -408,6 +420,9 @@
 					<div>
 						<p class="section-label mb-1">This month</p>
 						<h2 class="card-title text-xl">Profit &amp; Loss — {getCurrentMonthName()}</h2>
+						<p class="text-sm text-base-content/55 mt-1">
+							{formatDate(plStartDate)} to {formatDate(plEndDate)}
+						</p>
 					</div>
 					<a href="/reports" class="btn btn-ghost btn-sm">
 						Full reports
