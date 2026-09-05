@@ -5,21 +5,28 @@ export interface DepreciationScheduleEntry {
 	remainingValue: number;
 }
 
+/** GL account type that capitalizes (or reduces) depreciable cost. */
+export const ASSET_COST_ACCOUNT_TYPE = 'Asset';
+
 export interface AssetJournalForBasis {
 	amountInUSD: number;
 	isDepreciation: boolean | number;
-	debitAccountId: number;
-	creditAccountId: number;
+	debitAccountType?: string | null;
+	creditAccountType?: string | null;
+}
+
+export function isAssetCostAccountType(type: string | null | undefined): boolean {
+	return type === ASSET_COST_ACCOUNT_TYPE;
 }
 
 /**
- * Cost basis includes only journals that debit/credit the asset's own account.
- * Related entries (loans, financing, etc.) may be linked for tracking without
- * changing depreciable value.
+ * Cost basis includes journals that debit or credit any Asset-type account.
+ * Related entries (loans, financing, closing costs posted to expense, etc.)
+ * may be linked for tracking without changing depreciable value — they do
+ * not involve an Asset-type account.
  */
 export function aggregateAssetValues(
-	entries: AssetJournalForBasis[],
-	assetAccountId: number
+	entries: AssetJournalForBasis[]
 ): { initialValue: number; accumulatedDepreciation: number; remainingValue: number } {
 	let initialValue = 0;
 	let accumulatedDepreciation = 0;
@@ -27,9 +34,14 @@ export function aggregateAssetValues(
 	for (const e of entries) {
 		if (e.isDepreciation) {
 			accumulatedDepreciation += e.amountInUSD;
-		} else if (e.debitAccountId === assetAccountId) {
+			continue;
+		}
+		// Debit to an asset account increases cost; credit decreases it.
+		// If both sides are Asset-type (a transfer), they net to zero.
+		if (isAssetCostAccountType(e.debitAccountType)) {
 			initialValue += e.amountInUSD;
-		} else if (e.creditAccountId === assetAccountId) {
+		}
+		if (isAssetCostAccountType(e.creditAccountType)) {
 			initialValue -= e.amountInUSD;
 		}
 	}

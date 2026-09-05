@@ -3,6 +3,7 @@ import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
 import { fixedAssets, journalEntries, subledgerAccounts, glAccounts } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 import { logAudit } from '../services/audit.js';
 import { generateSchedule, getEligibleMonths, aggregateAssetValues } from '../services/depreciation.js';
 import { assertDateNotInClosedYear, YearCloseError } from '../services/year-close.js';
@@ -33,35 +34,35 @@ const throughMonthSchema = z.object({
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
-/**
- * Build a subledger account alias for the asset account and the expense account
- * so we can join them in the same query without conflicts.
- */
-const assetAccount = subledgerAccounts;
+const debitSub = alias(subledgerAccounts, 'debit_sub');
+const creditSub = alias(subledgerAccounts, 'credit_sub');
+const debitGl = alias(glAccounts, 'debit_gl');
+const creditGl = alias(glAccounts, 'credit_gl');
 
 /**
  * Compute aggregate values for a single fixed asset from linked journal entries.
  *
- * Cost basis only includes entries that debit or credit the asset's own account.
- * Related entries (loans, financing, etc.) can be linked to the asset for tracking
- * without changing depreciable value.
+ * Cost basis includes entries that debit or credit any Asset-type account.
+ * Related entries (loans, financing, etc.) can be linked for tracking without
+ * changing depreciable value when no Asset-type account is involved.
  */
-async function computeAssetAggregates(assetId: number, assetAccountId: number) {
+async function computeAssetAggregates(assetId: number) {
 	const entries = await db
 		.select({
 			amountInUSD: journalEntries.amountInUSD,
 			isDepreciation: journalEntries.isDepreciation,
-			debitAccountId: journalEntries.debitAccountId,
-			creditAccountId: journalEntries.creditAccountId,
+			debitAccountType: debitGl.type,
+			creditAccountType: creditGl.type,
 			entryDate: journalEntries.entryDate,
 		})
 		.from(journalEntries)
+		.leftJoin(debitSub, eq(journalEntries.debitAccountId, debitSub.id))
+		.leftJoin(debitGl, eq(debitSub.glAccountId, debitGl.id))
+		.leftJoin(creditSub, eq(journalEntries.creditAccountId, creditSub.id))
+		.leftJoin(creditGl, eq(creditSub.glAccountId, creditGl.id))
 		.where(eq(journalEntries.fixedAssetId, assetId));
 
-	const { initialValue, accumulatedDepreciation, remainingValue } = aggregateAssetValues(
-		entries,
-		assetAccountId
-	);
+	const { initialValue, accumulatedDepreciation, remainingValue } = aggregateAssetValues(entries);
 
 	let lastDepreciationDate: Date | null = null;
 	for (const e of entries) {
@@ -137,7 +138,7 @@ export default async function fixedAssetsRoutes(fastify: FastifyInstance) {
 		const assets = await db.select().from(fixedAssets).orderBy(desc(fixedAssets.createdAt));
 
 		const result = await Promise.all(assets.map(async (asset) => {
-			const agg = await computeAssetAggregates(asset.id, asset.assetAccountId);
+			const agg = await computeAssetAggregates(asset.id);
 			const assetAccountName = await getAccountName(asset.assetAccountId);
 			const expenseAccountName = await getAccountName(asset.expenseAccountId);
 			const isFullyDepreciated = agg.remainingValue <= asset.salvageValue;
@@ -168,7 +169,7 @@ export default async function fixedAssetsRoutes(fastify: FastifyInstance) {
 		if (rows.length === 0) return reply.status(404).send({ error: 'Not Found', message: `Asset ${id} not found` });
 
 		const asset = rows[0];
-		const agg = await computeAssetAggregates(asset.id, asset.assetAccountId);
+		const agg = await computeAssetAggregates(asset.id);
 		const assetAccountName = await getAccountName(asset.assetAccountId);
 		const expenseAccountName = await getAccountName(asset.expenseAccountId);
 		const isFullyDepreciated = agg.remainingValue <= asset.salvageValue;
@@ -338,7 +339,7 @@ export default async function fixedAssetsRoutes(fastify: FastifyInstance) {
 		}
 
 		// Compute initial value from journal entries
-		const agg = await computeAssetAggregates(asset.id, asset.assetAccountId);
+		const agg = await computeAssetAggregates(asset.id);
 
 		const schedule = generateSchedule(
 			asset.depreciationMethod as 'SL' | '200DB' | '150DB' | 'Immediate',
@@ -389,7 +390,7 @@ export default async function fixedAssetsRoutes(fastify: FastifyInstance) {
 		}
 
 		// Compute initial value and generate schedule
-		const agg = await computeAssetAggregates(asset.id, asset.assetAccountId);
+		const agg = await computeAssetAggregates(asset.id);
 
 		const schedule = generateSchedule(
 			asset.depreciationMethod as 'SL' | '200DB' | '150DB' | 'Immediate',
@@ -471,7 +472,7 @@ export default async function fixedAssetsRoutes(fastify: FastifyInstance) {
 				}
 
 				// Compute initial value and check if fully depreciated
-				const agg = await computeAssetAggregates(asset.id, asset.assetAccountId);
+				const agg = await computeAssetAggregates(asset.id);
 				if (agg.remainingValue <= asset.salvageValue) {
 					skipped++;
 					continue;
@@ -560,7 +561,7 @@ export default async function fixedAssetsRoutes(fastify: FastifyInstance) {
 		);
 
 		// Compute initial value and generate schedule
-		const agg = await computeAssetAggregates(asset.id, asset.assetAccountId);
+		const agg = await computeAssetAggregates(asset.id);
 
 		const schedule = generateSchedule(
 			asset.depreciationMethod as 'SL' | '200DB' | '150DB' | 'Immediate',

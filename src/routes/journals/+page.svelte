@@ -1545,7 +1545,7 @@
 						<div class="form-control col-span-2">
 							<label class="label">
 								<span class="label-text">Fixed Asset (Optional)</span>
-								<span class="label-text-alt text-xs text-base-content/50">Cost basis changes only if the asset account is used</span>
+								<span class="label-text-alt text-xs text-base-content/50">Cost basis changes only if an asset-type account is used</span>
 							</label>
 							<select class="select select-bordered" bind:value={formData.fixedAssetId}>
 								<option value={0}>No asset linked</option>

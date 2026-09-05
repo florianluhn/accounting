@@ -412,6 +412,10 @@ export interface JournalEntry {
 	amountInUSD: number;
 	debitAccountId: number;
 	creditAccountId: number;
+	/** GL type of the debit subledger (e.g. Asset, Cash, Loss). */
+	debitAccountType?: AccountType | null;
+	/** GL type of the credit subledger (e.g. Asset, Cash, Loss). */
+	creditAccountType?: AccountType | null;
 	description: string;
 	category?: string | null;
 	comment?: string | null;

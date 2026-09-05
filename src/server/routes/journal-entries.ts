@@ -13,6 +13,7 @@ import {
 	investments
 } from '../db/schema.js';
 import { eq, and, gte, lte, desc, or, isNull, isNotNull, ne, inArray, count } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { logAudit, generateBatchId } from '../services/audit.js';
@@ -247,6 +248,11 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			checkReference?: string;
 		}
 	}>('/', async (request, reply) => {
+		const debitSub = alias(subledgerAccounts, 'debit_sub');
+		const creditSub = alias(subledgerAccounts, 'credit_sub');
+		const debitGl = alias(glAccounts, 'debit_gl');
+		const creditGl = alias(glAccounts, 'credit_gl');
+
 		let query = db.select({
 			id: journalEntries.id,
 			entryDate: journalEntries.entryDate,
@@ -255,6 +261,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			amountInUSD: journalEntries.amountInUSD,
 			debitAccountId: journalEntries.debitAccountId,
 			creditAccountId: journalEntries.creditAccountId,
+			debitAccountType: debitGl.type,
+			creditAccountType: creditGl.type,
 			description: journalEntries.description,
 			category: journalEntries.category,
 			comment: journalEntries.comment,
@@ -275,6 +283,10 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 		}).from(journalEntries)
 		 .leftJoin(inventoryItems, eq(journalEntries.inventoryItemId, inventoryItems.id))
 		 .leftJoin(customers, eq(journalEntries.customerId, customers.id))
+		 .leftJoin(debitSub, eq(journalEntries.debitAccountId, debitSub.id))
+		 .leftJoin(debitGl, eq(debitSub.glAccountId, debitGl.id))
+		 .leftJoin(creditSub, eq(journalEntries.creditAccountId, creditSub.id))
+		 .leftJoin(creditGl, eq(creditSub.glAccountId, creditGl.id))
 		 .orderBy(desc(journalEntries.entryDate));
 
 		// Apply filters
