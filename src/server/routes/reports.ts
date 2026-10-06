@@ -2,8 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db from '../db/connection.js';
 import { journalEntries, subledgerAccounts, glAccounts, currencies, budgets, appSettings } from '../db/schema.js';
-import { eq, and, lte, gte, sql, desc } from 'drizzle-orm';
+import { eq, and, lte, gte, sql, desc, asc, isNotNull } from 'drizzle-orm';
 import { getFinancialYearUTC, getUtcCalendarMonthBounds } from '../../lib/financial-year.js';
+import { buildCheckReferenceReport } from '../../lib/check-reference-report.js';
 
 async function getFinancialYearStartMonth(): Promise<number> {
 	const rows = await db
@@ -771,4 +772,89 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			finalBalance: runningBalance
 		};
 	});
+
+	// GET /api/reports/check-references — open vs paid balances for check / reference numbers
+	fastify.get<{ Querystring: z.infer<typeof dateRangeSchema> }>(
+		'/check-references',
+		async (request, reply) => {
+			const enabledRows = await db
+				.select()
+				.from(appSettings)
+				.where(eq(appSettings.key, 'checkReferences'))
+				.limit(1);
+			if ((enabledRows[0]?.value ?? 'false') !== 'true') {
+				return reply.status(403).send({
+					error: 'Forbidden',
+					message: 'Check / Reference is turned off in Settings'
+				});
+			}
+
+			const { startDate, endDate, currencyCode } = dateRangeSchema.parse(request.query);
+
+			const conditions: any[] = [
+				isNotNull(journalEntries.checkReference),
+				sql`trim(${journalEntries.checkReference}) != ''`
+			];
+
+			let periodStart: Date | undefined;
+			if (startDate) {
+				periodStart = new Date(startDate);
+				periodStart.setUTCHours(0, 0, 0, 0);
+			}
+			if (endDate) {
+				const endOfDay = new Date(endDate);
+				endOfDay.setUTCHours(23, 59, 59, 999);
+				conditions.push(lte(journalEntries.entryDate, endOfDay));
+			}
+
+			const entries = await db
+				.select({
+					id: journalEntries.id,
+					entryDate: journalEntries.entryDate,
+					amountInUSD: journalEntries.amountInUSD,
+					description: journalEntries.description,
+					checkReference: journalEntries.checkReference,
+					debitAccountId: journalEntries.debitAccountId,
+					creditAccountId: journalEntries.creditAccountId
+				})
+				.from(journalEntries)
+				.where(and(...conditions))
+				.orderBy(asc(journalEntries.entryDate), asc(journalEntries.id));
+
+			const accounts = await db
+				.select({
+					id: subledgerAccounts.id,
+					accountNumber: subledgerAccounts.accountNumber,
+					name: subledgerAccounts.name
+				})
+				.from(subledgerAccounts);
+
+			const accountName = new Map(
+				accounts.map((account) => [account.id, `${account.accountNumber} - ${account.name}`])
+			);
+			const exchangeRate = await getExchangeRateToUsd(currencyCode);
+
+			const rollup = buildCheckReferenceReport(
+				entries.map((entry) => ({
+					id: entry.id,
+					entryDate: entry.entryDate,
+					amount: fromUsd(entry.amountInUSD, exchangeRate),
+					description: entry.description,
+					reference: entry.checkReference ?? '',
+					debitAccountName:
+						accountName.get(entry.debitAccountId) ?? `Account #${entry.debitAccountId}`,
+					creditAccountName:
+						accountName.get(entry.creditAccountId) ?? `Account #${entry.creditAccountId}`
+				})),
+				periodStart
+			);
+
+			return {
+				startDate: periodStart ?? null,
+				endDate: endDate || new Date(),
+				currencyCode,
+				...rollup
+			};
+		}
+	);
 }

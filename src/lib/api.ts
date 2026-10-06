@@ -1,3 +1,12 @@
+import type { CheckReferenceReport } from './check-reference-report';
+
+export type {
+	CheckReferenceReport,
+	CheckReferenceBalance,
+	CheckReferenceEntry,
+	CheckReferenceStatus
+} from './check-reference-report';
+
 // API base URL - configurable via environment variable or auto-detect
 // Priority: 1) PUBLIC_API_URL env var, 2) Auto-detect based on frontend port
 // In production, the frontend and backend can run on different ports
@@ -947,6 +956,20 @@ export const reportsAPI = {
 
 		const queryString = query.toString();
 		return apiFetch(`/api/reports/trial-balance${queryString ? `?${queryString}` : ''}`);
+	},
+
+	async checkReferences(params?: {
+		startDate?: Date;
+		endDate?: Date;
+		currencyCode?: string;
+	}): Promise<CheckReferenceReport> {
+		const query = new URLSearchParams();
+		if (params?.startDate) query.set('startDate', params.startDate.toISOString());
+		if (params?.endDate) query.set('endDate', params.endDate.toISOString());
+		if (params?.currencyCode) query.set('currencyCode', params.currencyCode);
+
+		const queryString = query.toString();
+		return apiFetch(`/api/reports/check-references${queryString ? `?${queryString}` : ''}`);
 	},
 
 	async accountLedger(

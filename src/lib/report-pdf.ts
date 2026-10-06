@@ -8,12 +8,14 @@ import type {
 	BalanceSheetReport,
 	ProfitLossReport,
 	TrialBalanceReport,
+	CheckReferenceReport,
 	GLAccountGroup,
 	AccountBalance,
 	CategoryBreakdown
 } from './api';
 
-export type ReportPdfType = 'balance-sheet' | 'profit-loss' | 'trial-balance';
+export type ReportPdfType = 'balance-sheet' | 'profit-loss' | 'trial-balance' | 'check-references';
+export type CheckReferencePdfFilter = 'all' | 'open' | 'paid';
 
 export interface ReportPdfOptions {
 	type: ReportPdfType;
@@ -27,6 +29,9 @@ export interface ReportPdfOptions {
 	balanceSheet?: BalanceSheetReport | null;
 	profitLoss?: ProfitLossReport | null;
 	trialBalance?: TrialBalanceReport | null;
+	checkReferenceReport?: CheckReferenceReport | null;
+	checkReferenceFilter?: CheckReferencePdfFilter;
+	expandedCheckReferences?: Set<string>;
 }
 
 function escapeHtml(text: string): string {
@@ -58,9 +63,17 @@ function reportTitle(type: ReportPdfType, organizationName: string): string {
 			? 'Balance Sheet'
 			: type === 'profit-loss'
 				? 'Profit & Loss Statement'
-				: 'Trial Balance';
+				: type === 'check-references'
+					? 'Check / Reference Balances'
+					: 'Trial Balance';
 	const name = organizationName.trim();
 	return name ? `${base} ${name}` : base;
+}
+
+function checkReferenceStatusLabel(status: string): string {
+	if (status === 'paid') return 'Paid';
+	if (status === 'overpaid') return 'Overpaid';
+	return 'Open';
 }
 
 function moneyCell(amount: number, symbol: string, className = ''): string {
@@ -350,6 +363,79 @@ function buildTrialBalanceHtml(report: TrialBalanceReport, opts: ReportPdfOption
 	`;
 }
 
+function buildCheckReferenceHtml(report: CheckReferenceReport, opts: ReportPdfOptions): string {
+	const symbol = opts.currencySymbol;
+	const title = reportTitle('check-references', opts.organizationName);
+	const filter = opts.checkReferenceFilter ?? 'all';
+	const expanded = opts.expandedCheckReferences ?? new Set<string>();
+	const rows = report.references.filter((row) => {
+		if (filter === 'paid') return row.status === 'paid';
+		if (filter === 'open') return row.status !== 'paid';
+		return true;
+	});
+
+	const filterLabel =
+		filter === 'paid' ? 'Paid only' : filter === 'open' ? 'Open only' : 'All references';
+	const period = report.startDate
+		? `${formatDateUtc(report.startDate)} to ${formatDateUtc(report.endDate)}`
+		: `As of ${formatDateUtc(report.endDate)}`;
+
+	let body = '';
+	if (rows.length === 0) {
+		body = `<p class="empty">No check or reference balances to show.</p>`;
+	} else {
+		body = `<table class="tb">
+			<thead>
+				<tr>
+					<th>Reference</th>
+					<th>Date</th>
+					<th>Description</th>
+					<th class="num">Amount</th>
+					<th class="num">Applied</th>
+					<th class="num">Balance</th>
+					<th>Status</th>
+				</tr>
+			</thead>
+			<tbody>`;
+		for (const row of rows) {
+			const statusClass = row.status === 'paid' ? 'good' : row.status === 'overpaid' ? 'bad' : 'open';
+			body += `<tr>
+				<td class="mono">${escapeHtml(row.reference)}</td>
+				<td>${escapeHtml(formatDateUtc(row.date))}</td>
+				<td>${escapeHtml(row.description)}</td>
+				${moneyCell(row.amount, symbol)}
+				${moneyCell(row.applied, symbol)}
+				${moneyCell(row.balance, symbol, statusClass)}
+				<td class="${statusClass}">${escapeHtml(checkReferenceStatusLabel(row.status))}</td>
+			</tr>`;
+			if (expanded.has(row.reference) && row.entries.length > 0) {
+				for (const entry of row.entries) {
+					body += `<tr class="cat-row">
+						<td class="indent-1">${escapeHtml(entry.role === 'issued' ? 'Issued' : 'Payment')}</td>
+						<td>${escapeHtml(formatDateUtc(entry.entryDate))}</td>
+						<td>${escapeHtml(entry.description)}<br><span class="muted">${escapeHtml(entry.debitAccountName)} / ${escapeHtml(entry.creditAccountName)}</span></td>
+						${moneyCell(entry.amount, symbol)}
+						<td colspan="3"></td>
+					</tr>`;
+				}
+			}
+		}
+		body += `</tbody></table>`;
+	}
+
+	return `
+		<header class="report-header">
+			<h1>${escapeHtml(title)}</h1>
+			<p>${escapeHtml(period)}</p>
+			<p>Currency: ${escapeHtml(report.currencyCode)} · ${escapeHtml(filterLabel)}</p>
+			<p>Open balance ${escapeHtml(formatAmount(report.totalOpenBalance, symbol))}
+				· ${report.openCount} open
+				· ${report.paidCount} paid${report.overpaidCount > 0 ? ` · ${report.overpaidCount} overpaid` : ''}</p>
+		</header>
+		${body}
+	`;
+}
+
 const PRINT_STYLES = `
 	* { box-sizing: border-box; }
 	body {
@@ -394,6 +480,7 @@ const PRINT_STYLES = `
 	.tb tfoot td { border-top: 2px solid #111; border-bottom: none; font-weight: 700; }
 	.good { color: #0a7a3e; }
 	.bad { color: #b42318; }
+	.open { color: #b45309; font-weight: 600; }
 	.status { margin-top: 16px; font-weight: 600; text-align: center; }
 	.empty { color: #777; font-size: 10pt; margin: 4px 0 8px; }
 	@media print {
@@ -417,6 +504,8 @@ export function exportReportPdf(opts: ReportPdfOptions): void {
 		bodyHtml = buildProfitLossHtml(opts.profitLoss, opts);
 	} else if (opts.type === 'trial-balance' && opts.trialBalance) {
 		bodyHtml = buildTrialBalanceHtml(opts.trialBalance, opts);
+	} else if (opts.type === 'check-references' && opts.checkReferenceReport) {
+		bodyHtml = buildCheckReferenceHtml(opts.checkReferenceReport, opts);
 	} else {
 		throw new Error('No report data available to export');
 	}

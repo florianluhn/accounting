@@ -8,6 +8,7 @@
 		type BalanceSheetReport,
 		type ProfitLossReport,
 		type TrialBalanceReport,
+		type CheckReferenceReport,
 		type GLAccountGroup,
 		type AccountBalance,
 		type CategoryBreakdown,
@@ -24,7 +25,8 @@
 	} from '$lib/financial-year';
 	import { exportReportPdf } from '$lib/report-pdf';
 
-	type ReportType = 'balance-sheet' | 'profit-loss' | 'trial-balance';
+	type ReportType = 'balance-sheet' | 'profit-loss' | 'trial-balance' | 'check-references';
+	type CheckRefFilter = 'all' | 'open' | 'paid';
 
 	let activeReport = $state<ReportType>('balance-sheet');
 	let currencies = $state<Currency[]>([]);
@@ -80,6 +82,9 @@
 	let balanceSheet = $state<BalanceSheetReport | null>(null);
 	let profitLoss = $state<ProfitLossReport | null>(null);
 	let trialBalance = $state<TrialBalanceReport | null>(null);
+	let checkReferenceReport = $state<CheckReferenceReport | null>(null);
+	let checkRefFilter = $state<CheckRefFilter>('all');
+	let expandedCheckRefs = $state<Set<string>>(new Set());
 
 	// Drill-down state
 	let expandedGLAccounts = $state<Set<number>>(new Set());
@@ -106,12 +111,20 @@
 			.catch(() => {});
 	});
 
+	$effect(() => {
+		if (!modules.checkReferences && activeReport === 'check-references') {
+			setReportType('balance-sheet');
+		}
+	});
+
 	function setReportType(type: ReportType) {
 		activeReport = type;
 		balanceSheet = null;
 		profitLoss = null;
 		trialBalance = null;
-		if (type === 'profit-loss') {
+		checkReferenceReport = null;
+		expandedCheckRefs = new Set();
+		if (type === 'profit-loss' || type === 'check-references') {
 			applyFinancialYearDefaults();
 		}
 	}
@@ -148,6 +161,7 @@
 			expandedGLAccounts = new Set();
 			expandedSubledgers = new Set();
 			subledgerCategories = new Map();
+			expandedCheckRefs = new Set();
 
 			if (activeReport === 'balance-sheet') {
 				balanceSheet = await reportsAPI.balanceSheet({
@@ -162,6 +176,12 @@
 				});
 			} else if (activeReport === 'trial-balance') {
 				trialBalance = await reportsAPI.trialBalance({
+					endDate: parseLocalDateEnd(endDate),
+					currencyCode: selectedCurrency
+				});
+			} else if (activeReport === 'check-references') {
+				checkReferenceReport = await reportsAPI.checkReferences({
+					startDate: parseLocalDateStart(startDate),
 					endDate: parseLocalDateEnd(endDate),
 					currencyCode: selectedCurrency
 				});
@@ -197,8 +217,29 @@
 	let hasGeneratedReport = $derived(
 		(activeReport === 'balance-sheet' && !!balanceSheet) ||
 			(activeReport === 'profit-loss' && !!profitLoss) ||
-			(activeReport === 'trial-balance' && !!trialBalance)
+			(activeReport === 'trial-balance' && !!trialBalance) ||
+			(activeReport === 'check-references' && !!checkReferenceReport)
 	);
+
+	let visibleCheckRefs = $derived.by(() => {
+		const rows = checkReferenceReport?.references ?? [];
+		if (checkRefFilter === 'paid') return rows.filter((row) => row.status === 'paid');
+		if (checkRefFilter === 'open') return rows.filter((row) => row.status !== 'paid');
+		return rows;
+	});
+
+	function toggleCheckRef(reference: string) {
+		const next = new Set(expandedCheckRefs);
+		if (next.has(reference)) next.delete(reference);
+		else next.add(reference);
+		expandedCheckRefs = next;
+	}
+
+	function checkRefStatusLabel(status: string): string {
+		if (status === 'paid') return 'Paid';
+		if (status === 'overpaid') return 'Overpaid';
+		return 'Open';
+	}
 
 	async function handleCurrencyChange() {
 		// Re-run the active report so amounts convert into the newly selected currency
@@ -222,7 +263,10 @@
 				subledgerCategories,
 				balanceSheet,
 				profitLoss,
-				trialBalance
+				trialBalance,
+				checkReferenceReport,
+				checkReferenceFilter: checkRefFilter,
+				expandedCheckReferences: expandedCheckRefs
 			});
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to export PDF';
@@ -423,6 +467,16 @@
 		>
 			Trial Balance
 		</button>
+		{#if modules.checkReferences}
+			<button
+				role="tab"
+				class="tab"
+				class:tab-active={activeReport === 'check-references'}
+				onclick={() => setReportType('check-references')}
+			>
+				Check References
+			</button>
+		{/if}
 	</div>
 
 	<!-- Date Range & Currency Selector -->
@@ -432,6 +486,12 @@
 				<p class="text-sm text-base-content/60 mb-3">
 					Financial year ({currentFyLabel}): {currentFyRange}.
 					From date defaults to the start of the financial year; budgets for that year are applied on the report.
+				</p>
+			{/if}
+			{#if activeReport === 'check-references'}
+				<p class="text-sm text-base-content/60 mb-3">
+					The earliest entry for a reference is the check. Later entries with the same reference count as payments.
+					A zero balance means it has been paid. Checks that are still open stay on this report even when they were issued before the From date.
 				</p>
 			{/if}
 			<div class="flex gap-4 items-end flex-wrap">
@@ -467,7 +527,7 @@
 						{/each}
 					</select>
 				</div>
-				{#if activeReport === 'profit-loss'}
+				{#if activeReport === 'profit-loss' || activeReport === 'check-references'}
 					<button type="button" class="btn btn-outline" onclick={useCurrentFinancialYear}>
 						Use current FY
 					</button>
@@ -1218,6 +1278,202 @@
 							></path>
 						</svg>
 						<span>Click "Generate Report" to view the Trial Balance</span>
+					</div>
+				</div>
+			</div>
+		{/if}
+	{/if}
+
+	<!-- Check / Reference Balances -->
+	{#if modules.checkReferences && activeReport === 'check-references'}
+		{#if checkReferenceReport}
+			<div class="card bg-base-100 shadow-xl mb-6">
+				<div class="card-body">
+					<div class="flex justify-end mb-2 print:hidden">
+						<button type="button" class="btn btn-sm btn-outline" onclick={handleExportPdf}>
+							Export PDF
+						</button>
+					</div>
+					<div class="text-center mb-6">
+						<h2 class="text-2xl font-bold">{reportHeading('Check / Reference Balances')}</h2>
+						<p class="text-base-content/70">
+							{formatDate(checkReferenceReport.startDate || startDate)} to {formatDate(checkReferenceReport.endDate)}
+						</p>
+						<p class="text-base-content/70">Currency: {checkReferenceReport.currencyCode}</p>
+						<p class="text-sm text-base-content/60 mt-2">
+							Open checks from before this period stay listed until they are paid.
+						</p>
+					</div>
+
+					<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+						<div class="stat bg-base-200 rounded-xl p-4">
+							<div class="stat-title text-xs">Open balance</div>
+							<div class="stat-value text-xl {checkReferenceReport.totalOpenBalance > 0 ? 'text-warning' : checkReferenceReport.totalOpenBalance < 0 ? 'text-error' : ''}">
+								{formatCurrency(checkReferenceReport.totalOpenBalance)}
+							</div>
+							<div class="stat-desc">
+								{checkReferenceReport.openCount} open{#if checkReferenceReport.overpaidCount > 0}, {checkReferenceReport.overpaidCount} overpaid{/if}
+							</div>
+						</div>
+						<div class="stat bg-base-200 rounded-xl p-4">
+							<div class="stat-title text-xs">Open</div>
+							<div class="stat-value text-2xl text-warning">{checkReferenceReport.openCount}</div>
+						</div>
+						<div class="stat bg-base-200 rounded-xl p-4">
+							<div class="stat-title text-xs">Paid</div>
+							<div class="stat-value text-2xl text-success">{checkReferenceReport.paidCount}</div>
+						</div>
+					</div>
+
+					<div class="flex flex-wrap gap-2 mb-4 print:hidden">
+						<button
+							type="button"
+							class="btn btn-sm"
+							class:btn-primary={checkRefFilter === 'all'}
+							class:btn-ghost={checkRefFilter !== 'all'}
+							onclick={() => (checkRefFilter = 'all')}
+						>
+							All ({checkReferenceReport.references.length})
+						</button>
+						<button
+							type="button"
+							class="btn btn-sm"
+							class:btn-primary={checkRefFilter === 'open'}
+							class:btn-ghost={checkRefFilter !== 'open'}
+							onclick={() => (checkRefFilter = 'open')}
+						>
+							Open ({checkReferenceReport.openCount + checkReferenceReport.overpaidCount})
+						</button>
+						<button
+							type="button"
+							class="btn btn-sm"
+							class:btn-primary={checkRefFilter === 'paid'}
+							class:btn-ghost={checkRefFilter !== 'paid'}
+							onclick={() => (checkRefFilter = 'paid')}
+						>
+							Paid ({checkReferenceReport.paidCount})
+						</button>
+					</div>
+
+					{#if checkReferenceReport.references.length === 0}
+						<div class="alert alert-info">
+							<span>No check or reference numbers in this period.</span>
+						</div>
+					{:else if visibleCheckRefs.length === 0}
+						<div class="alert alert-info">
+							<span>
+								{checkRefFilter === 'paid'
+									? 'No paid checks in this period.'
+									: 'No open checks in this period.'}
+							</span>
+						</div>
+					{:else}
+						<div class="overflow-x-auto">
+							<table class="table">
+								<thead>
+									<tr>
+										<th>Reference</th>
+										<th>Date</th>
+										<th>Description</th>
+										<th class="text-right">Amount</th>
+										<th class="text-right">Applied</th>
+										<th class="text-right">Balance</th>
+										<th>Status</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each visibleCheckRefs as row (row.reference)}
+										<tr
+											class="cursor-pointer hover:bg-base-200"
+											onclick={() => toggleCheckRef(row.reference)}
+										>
+											<td class="align-top">
+												<div class="font-mono font-medium">{row.reference}</div>
+												<div class="text-xs text-base-content/50">
+													{row.entryCount} linked
+													<span class="ml-1">{expandedCheckRefs.has(row.reference) ? '▾' : '▸'}</span>
+												</div>
+											</td>
+											<td class="align-top whitespace-nowrap">{formatDate(row.date)}</td>
+											<td class="align-top whitespace-normal break-words">{row.description}</td>
+											<td class="text-right font-mono align-top">{formatCurrency(row.amount)}</td>
+											<td class="text-right font-mono align-top">{formatCurrency(row.applied)}</td>
+											<td
+												class="text-right font-mono font-bold align-top"
+												class:text-warning={row.status === 'open'}
+												class:text-success={row.status === 'paid'}
+												class:text-error={row.status === 'overpaid'}
+											>
+												{formatCurrency(row.balance)}
+											</td>
+											<td class="align-top">
+												<span
+													class="badge badge-sm"
+													class:badge-warning={row.status === 'open'}
+													class:badge-success={row.status === 'paid'}
+													class:badge-error={row.status === 'overpaid'}
+												>
+													{checkRefStatusLabel(row.status)}
+												</span>
+											</td>
+										</tr>
+										{#if expandedCheckRefs.has(row.reference)}
+											<tr>
+												<td colspan="7" class="bg-base-200 p-0">
+													<table class="table table-sm">
+														<thead>
+															<tr>
+																<th>Role</th>
+																<th>Date</th>
+																<th>Description</th>
+																<th>Debit</th>
+																<th>Credit</th>
+																<th class="text-right">Amount</th>
+															</tr>
+														</thead>
+														<tbody>
+															{#each row.entries as entry (entry.id)}
+																<tr>
+																	<td class="text-xs">
+																		{entry.role === 'issued' ? 'Issued' : 'Payment'}
+																	</td>
+																	<td class="text-xs whitespace-nowrap">{formatDate(entry.entryDate)}</td>
+																	<td class="text-xs whitespace-normal break-words">{entry.description}</td>
+																	<td class="text-xs whitespace-normal break-words">{entry.debitAccountName}</td>
+																	<td class="text-xs whitespace-normal break-words">{entry.creditAccountName}</td>
+																	<td class="text-right font-mono text-xs">{formatCurrency(entry.amount)}</td>
+																</tr>
+															{/each}
+														</tbody>
+													</table>
+												</td>
+											</tr>
+										{/if}
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					{/if}
+				</div>
+			</div>
+		{:else}
+			<div class="card bg-base-100 shadow-xl">
+				<div class="card-body">
+					<div class="alert alert-info">
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 24 24"
+							class="stroke-current shrink-0 w-6 h-6"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+							></path>
+						</svg>
+						<span>Click "Generate Report" to view check and reference balances</span>
 					</div>
 				</div>
 			</div>

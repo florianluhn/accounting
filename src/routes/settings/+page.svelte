@@ -1189,7 +1189,7 @@
 					<div>
 						<div class="font-medium">Check / References</div>
 						<div class="text-xs text-base-content/50">
-							Match related journal entries (e.g. check number on clearing vs bank)
+							Match related journal entries (e.g. check number on clearing vs bank). A balances report appears under Reports while this is on.
 						</div>
 					</div>
 					<input
