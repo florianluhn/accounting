@@ -490,8 +490,9 @@
 			{/if}
 			{#if activeReport === 'check-references'}
 				<p class="text-sm text-base-content/60 mb-3">
-					The earliest entry for a reference is the check. Later entries with the same reference count as payments.
-					A zero balance means it has been paid. Checks that are still open stay on this report even when they were issued before the From date.
+					Credits to the check clearing account are issued checks. Debits to that account are checks that have cleared.
+					Other journal entries are ignored, even when they use the same reference.
+					A zero balance means the check has been paid. Open checks from before the From date stay listed until they clear.
 				</p>
 			{/if}
 			<div class="flex gap-4 items-end flex-wrap">
@@ -1300,10 +1301,28 @@
 							{formatDate(checkReferenceReport.startDate || startDate)} to {formatDate(checkReferenceReport.endDate)}
 						</p>
 						<p class="text-base-content/70">Currency: {checkReferenceReport.currencyCode}</p>
+						{#if checkReferenceReport.clearingAccountName}
+							<p class="text-base-content/70">
+								Check clearing account: {checkReferenceReport.clearingAccountName}
+							</p>
+						{/if}
 						<p class="text-sm text-base-content/60 mt-2">
-							Open checks from before this period stay listed until they are paid.
+							Open checks from before this period stay listed until they clear the check clearing account.
 						</p>
 					</div>
+
+					{#if !checkReferenceReport.clearingAccountName}
+						<div class="alert alert-warning">
+							<span>
+								{#if checkReferenceReport.clearingAccountId}
+									The selected check clearing account no longer exists. Choose another one in Settings.
+								{:else}
+									Select a check clearing account in Settings. This report uses only the debits and credits on that account.
+								{/if}
+							</span>
+							<a class="btn btn-sm" href="/settings">Open Settings</a>
+						</div>
+					{:else}
 
 					<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
 						<div class="stat bg-base-200 rounded-xl p-4">
@@ -1357,7 +1376,7 @@
 
 					{#if checkReferenceReport.references.length === 0}
 						<div class="alert alert-info">
-							<span>No check or reference numbers in this period.</span>
+							<span>No activity on {checkReferenceReport.clearingAccountName} for a check or reference in this period.</span>
 						</div>
 					{:else if visibleCheckRefs.length === 0}
 						<div class="alert alert-info">
@@ -1375,8 +1394,8 @@
 										<th>Reference</th>
 										<th>Date</th>
 										<th>Description</th>
-										<th class="text-right">Amount</th>
-										<th class="text-right">Applied</th>
+										<th class="text-right">Issued</th>
+										<th class="text-right">Cleared</th>
 										<th class="text-right">Balance</th>
 										<th>Status</th>
 									</tr>
@@ -1390,7 +1409,7 @@
 											<td class="align-top">
 												<div class="font-mono font-medium">{row.reference}</div>
 												<div class="text-xs text-base-content/50">
-													{row.entryCount} linked
+													{row.entryCount} on clearing
 													<span class="ml-1">{expandedCheckRefs.has(row.reference) ? '▾' : '▸'}</span>
 												</div>
 											</td>
@@ -1435,7 +1454,7 @@
 															{#each row.entries as entry (entry.id)}
 																<tr>
 																	<td class="text-xs">
-																		{entry.role === 'issued' ? 'Issued' : 'Payment'}
+																		{entry.role === 'issued' ? 'Issued' : 'Cleared'}
 																	</td>
 																	<td class="text-xs whitespace-nowrap">{formatDate(entry.entryDate)}</td>
 																	<td class="text-xs whitespace-normal break-words">{entry.description}</td>
@@ -1453,6 +1472,7 @@
 								</tbody>
 							</table>
 						</div>
+					{/if}
 					{/if}
 				</div>
 			</div>

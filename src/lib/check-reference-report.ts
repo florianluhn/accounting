@@ -1,17 +1,18 @@
 /**
- * Check / reference balances.
+ * Check / reference balances on the check clearing account.
  *
- * The earliest journal entry for a reference is the check (what it was for).
- * Later entries that reuse the same reference are payments against it.
- * Balance = issued amount − payments. Zero means the check has been paid.
+ * Only journal lines that debit or credit that account are included.
+ * A credit to clearing is a check issued. A debit to clearing is a check cleared.
+ * Balance = credits − debits. Zero means the check has been paid.
  *
- * Entries dated on or before the report end date are included by the caller.
- * A reference still appears when it was issued before the period, as long as
- * it is unpaid as of the end date or it had activity inside the period.
+ * The caller passes entries dated on or before the report end date that already
+ * touch the clearing account. A reference still appears when it was issued
+ * before the period, as long as it is unpaid as of the end date or it had
+ * activity inside the period.
  */
 
 export type CheckReferenceStatus = 'open' | 'paid' | 'overpaid';
-export type CheckReferenceEntryRole = 'issued' | 'payment';
+export type CheckReferenceEntryRole = 'issued' | 'cleared';
 
 export interface CheckReferenceEntry {
 	id: number;
@@ -27,9 +28,9 @@ export interface CheckReferenceBalance {
 	reference: string;
 	date: Date | string;
 	description: string;
-	/** Amount of the earliest entry (the check). */
+	/** Total credited to the check clearing account (checks issued). */
 	amount: number;
-	/** Sum of later entries with the same reference. */
+	/** Total debited to the check clearing account (checks cleared). */
 	applied: number;
 	/** Remaining amount. Zero means paid. */
 	balance: number;
@@ -48,6 +49,9 @@ export interface CheckReferenceReport {
 	overpaidCount: number;
 	/** Sum of balances that are not paid (open plus overpaid). */
 	totalOpenBalance: number;
+	/** Subledger account whose debits and credits drive this report. Null when unset. */
+	clearingAccountId: number | null;
+	clearingAccountName: string | null;
 }
 
 export interface CheckReferenceSourceEntry {
@@ -59,6 +63,8 @@ export interface CheckReferenceSourceEntry {
 	reference: string;
 	debitAccountName: string;
 	creditAccountName: string;
+	/** credit = issued onto the clearing account; debit = cleared off it. */
+	clearingSide: 'debit' | 'credit';
 }
 
 export interface CheckReferenceRollup {
@@ -71,6 +77,18 @@ export interface CheckReferenceRollup {
 
 function roundMoney(amount: number): number {
 	return Math.round(amount * 100) / 100;
+}
+
+function uniqueDescriptions(entries: CheckReferenceSourceEntry[]): string {
+	const seen = new Set<string>();
+	const parts: string[] = [];
+	for (const entry of entries) {
+		const text = entry.description.trim();
+		if (!text || seen.has(text)) continue;
+		seen.add(text);
+		parts.push(text);
+	}
+	return parts.join('; ');
 }
 
 function entryTime(value: Date | string | number): number {
@@ -98,10 +116,14 @@ export function buildCheckReferenceReport(
 	for (const [reference, group] of groups) {
 		group.sort((a, b) => entryTime(a.entryDate) - entryTime(b.entryDate) || a.id - b.id);
 
-		const issued = group[0];
-		const amount = roundMoney(issued.amount);
+		const issuedEntries = group.filter((entry) => entry.clearingSide === 'credit');
+		const clearedEntries = group.filter((entry) => entry.clearingSide === 'debit');
+		const describedBy = issuedEntries.length > 0 ? issuedEntries : group;
+		const amount = roundMoney(
+			issuedEntries.reduce((sum, entry) => sum + roundMoney(entry.amount), 0)
+		);
 		const applied = roundMoney(
-			group.slice(1).reduce((sum, entry) => sum + roundMoney(entry.amount), 0)
+			clearedEntries.reduce((sum, entry) => sum + roundMoney(entry.amount), 0)
 		);
 		let balance = roundMoney(amount - applied);
 		let status: CheckReferenceStatus;
@@ -122,21 +144,21 @@ export function buildCheckReferenceReport(
 
 		rows.push({
 			reference,
-			date: issued.entryDate as Date | string,
-			description: issued.description,
+			date: (issuedEntries[0] ?? group[0]).entryDate as Date | string,
+			description: uniqueDescriptions(describedBy),
 			amount,
 			applied,
 			balance,
 			status,
 			entryCount: group.length,
-			entries: group.map((entry, index) => ({
+			entries: group.map((entry) => ({
 				id: entry.id,
 				entryDate: entry.entryDate as Date | string,
 				description: entry.description,
 				amount: roundMoney(entry.amount),
 				debitAccountName: entry.debitAccountName,
 				creditAccountName: entry.creditAccountName,
-				role: index === 0 ? 'issued' : 'payment'
+				role: entry.clearingSide === 'credit' ? 'issued' : 'cleared'
 			}))
 		});
 	}

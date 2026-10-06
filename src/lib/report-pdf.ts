@@ -390,8 +390,8 @@ function buildCheckReferenceHtml(report: CheckReferenceReport, opts: ReportPdfOp
 					<th>Reference</th>
 					<th>Date</th>
 					<th>Description</th>
-					<th class="num">Amount</th>
-					<th class="num">Applied</th>
+					<th class="num">Issued</th>
+					<th class="num">Cleared</th>
 					<th class="num">Balance</th>
 					<th>Status</th>
 				</tr>
@@ -411,7 +411,7 @@ function buildCheckReferenceHtml(report: CheckReferenceReport, opts: ReportPdfOp
 			if (expanded.has(row.reference) && row.entries.length > 0) {
 				for (const entry of row.entries) {
 					body += `<tr class="cat-row">
-						<td class="indent-1">${escapeHtml(entry.role === 'issued' ? 'Issued' : 'Payment')}</td>
+						<td class="indent-1">${escapeHtml(entry.role === 'issued' ? 'Issued' : 'Cleared')}</td>
 						<td>${escapeHtml(formatDateUtc(entry.entryDate))}</td>
 						<td>${escapeHtml(entry.description)}<br><span class="muted">${escapeHtml(entry.debitAccountName)} / ${escapeHtml(entry.creditAccountName)}</span></td>
 						${moneyCell(entry.amount, symbol)}
@@ -428,6 +428,7 @@ function buildCheckReferenceHtml(report: CheckReferenceReport, opts: ReportPdfOp
 			<h1>${escapeHtml(title)}</h1>
 			<p>${escapeHtml(period)}</p>
 			<p>Currency: ${escapeHtml(report.currencyCode)} · ${escapeHtml(filterLabel)}</p>
+			<p>${escapeHtml(report.clearingAccountName ? `Check clearing account: ${report.clearingAccountName}` : 'No check clearing account selected')}</p>
 			<p>Open balance ${escapeHtml(formatAmount(report.totalOpenBalance, symbol))}
 				· ${report.openCount} open
 				· ${report.paidCount} paid${report.overpaidCount > 0 ? ` · ${report.overpaidCount} overpaid` : ''}</p>

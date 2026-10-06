@@ -791,6 +791,31 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 
 			const { startDate, endDate, currencyCode } = dateRangeSchema.parse(request.query);
 
+			const clearingRows = await db
+				.select()
+				.from(appSettings)
+				.where(eq(appSettings.key, 'checkClearingAccountId'))
+				.limit(1);
+			const clearingAccountId = parseInt(clearingRows[0]?.value ?? '', 10);
+			const hasClearingAccount = Number.isInteger(clearingAccountId) && clearingAccountId > 0;
+
+			const emptyReport = {
+				startDate: startDate ?? null,
+				endDate: endDate || new Date(),
+				currencyCode,
+				references: [],
+				openCount: 0,
+				paidCount: 0,
+				overpaidCount: 0,
+				totalOpenBalance: 0,
+				clearingAccountId: hasClearingAccount ? clearingAccountId : null,
+				clearingAccountName: null as string | null
+			};
+
+			if (!hasClearingAccount) {
+				return emptyReport;
+			}
+
 			const conditions: any[] = [
 				isNotNull(journalEntries.checkReference),
 				sql`trim(${journalEntries.checkReference}) != ''`
@@ -829,23 +854,41 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				})
 				.from(subledgerAccounts);
 
+			const clearingAccount = accounts.find((account) => account.id === clearingAccountId);
+			if (!clearingAccount) {
+				return emptyReport;
+			}
+			const clearingAccountName = `${clearingAccount.accountNumber} - ${clearingAccount.name}`;
+
 			const accountName = new Map(
 				accounts.map((account) => [account.id, `${account.accountNumber} - ${account.name}`])
 			);
 			const exchangeRate = await getExchangeRateToUsd(currencyCode);
 
 			const rollup = buildCheckReferenceReport(
-				entries.map((entry) => ({
-					id: entry.id,
-					entryDate: entry.entryDate,
-					amount: fromUsd(entry.amountInUSD, exchangeRate),
-					description: entry.description,
-					reference: entry.checkReference ?? '',
-					debitAccountName:
-						accountName.get(entry.debitAccountId) ?? `Account #${entry.debitAccountId}`,
-					creditAccountName:
-						accountName.get(entry.creditAccountId) ?? `Account #${entry.creditAccountId}`
-				})),
+				entries.flatMap((entry) => {
+					const clearingSide =
+						entry.creditAccountId === clearingAccountId
+							? 'credit'
+							: entry.debitAccountId === clearingAccountId
+								? 'debit'
+								: null;
+					if (!clearingSide) return [];
+					return [
+						{
+							id: entry.id,
+							entryDate: entry.entryDate,
+							amount: fromUsd(entry.amountInUSD, exchangeRate),
+							description: entry.description,
+							reference: entry.checkReference ?? '',
+							debitAccountName:
+								accountName.get(entry.debitAccountId) ?? `Account #${entry.debitAccountId}`,
+							creditAccountName:
+								accountName.get(entry.creditAccountId) ?? `Account #${entry.creditAccountId}`,
+							clearingSide: clearingSide as 'debit' | 'credit'
+						}
+					];
+				}),
 				periodStart
 			);
 
@@ -853,6 +896,8 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				startDate: periodStart ?? null,
 				endDate: endDate || new Date(),
 				currencyCode,
+				clearingAccountId,
+				clearingAccountName,
 				...rollup
 			};
 		}

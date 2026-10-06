@@ -9,6 +9,8 @@
 		type BookingConfig,
 		type BookingPlatform,
 		journalEntriesAPI,
+		subledgerAccountsAPI,
+		type SubledgerAccount,
 		financialYearsAPI,
 		type ClosedFinancialYear,
 		type YearClosePreview,
@@ -247,6 +249,9 @@
 	}
 
 	let modulesSaving = $state(false);
+	let clearingAccounts = $state<SubledgerAccount[]>([]);
+	let checkClearingAccountId = $state(0);
+	let clearingAccountSaving = $state(false);
 	let financialYearSaving = $state(false);
 	let financialYearMessage = $state('');
 
@@ -254,7 +259,14 @@
 		try {
 			const s = await settingsAPI.get();
 			applyModuleSettings(s);
+			checkClearingAccountId = s.checkClearingAccountId ?? 0;
 			organizationNameDraft = branding.organizationName;
+			const accounts = await subledgerAccountsAPI.list();
+			clearingAccounts = accounts
+				.filter((account) => account.isActive || account.id === checkClearingAccountId)
+				.sort((a, b) =>
+					a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true })
+				);
 			// Default close target: previous financial year
 			closeFyYear = getFinancialYear(new Date(), financialYear.startMonth) - 1;
 		} catch (e) {
@@ -405,6 +417,20 @@
 			error = e instanceof Error ? e.message : 'Failed to save module settings';
 		} finally {
 			modulesSaving = false;
+		}
+	}
+
+	async function saveCheckClearingAccount() {
+		try {
+			clearingAccountSaving = true;
+			const updated = await settingsAPI.update({
+				checkClearingAccountId: checkClearingAccountId > 0 ? checkClearingAccountId : null
+			});
+			checkClearingAccountId = updated.checkClearingAccountId ?? 0;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to save the check clearing account';
+		} finally {
+			clearingAccountSaving = false;
 		}
 	}
 
@@ -1189,7 +1215,7 @@
 					<div>
 						<div class="font-medium">Check / References</div>
 						<div class="text-xs text-base-content/50">
-							Match related journal entries (e.g. check number on clearing vs bank). A balances report appears under Reports while this is on.
+							Match check numbers on the clearing account against the bank. A balances report appears under Reports while this is on.
 						</div>
 					</div>
 					<input
@@ -1199,8 +1225,31 @@
 						onchange={saveModuleSettings}
 					/>
 				</label>
+				{#if modules.checkReferences}
+					<div class="p-3 bg-base-200 rounded-box">
+						<label class="form-control w-full">
+							<div class="label">
+								<span class="label-text font-medium">Check clearing account</span>
+							</div>
+							<select
+								class="select select-bordered w-full"
+								bind:value={checkClearingAccountId}
+								onchange={saveCheckClearingAccount}
+								disabled={clearingAccountSaving}
+							>
+								<option value={0}>Select an account</option>
+								{#each clearingAccounts as account (account.id)}
+									<option value={account.id}>{account.accountNumber} - {account.name}</option>
+								{/each}
+							</select>
+							<span class="label-text-alt text-xs text-base-content/50 mt-2">
+								The check report uses only debits and credits on this account. Credits are checks issued. Debits are checks that have cleared.
+							</span>
+						</label>
+					</div>
+				{/if}
 			</div>
-			{#if modulesSaving}
+			{#if modulesSaving || clearingAccountSaving}
 				<div class="text-sm text-base-content/50 mt-2">Saving...</div>
 			{/if}
 		</div>

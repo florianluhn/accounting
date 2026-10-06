@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import db, { saveDatabase } from '../db/connection.js';
-import { appSettings } from '../db/schema.js';
+import { appSettings, subledgerAccounts } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { join, extname } from 'path';
 import { mkdir, writeFile, unlink, readFile } from 'fs/promises';
@@ -20,11 +20,19 @@ const SETTING_KEYS = [
 	'checkReferences'
 ] as const;
 const FINANCIAL_YEAR_START_MONTH_KEY = 'financialYearStartMonth';
+const CHECK_CLEARING_ACCOUNT_KEY = 'checkClearingAccountId';
 const ORGANIZATION_NAME_KEY = 'organizationName';
 const LOGO_SETTING_KEY = 'app_logo_filename';
 const LOGO_MIME_KEY = 'app_logo_mime';
 const ALLOWED_LOGO_MIMES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif', 'image/svg+xml']);
 const MAX_ORGANIZATION_NAME_LENGTH = 120;
+
+function parseCheckClearingAccountId(value: string | null | undefined): number | null {
+	if (value == null || value.trim() === '') return null;
+	const n = parseInt(value, 10);
+	if (!Number.isInteger(n) || n <= 0) return null;
+	return n;
+}
 
 function parseFinancialYearStartMonth(value: string | null | undefined): number {
 	const n = parseInt(value ?? '1', 10);
@@ -68,6 +76,7 @@ async function getAllSettings() {
 		investments: (map.investments ?? 'true') === 'true',
 		budgets: (map.budgets ?? 'false') === 'true',
 		checkReferences: (map.checkReferences ?? 'false') === 'true',
+		checkClearingAccountId: parseCheckClearingAccountId(map[CHECK_CLEARING_ACCOUNT_KEY]),
 		financialYearStartMonth: parseFinancialYearStartMonth(map[FINANCIAL_YEAR_START_MONTH_KEY]),
 		organizationName: (map[ORGANIZATION_NAME_KEY] ?? '').trim(),
 		hasLogo: !!(map[LOGO_SETTING_KEY] && map[LOGO_SETTING_KEY].length > 0)
@@ -104,6 +113,29 @@ export default async function settingsRoutes(fastify: FastifyInstance) {
 				});
 			}
 			await setSetting(FINANCIAL_YEAR_START_MONTH_KEY, String(month));
+		}
+		if (CHECK_CLEARING_ACCOUNT_KEY in body) {
+			const raw = body[CHECK_CLEARING_ACCOUNT_KEY];
+			const id =
+				raw == null || raw === '' || raw === 0
+					? null
+					: parseCheckClearingAccountId(String(raw));
+			if (id == null) {
+				await deleteSetting(CHECK_CLEARING_ACCOUNT_KEY);
+			} else {
+				const account = await db
+					.select({ id: subledgerAccounts.id })
+					.from(subledgerAccounts)
+					.where(eq(subledgerAccounts.id, id))
+					.limit(1);
+				if (account.length === 0) {
+					return reply.status(400).send({
+						error: 'Bad Request',
+						message: 'Check clearing account not found'
+					});
+				}
+				await setSetting(CHECK_CLEARING_ACCOUNT_KEY, String(id));
+			}
 		}
 		if (ORGANIZATION_NAME_KEY in body && typeof body[ORGANIZATION_NAME_KEY] === 'string') {
 			const name = body[ORGANIZATION_NAME_KEY].trim().slice(0, MAX_ORGANIZATION_NAME_LENGTH);

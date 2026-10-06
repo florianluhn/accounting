@@ -1249,6 +1249,8 @@ export interface AppSettings {
 	investments: boolean;
 	budgets: boolean;
 	checkReferences: boolean;
+	/** Subledger account used to decide whether a check reference is open or paid. */
+	checkClearingAccountId: number | null;
 	/** Month the financial year starts (1 = January … 12 = December). End month is start − 1. */
 	financialYearStartMonth: number;
 	/** Organization / entity name shown on financial reports (e.g. "P&L Statement Acme Co"). */
