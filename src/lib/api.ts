@@ -881,6 +881,15 @@ export interface QuarterlyLineItem {
 	amount: number;
 }
 
+/** A general-ledger account with its non-zero subaccounts. */
+export interface QuarterlyAccountGroup {
+	glAccountId: number;
+	accountNumber: string;
+	name: string;
+	amount: number;
+	subaccounts: QuarterlyLineItem[];
+}
+
 export interface QuarterlyMonth {
 	year: number;
 	month: number;
@@ -902,10 +911,14 @@ export interface QuarterlyReport {
 	netIncome: number;
 	/** Months in the quarter that had income or expenses. Zero months are omitted. */
 	months: QuarterlyMonth[];
-	/** Profit accounts with a non-zero balance, largest first. */
-	incomeItems: QuarterlyLineItem[];
-	/** Expense accounts with a non-zero balance, largest first. */
-	expenseItems: QuarterlyLineItem[];
+	/** Income rolled up by general-ledger account, then subaccount. Zero balances are omitted. */
+	incomeGroups: QuarterlyAccountGroup[];
+	/** Expenses rolled up by general-ledger account, then subaccount. Zero balances are omitted. */
+	expenseGroups: QuarterlyAccountGroup[];
+	/** Cash on hand as of the end of the quarter. */
+	cashTotal: number;
+	/** Cash accounts as of the end of the quarter, by general-ledger account, then subaccount. */
+	cashGroups: QuarterlyAccountGroup[];
 }
 
 export interface MonthlyOverviewPoint {

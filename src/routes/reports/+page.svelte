@@ -531,8 +531,8 @@
 			{/if}
 			{#if activeReport === 'quarterly'}
 				<p class="text-sm text-base-content/60 mb-3">
-					A one-page overview of income, expenses, and net income for a financial-year quarter.
-					Accounts and months with a zero balance are left out.
+					A one-page overview of income, expenses, net income, and cash on hand for a financial-year quarter.
+					Accounts and months with a zero balance are left out. Cash is the balance at the end of the quarter.
 				</p>
 			{/if}
 			<div class="flex gap-4 items-end flex-wrap">

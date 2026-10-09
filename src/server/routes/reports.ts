@@ -359,6 +359,9 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				id: subledgerAccounts.id,
 				accountNumber: subledgerAccounts.accountNumber,
 				accountName: subledgerAccounts.name,
+				glAccountId: glAccounts.id,
+				glAccountNumber: glAccounts.accountNumber,
+				glAccountName: glAccounts.name,
 				glAccountType: glAccounts.type
 			})
 			.from(subledgerAccounts)
@@ -371,6 +374,8 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		const debitNormalTypes = new Set(['Asset', 'Cash', 'Accounts Receivable', 'Loss']);
 		const exchangeRate = await getExchangeRateToUsd(currencyCode);
 
+		// Through the quarter end so cash balances are the position at that date,
+		// while income and expenses still use only activity inside the quarter.
 		const entries = await db
 			.select({
 				entryDate: journalEntries.entryDate,
@@ -380,9 +385,10 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				category: journalEntries.category
 			})
 			.from(journalEntries)
-			.where(and(gte(journalEntries.entryDate, start), lte(journalEntries.entryDate, end)));
+			.where(lte(journalEntries.entryDate, end));
 
 		const balances = new Map<number, number>();
+		const cashBalances = new Map<number, number>();
 		const monthTotals = quarterBounds.months.map((month) => ({
 			year: month.year,
 			month: month.month,
@@ -404,13 +410,11 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		const startMonthIndex = quarterBounds.months[0].month - 1;
 
 		for (const entry of entries) {
-			if (entry.category === 'Year-end close') continue;
 			const entryDate = new Date(entry.entryDate);
+			const inQuarter = entryDate.getTime() >= start.getTime();
 			const monthIndex =
 				(entryDate.getUTCFullYear() - startYear) * 12 +
 				(entryDate.getUTCMonth() - startMonthIndex);
-			if (monthIndex < 0 || monthIndex > 2) continue;
-
 			const amount = fromUsd(entry.amountInUSD, exchangeRate);
 			const sides: Array<[number, boolean]> = [
 				[entry.debitAccountId, true],
@@ -418,10 +422,20 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			];
 			for (const [accountId, isDebit] of sides) {
 				const account = accountById.get(accountId);
-				if (!account || (account.glAccountType !== 'Profit' && account.glAccountType !== 'Loss')) {
+				if (!account) continue;
+				const delta = signedDelta(accountId, isDebit, amount);
+				if (account.glAccountType === 'Cash') {
+					cashBalances.set(accountId, (cashBalances.get(accountId) ?? 0) + delta);
+				}
+				if (
+					entry.category === 'Year-end close' ||
+					!inQuarter ||
+					monthIndex < 0 ||
+					monthIndex > 2 ||
+					(account.glAccountType !== 'Profit' && account.glAccountType !== 'Loss')
+				) {
 					continue;
 				}
-				const delta = signedDelta(accountId, isDebit, amount);
 				balances.set(accountId, (balances.get(accountId) ?? 0) + delta);
 				if (account.glAccountType === 'Profit') monthTotals[monthIndex].income += delta;
 				else monthTotals[monthIndex].expenses += delta;
@@ -435,44 +449,68 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			return Math.abs(amount) < 0.005;
 		}
 
-		const incomeItems: Array<{
+		type QuarterlyLine = {
 			accountId: number;
 			accountNumber: string;
 			name: string;
 			amount: number;
-		}> = [];
-		const expenseItems: Array<{
-			accountId: number;
+		};
+		type QuarterlyGroup = {
+			glAccountId: number;
 			accountNumber: string;
 			name: string;
 			amount: number;
-		}> = [];
-		let totalIncome = 0;
-		let totalExpenses = 0;
+			subaccounts: QuarterlyLine[];
+		};
 
-		for (const account of accounts) {
-			if (account.glAccountType !== 'Profit' && account.glAccountType !== 'Loss') continue;
-			const amount = roundMoney(balances.get(account.id) ?? 0);
-			if (isZero(amount)) continue;
-			const item = {
-				accountId: account.id,
-				accountNumber: account.accountNumber,
-				name: account.accountName,
-				amount
-			};
-			if (account.glAccountType === 'Profit') {
-				totalIncome += amount;
-				incomeItems.push(item);
-			} else {
-				totalExpenses += amount;
-				expenseItems.push(item);
+		function buildGroups(source: Map<number, number>, types: Set<string>): QuarterlyGroup[] {
+			const groups = new Map<number, QuarterlyGroup>();
+			for (const account of accounts) {
+				if (!types.has(account.glAccountType)) continue;
+				const amount = roundMoney(source.get(account.id) ?? 0);
+				if (isZero(amount)) continue;
+				let group = groups.get(account.glAccountId);
+				if (!group) {
+					group = {
+						glAccountId: account.glAccountId,
+						accountNumber: account.glAccountNumber,
+						name: account.glAccountName,
+						amount: 0,
+						subaccounts: []
+					};
+					groups.set(account.glAccountId, group);
+				}
+				group.amount += amount;
+				group.subaccounts.push({
+					accountId: account.id,
+					accountNumber: account.accountNumber,
+					name: account.accountName,
+					amount
+				});
 			}
+			const list = [...groups.values()];
+			for (const group of list) {
+				group.amount = roundMoney(group.amount);
+				group.subaccounts.sort(
+					(a, b) =>
+						b.amount - a.amount ||
+						a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true })
+				);
+			}
+			list.sort(
+				(a, b) =>
+					b.amount - a.amount ||
+					a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true })
+			);
+			return list.filter((group) => !isZero(group.amount));
 		}
 
-		totalIncome = roundMoney(totalIncome);
-		totalExpenses = roundMoney(totalExpenses);
-		incomeItems.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name));
-		expenseItems.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name));
+		const incomeGroups = buildGroups(balances, new Set(['Profit']));
+		const expenseGroups = buildGroups(balances, new Set(['Loss']));
+		const cashGroups = buildGroups(cashBalances, new Set(['Cash']));
+		const totalIncome = roundMoney(incomeGroups.reduce((sum, group) => sum + group.amount, 0));
+		const totalExpenses = roundMoney(expenseGroups.reduce((sum, group) => sum + group.amount, 0));
+		const cashTotal = roundMoney(cashGroups.reduce((sum, group) => sum + group.amount, 0));
 
 		const months = monthTotals
 			.map((month) => ({
@@ -494,8 +532,10 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			expenses: totalExpenses,
 			netIncome: roundMoney(totalIncome - totalExpenses),
 			months,
-			incomeItems,
-			expenseItems
+			incomeGroups,
+			expenseGroups,
+			cashTotal,
+			cashGroups
 		};
 	});
 

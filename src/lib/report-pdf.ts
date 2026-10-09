@@ -449,30 +449,54 @@ function buildCheckReferenceHtml(report: CheckReferenceReport, opts: ReportPdfOp
 function buildQuarterlyHtml(report: QuarterlyReport, opts: ReportPdfOptions): string {
 	const symbol = opts.currencySymbol;
 	const title = reportTitle('quarterly', opts.organizationName);
-	const maxIncome = Math.max(0, ...report.incomeItems.map((item) => Math.abs(item.amount)));
-	const maxExpense = Math.max(0, ...report.expenseItems.map((item) => Math.abs(item.amount)));
+	function scaleOf(groups: QuarterlyReport['incomeGroups']): number {
+		return Math.max(
+			0,
+			...groups.flatMap((group) => [
+				Math.abs(group.amount),
+				...group.subaccounts.map((item) => Math.abs(item.amount))
+			])
+		);
+	}
+
+	const maxIncome = scaleOf(report.incomeGroups);
+	const maxExpense = scaleOf(report.expenseGroups);
+	const maxCash = scaleOf(report.cashGroups);
 	const monthMax = Math.max(
 		0,
 		...report.months.flatMap((month) => [Math.abs(month.income), Math.abs(month.expenses)])
 	);
 
-	function rankedRows(
-		items: QuarterlyReport['incomeItems'],
+	function groupedRows(
+		groups: QuarterlyReport['incomeGroups'],
 		max: number,
 		fillClass: string
 	): string {
-		if (items.length === 0) return `<p class="empty">None this quarter.</p>`;
-		return items
-			.map((item) => {
-				const width = max > 0 ? Math.max(2, (Math.abs(item.amount) / max) * 100) : 0;
+		if (groups.length === 0) return `<p class="empty">None.</p>`;
+		return groups
+			.map((group) => {
+				const width = max > 0 ? Math.max(2, (Math.abs(group.amount) / max) * 100) : 0;
+				const subs = group.subaccounts
+					.map((item) => {
+						const subWidth = max > 0 ? Math.max(2, (Math.abs(item.amount) / max) * 100) : 0;
+						return `<div class="rank-row sub">
+							<div class="rank-label">
+								<span>${escapeHtml(item.name)}</span>
+								<span class="muted mono">${escapeHtml(item.accountNumber)}</span>
+							</div>
+							<div class="bar-track"><div class="bar-fill ${fillClass}" style="width:${subWidth.toFixed(1)}%"></div></div>
+							<div class="num">${escapeHtml(formatAmount(item.amount, symbol))}</div>
+						</div>`;
+					})
+					.join('');
 				return `<div class="rank-row">
 					<div class="rank-label">
-						<span>${escapeHtml(item.name)}</span>
-						<span class="muted mono">${escapeHtml(item.accountNumber)}</span>
+						<span>${escapeHtml(group.name)}</span>
+						<span class="muted mono">${escapeHtml(group.accountNumber)}</span>
 					</div>
 					<div class="bar-track"><div class="bar-fill ${fillClass}" style="width:${width.toFixed(1)}%"></div></div>
-					<div class="num">${escapeHtml(formatAmount(item.amount, symbol))}</div>
-				</div>`;
+					<div class="num">${escapeHtml(formatAmount(group.amount, symbol))}</div>
+				</div>${subs}`;
 			})
 			.join('');
 	}
@@ -518,14 +542,21 @@ function buildQuarterlyHtml(report: QuarterlyReport, opts: ReportPdfOptions): st
 					<td>Net income</td>
 					${moneyCell(report.netIncome, symbol)}
 				</tr>
+				<tr>
+					<td>Cash on hand as of ${escapeHtml(formatDateUtc(report.endDate))}</td>
+					${moneyCell(report.cashTotal, symbol)}
+				</tr>
 			</tbody>
 		</table>
 		<h2>Month by month</h2>
 		${monthBars}
 		<h2>Biggest income</h2>
-		${rankedRows(report.incomeItems, maxIncome, 'income')}
+		${groupedRows(report.incomeGroups, maxIncome, 'income')}
 		<h2>Biggest expenses</h2>
-		${rankedRows(report.expenseItems, maxExpense, 'expense')}
+		${groupedRows(report.expenseGroups, maxExpense, 'expense')}
+		<h2>Cash accounts</h2>
+		<p class="empty">Balances as of ${escapeHtml(formatDateUtc(report.endDate))}. Zero balances are omitted.</p>
+		${groupedRows(report.cashGroups, maxCash, 'cash')}
 	`;
 }
 
@@ -582,6 +613,9 @@ const PRINT_STYLES = `
 	.bar-fill { height: 8px; border-radius: 999px; }
 	.bar-fill.income, .vbar.income, .swatch.income { background: #0a7a3e; }
 	.bar-fill.expense, .vbar.expense, .swatch.expense { background: #b45309; }
+	.bar-fill.cash { background: #1d4ed8; }
+	.rank-row.sub { margin-left: 16px; }
+	.rank-row.sub .rank-label { font-size: 9pt; font-weight: 400; }
 	.month-chart { display: flex; gap: 18px; align-items: flex-end; height: 140px; margin: 8px 0 4px; }
 	.month-col { flex: 1; max-width: 120px; display: flex; flex-direction: column; align-items: center; height: 100%; }
 	.month-bars { flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 6px; }

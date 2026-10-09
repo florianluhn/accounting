@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { QuarterlyLineItem, QuarterlyReport } from '$lib/api';
+	import type { QuarterlyAccountGroup, QuarterlyReport } from '$lib/api';
 
 	let {
 		report,
@@ -18,10 +18,19 @@
 	let maxMonth = $derived(
 		Math.max(0, ...report.months.flatMap((month) => [Math.abs(month.income), Math.abs(month.expenses)]))
 	);
-	let incomeScale = $derived(Math.max(0, ...report.incomeItems.map((item) => Math.abs(item.amount))));
-	let expenseScale = $derived(
-		Math.max(0, ...report.expenseItems.map((item) => Math.abs(item.amount)))
-	);
+	function groupScale(groups: QuarterlyAccountGroup[]): number {
+		return Math.max(
+			0,
+			...groups.flatMap((group) => [
+				Math.abs(group.amount),
+				...group.subaccounts.map((item) => Math.abs(item.amount))
+			])
+		);
+	}
+
+	let incomeScale = $derived(groupScale(report.incomeGroups));
+	let expenseScale = $derived(groupScale(report.expenseGroups));
+	let cashScale = $derived(groupScale(report.cashGroups));
 	let mixTotal = $derived(Math.max(0, report.income) + Math.max(0, report.expenses));
 
 	function barWidth(amount: number, scale: number): number {
@@ -40,7 +49,7 @@
 	}
 
 	function shareLabel(amount: number, total: number): string {
-		if (total <= 0 || amount <= 0) return '';
+		if (total <= 0 || amount <= 0 || amount > total + 0.001) return '';
 		return `${Math.round((amount / total) * 100)}%`;
 	}
 </script>
@@ -70,9 +79,10 @@
 				Income of {formatCurrency(report.income)} and expenses of {formatCurrency(report.expenses)}
 				left a net shortfall of {formatCurrency(Math.abs(report.netIncome))}.
 			{/if}
+			Cash on hand at {formatDate(report.endDate)} was {formatCurrency(report.cashTotal)}.
 		</p>
 
-		<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+		<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
 			<div class="metric-tile">
 				<p class="text-xs font-bold uppercase tracking-wider text-base-content/50">Income</p>
 				<p class="font-mono font-bold text-2xl mt-1 text-success">{formatCurrency(report.income)}</p>
@@ -86,6 +96,11 @@
 				<p class="font-mono font-bold text-2xl mt-1 {report.netIncome >= 0 ? 'text-success' : 'text-error'}">
 					{formatCurrency(report.netIncome)}
 				</p>
+			</div>
+			<div class="metric-tile">
+				<p class="text-xs font-bold uppercase tracking-wider text-base-content/50">Cash on hand</p>
+				<p class="font-mono font-bold text-2xl mt-1">{formatCurrency(report.cashTotal)}</p>
+				<p class="text-xs text-base-content/50 mt-1">As of {formatDate(report.endDate)}</p>
 			</div>
 		</div>
 
@@ -185,49 +200,86 @@
 			</div>
 		{/if}
 
-		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
 			<section>
 				<h3 class="font-semibold mb-1">Biggest income</h3>
-				<p class="text-sm text-base-content/60 mb-4">Accounts with a zero balance are omitted.</p>
-				{#if report.incomeItems.length === 0}
+				<p class="text-sm text-base-content/60 mb-4">Grouped by account, then subaccount. Zero balances are omitted.</p>
+				{#if report.incomeGroups.length === 0}
 					<p class="text-base-content/60">No income this quarter.</p>
 				{:else}
-					{#each report.incomeItems as item (item.accountId)}
-						{@render rankRow(item, incomeScale, 'bg-success', report.income)}
+					{#each report.incomeGroups as group (group.glAccountId)}
+						{@render accountGroup(group, incomeScale, 'bg-success', report.income)}
 					{/each}
 				{/if}
 			</section>
 			<section>
 				<h3 class="font-semibold mb-1">Biggest expenses</h3>
-				<p class="text-sm text-base-content/60 mb-4">Accounts with a zero balance are omitted.</p>
-				{#if report.expenseItems.length === 0}
+				<p class="text-sm text-base-content/60 mb-4">Grouped by account, then subaccount. Zero balances are omitted.</p>
+				{#if report.expenseGroups.length === 0}
 					<p class="text-base-content/60">No expenses this quarter.</p>
 				{:else}
-					{#each report.expenseItems as item (item.accountId)}
-						{@render rankRow(item, expenseScale, 'bg-warning', report.expenses)}
+					{#each report.expenseGroups as group (group.glAccountId)}
+						{@render accountGroup(group, expenseScale, 'bg-warning', report.expenses)}
 					{/each}
 				{/if}
 			</section>
 		</div>
+
+		<section>
+			<h3 class="font-semibold mb-1">Cash accounts</h3>
+			<p class="text-sm text-base-content/60 mb-4">
+				Balances as of {formatDate(report.endDate)}. Zero balances are omitted.
+			</p>
+			{#if report.cashGroups.length === 0}
+				<p class="text-base-content/60">No cash balance at the end of this quarter.</p>
+			{:else}
+				<div class="grid grid-cols-1 lg:grid-cols-2 gap-x-6">
+					{#each report.cashGroups as group (group.glAccountId)}
+						{@render accountGroup(group, cashScale, 'bg-info', report.cashTotal)}
+					{/each}
+				</div>
+			{/if}
+		</section>
 	</div>
 </div>
 
-{#snippet rankRow(item: QuarterlyLineItem, scale: number, barClass: string, sectionTotal: number)}
-	<div class="mb-3">
+{#snippet accountGroup(group: QuarterlyAccountGroup, scale: number, barClass: string, sectionTotal: number)}
+	<div class="mb-5">
+		{@render amountRow(group.name, group.accountNumber, group.amount, scale, barClass, sectionTotal, true)}
+		<div class="mt-2 ml-4 border-l border-base-300 pl-3">
+			{#each group.subaccounts as item (item.accountId)}
+				{@render amountRow(item.name, item.accountNumber, item.amount, scale, barClass, group.amount, false)}
+			{/each}
+		</div>
+	</div>
+{/snippet}
+
+{#snippet amountRow(
+	name: string,
+	accountNumber: string,
+	amount: number,
+	scale: number,
+	barClass: string,
+	sectionTotal: number,
+	isAccount: boolean
+)}
+	<div class="mb-2">
 		<div class="flex items-baseline justify-between gap-3 mb-1">
 			<div class="min-w-0">
-				<p class="font-medium truncate">{item.name}</p>
-				<p class="text-xs text-base-content/50 font-mono">{item.accountNumber}</p>
+				<p class="{isAccount ? 'font-semibold' : 'font-medium text-sm'} truncate">{name}</p>
+				<p class="text-xs text-base-content/50 font-mono">{accountNumber}</p>
 			</div>
 			<div class="text-right shrink-0">
-				<p class="font-mono font-semibold">{formatCurrency(item.amount)}</p>
-				{#if shareLabel(item.amount, sectionTotal)}
-					<p class="text-xs text-base-content/50">{shareLabel(item.amount, sectionTotal)} of total</p>
+				<p class="font-mono {isAccount ? 'font-semibold' : 'text-sm'}">{formatCurrency(amount)}</p>
+				{#if shareLabel(amount, sectionTotal)}
+					<p class="text-xs text-base-content/50">
+						{shareLabel(amount, sectionTotal)} of {isAccount ? 'total' : 'account'}
+					</p>
 				{/if}
 			</div>
 		</div>
-		<div class="h-2.5 rounded-full bg-base-200 overflow-hidden">
-			<div class="h-full rounded-full {barClass}" style="width: {barWidth(item.amount, scale)}%"></div>
+		<div class="{isAccount ? 'h-2.5' : 'h-1.5'} rounded-full bg-base-200 overflow-hidden">
+			<div class="h-full rounded-full {barClass}" style="width: {barWidth(amount, scale)}%"></div>
 		</div>
 	</div>
 {/snippet}
