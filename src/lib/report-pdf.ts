@@ -9,12 +9,18 @@ import type {
 	ProfitLossReport,
 	TrialBalanceReport,
 	CheckReferenceReport,
+	QuarterlyReport,
 	GLAccountGroup,
 	AccountBalance,
 	CategoryBreakdown
 } from './api';
 
-export type ReportPdfType = 'balance-sheet' | 'profit-loss' | 'trial-balance' | 'check-references';
+export type ReportPdfType =
+	| 'balance-sheet'
+	| 'profit-loss'
+	| 'trial-balance'
+	| 'check-references'
+	| 'quarterly';
 export type CheckReferencePdfFilter = 'all' | 'open' | 'paid';
 
 export interface ReportPdfOptions {
@@ -30,6 +36,7 @@ export interface ReportPdfOptions {
 	profitLoss?: ProfitLossReport | null;
 	trialBalance?: TrialBalanceReport | null;
 	checkReferenceReport?: CheckReferenceReport | null;
+	quarterlyReport?: QuarterlyReport | null;
 	checkReferenceFilter?: CheckReferencePdfFilter;
 	expandedCheckReferences?: Set<string>;
 }
@@ -65,7 +72,9 @@ function reportTitle(type: ReportPdfType, organizationName: string): string {
 				? 'Profit & Loss Statement'
 				: type === 'check-references'
 					? 'Check / Reference Balances'
-					: 'Trial Balance';
+					: type === 'quarterly'
+						? 'Quarterly Executive Summary'
+						: 'Trial Balance';
 	const name = organizationName.trim();
 	return name ? `${base} ${name}` : base;
 }
@@ -437,6 +446,89 @@ function buildCheckReferenceHtml(report: CheckReferenceReport, opts: ReportPdfOp
 	`;
 }
 
+function buildQuarterlyHtml(report: QuarterlyReport, opts: ReportPdfOptions): string {
+	const symbol = opts.currencySymbol;
+	const title = reportTitle('quarterly', opts.organizationName);
+	const maxIncome = Math.max(0, ...report.incomeItems.map((item) => Math.abs(item.amount)));
+	const maxExpense = Math.max(0, ...report.expenseItems.map((item) => Math.abs(item.amount)));
+	const monthMax = Math.max(
+		0,
+		...report.months.flatMap((month) => [Math.abs(month.income), Math.abs(month.expenses)])
+	);
+
+	function rankedRows(
+		items: QuarterlyReport['incomeItems'],
+		max: number,
+		fillClass: string
+	): string {
+		if (items.length === 0) return `<p class="empty">None this quarter.</p>`;
+		return items
+			.map((item) => {
+				const width = max > 0 ? Math.max(2, (Math.abs(item.amount) / max) * 100) : 0;
+				return `<div class="rank-row">
+					<div class="rank-label">
+						<span>${escapeHtml(item.name)}</span>
+						<span class="muted mono">${escapeHtml(item.accountNumber)}</span>
+					</div>
+					<div class="bar-track"><div class="bar-fill ${fillClass}" style="width:${width.toFixed(1)}%"></div></div>
+					<div class="num">${escapeHtml(formatAmount(item.amount, symbol))}</div>
+				</div>`;
+			})
+			.join('');
+	}
+
+	const monthBars =
+		report.months.length === 0
+			? `<p class="empty">No income or expenses in this quarter.</p>`
+			: `<div class="month-chart">${report.months
+					.map((month) => {
+						const incomeH = monthMax > 0 && month.income !== 0 ? (Math.abs(month.income) / monthMax) * 100 : 0;
+						const expenseH = monthMax > 0 && month.expenses !== 0 ? (Math.abs(month.expenses) / monthMax) * 100 : 0;
+						const incomeBar = incomeH > 0 ? `<div class="vbar income" style="height:${incomeH.toFixed(1)}%"></div>` : '';
+						const expenseBar = expenseH > 0 ? `<div class="vbar expense" style="height:${expenseH.toFixed(1)}%"></div>` : '';
+						return `<div class="month-col">
+							<div class="month-bars">
+								${incomeBar}
+								${expenseBar}
+							</div>
+							<div class="month-name">${escapeHtml(month.label)}</div>
+						</div>`;
+					})
+					.join('')}</div>
+				<p class="legend"><span class="swatch income"></span> Income <span class="swatch expense"></span> Expenses</p>`;
+
+	return `
+		<header class="report-header">
+			<h1>${escapeHtml(title)}</h1>
+			<p>${escapeHtml(report.label)}</p>
+			<p>${escapeHtml(formatDateUtc(report.startDate))} to ${escapeHtml(formatDateUtc(report.endDate))}</p>
+			<p>Currency: ${escapeHtml(report.currencyCode)}</p>
+		</header>
+		<table class="totals">
+			<tbody>
+				<tr>
+					<td>Income</td>
+					${moneyCell(report.income, symbol, 'good')}
+				</tr>
+				<tr>
+					<td>Expenses</td>
+					${moneyCell(report.expenses, symbol)}
+				</tr>
+				<tr class="net-row ${report.netIncome >= 0 ? 'good' : 'bad'}">
+					<td>Net income</td>
+					${moneyCell(report.netIncome, symbol)}
+				</tr>
+			</tbody>
+		</table>
+		<h2>Month by month</h2>
+		${monthBars}
+		<h2>Biggest income</h2>
+		${rankedRows(report.incomeItems, maxIncome, 'income')}
+		<h2>Biggest expenses</h2>
+		${rankedRows(report.expenseItems, maxExpense, 'expense')}
+	`;
+}
+
 const PRINT_STYLES = `
 	* { box-sizing: border-box; }
 	body {
@@ -484,6 +576,20 @@ const PRINT_STYLES = `
 	.open { color: #b45309; font-weight: 600; }
 	.status { margin-top: 16px; font-weight: 600; text-align: center; }
 	.empty { color: #777; font-size: 10pt; margin: 4px 0 8px; }
+	.rank-row { display: grid; grid-template-columns: minmax(8rem, 14rem) 1fr 7.5rem; gap: 8px; align-items: center; margin: 4px 0 8px; }
+	.rank-label { display: flex; flex-direction: column; font-size: 9.5pt; }
+	.bar-track { background: #eee; border-radius: 999px; height: 8px; overflow: hidden; }
+	.bar-fill { height: 8px; border-radius: 999px; }
+	.bar-fill.income, .vbar.income, .swatch.income { background: #0a7a3e; }
+	.bar-fill.expense, .vbar.expense, .swatch.expense { background: #b45309; }
+	.month-chart { display: flex; gap: 18px; align-items: flex-end; height: 140px; margin: 8px 0 4px; }
+	.month-col { flex: 1; max-width: 120px; display: flex; flex-direction: column; align-items: center; height: 100%; }
+	.month-bars { flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 6px; }
+	.vbar { width: 16px; border-radius: 4px 4px 0 0; min-height: 2px; }
+	.month-name { margin-top: 6px; font-size: 9pt; color: #444; text-align: center; }
+	.legend { font-size: 9pt; color: #444; }
+	.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: middle; }
+	.swatch:first-child { margin-left: 0; }
 	@media print {
 		body { padding: 12px 16px; }
 		.two-col { gap: 16px; }
@@ -507,6 +613,8 @@ export function exportReportPdf(opts: ReportPdfOptions): void {
 		bodyHtml = buildTrialBalanceHtml(opts.trialBalance, opts);
 	} else if (opts.type === 'check-references' && opts.checkReferenceReport) {
 		bodyHtml = buildCheckReferenceHtml(opts.checkReferenceReport, opts);
+	} else if (opts.type === 'quarterly' && opts.quarterlyReport) {
+		bodyHtml = buildQuarterlyHtml(opts.quarterlyReport, opts);
 	} else {
 		throw new Error('No report data available to export');
 	}

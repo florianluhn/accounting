@@ -9,6 +9,7 @@
 		type ProfitLossReport,
 		type TrialBalanceReport,
 		type CheckReferenceReport,
+		type QuarterlyReport,
 		type GLAccountGroup,
 		type AccountBalance,
 		type CategoryBreakdown,
@@ -17,15 +18,18 @@
 		type SubledgerAccount
 	} from '$lib/api';
 	import {
+		formatFinancialQuarterLabel,
 		formatFinancialYearLabel,
 		formatFinancialYearRange,
+		getFinancialQuarter,
 		getFinancialYear,
 		getFinancialYearBounds,
 		toLocalDateString
 	} from '$lib/financial-year';
 	import { exportReportPdf } from '$lib/report-pdf';
+	import QuarterlySummary from './QuarterlySummary.svelte';
 
-	type ReportType = 'balance-sheet' | 'profit-loss' | 'trial-balance' | 'check-references';
+	type ReportType = 'balance-sheet' | 'profit-loss' | 'trial-balance' | 'quarterly' | 'check-references';
 	type CheckRefFilter = 'all' | 'open' | 'paid';
 
 	let activeReport = $state<ReportType>('balance-sheet');
@@ -49,6 +53,12 @@
 	function parseLocalDateEnd(dateString: string): Date {
 		// Just parse the date string - backend will set to 23:59:59.999 UTC
 		return new Date(dateString);
+	}
+
+	function applyQuarterDefaults() {
+		const startMonth = financialYear.startMonth;
+		quarterFyYear = getFinancialYear(new Date(), startMonth);
+		quarterNumber = getFinancialQuarter(new Date(), startMonth);
 	}
 
 	function applyFinancialYearDefaults() {
@@ -83,6 +93,9 @@
 	let profitLoss = $state<ProfitLossReport | null>(null);
 	let trialBalance = $state<TrialBalanceReport | null>(null);
 	let checkReferenceReport = $state<CheckReferenceReport | null>(null);
+	let quarterlyReport = $state<QuarterlyReport | null>(null);
+	let quarterFyYear = $state(new Date().getFullYear());
+	let quarterNumber = $state(1);
 	let checkRefFilter = $state<CheckRefFilter>('all');
 	let expandedCheckRefs = $state<Set<string>>(new Set());
 
@@ -107,6 +120,7 @@
 			.then((s) => {
 				applyModuleSettings(s);
 				applyFinancialYearDefaults();
+				applyQuarterDefaults();
 			})
 			.catch(() => {});
 	});
@@ -123,9 +137,13 @@
 		profitLoss = null;
 		trialBalance = null;
 		checkReferenceReport = null;
+		quarterlyReport = null;
 		expandedCheckRefs = new Set();
 		if (type === 'profit-loss' || type === 'check-references') {
 			applyFinancialYearDefaults();
+		}
+		if (type === 'quarterly') {
+			applyQuarterDefaults();
 		}
 	}
 
@@ -179,6 +197,12 @@
 					endDate: parseLocalDateEnd(endDate),
 					currencyCode: selectedCurrency
 				});
+			} else if (activeReport === 'quarterly') {
+				quarterlyReport = await reportsAPI.quarterly({
+					fyYear: Number(quarterFyYear),
+					quarter: Number(quarterNumber),
+					currencyCode: selectedCurrency
+				});
 			} else if (activeReport === 'check-references') {
 				checkReferenceReport = await reportsAPI.checkReferences({
 					startDate: parseLocalDateStart(startDate),
@@ -218,7 +242,8 @@
 		(activeReport === 'balance-sheet' && !!balanceSheet) ||
 			(activeReport === 'profit-loss' && !!profitLoss) ||
 			(activeReport === 'trial-balance' && !!trialBalance) ||
-			(activeReport === 'check-references' && !!checkReferenceReport)
+			(activeReport === 'check-references' && !!checkReferenceReport) ||
+			(activeReport === 'quarterly' && !!quarterlyReport)
 	);
 
 	let visibleCheckRefs = $derived.by(() => {
@@ -266,7 +291,8 @@
 				trialBalance,
 				checkReferenceReport,
 				checkReferenceFilter: checkRefFilter,
-				expandedCheckReferences: expandedCheckRefs
+				expandedCheckReferences: expandedCheckRefs,
+				quarterlyReport
 			});
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to export PDF';
@@ -462,6 +488,14 @@
 		<button
 			role="tab"
 			class="tab"
+			class:tab-active={activeReport === 'quarterly'}
+			onclick={() => setReportType('quarterly')}
+		>
+			Quarterly
+		</button>
+		<button
+			role="tab"
+			class="tab"
 			class:tab-active={activeReport === 'trial-balance'}
 			onclick={() => setReportType('trial-balance')}
 		>
@@ -495,23 +529,56 @@
 					A zero balance means the check has been paid. Open checks from before the From date stay listed until they clear.
 				</p>
 			{/if}
+			{#if activeReport === 'quarterly'}
+				<p class="text-sm text-base-content/60 mb-3">
+					A one-page overview of income, expenses, and net income for a financial-year quarter.
+					Accounts and months with a zero balance are left out.
+				</p>
+			{/if}
 			<div class="flex gap-4 items-end flex-wrap">
-				{#if activeReport !== 'balance-sheet'}
+				{#if activeReport === 'quarterly'}
 					<div class="form-control">
 						<label class="label">
-							<span class="label-text">From Date</span>
+							<span class="label-text">Financial year</span>
 						</label>
-						<input type="date" class="input input-bordered" bind:value={startDate} />
+						<input
+							type="number"
+							class="input input-bordered w-32"
+							min="1900"
+							max="2500"
+							bind:value={quarterFyYear}
+						/>
+					</div>
+					<div class="form-control">
+						<label class="label">
+							<span class="label-text">Quarter</span>
+						</label>
+						<select class="select select-bordered" bind:value={quarterNumber}>
+							{#each [1, 2, 3, 4] as quarter}
+								<option value={quarter}>
+									{formatFinancialQuarterLabel(Number(quarterFyYear), financialYear.startMonth, quarter)}
+								</option>
+							{/each}
+						</select>
+					</div>
+				{:else}
+					{#if activeReport !== 'balance-sheet'}
+						<div class="form-control">
+							<label class="label">
+								<span class="label-text">From Date</span>
+							</label>
+							<input type="date" class="input input-bordered" bind:value={startDate} />
+						</div>
+					{/if}
+					<div class="form-control">
+						<label class="label">
+							<span class="label-text">
+								{activeReport === 'balance-sheet' ? 'As of Date' : 'To Date'}
+							</span>
+						</label>
+						<input type="date" class="input input-bordered" bind:value={endDate} />
 					</div>
 				{/if}
-				<div class="form-control">
-					<label class="label">
-						<span class="label-text">
-							{activeReport === 'balance-sheet' ? 'As of Date' : 'To Date'}
-						</span>
-					</label>
-					<input type="date" class="input input-bordered" bind:value={endDate} />
-				</div>
 				<div class="form-control">
 					<label class="label">
 						<span class="label-text">Currency</span>
@@ -531,6 +598,11 @@
 				{#if activeReport === 'profit-loss' || activeReport === 'check-references'}
 					<button type="button" class="btn btn-outline" onclick={useCurrentFinancialYear}>
 						Use current FY
+					</button>
+				{/if}
+				{#if activeReport === 'quarterly'}
+					<button type="button" class="btn btn-outline" onclick={applyQuarterDefaults}>
+						Current quarter
 					</button>
 				{/if}
 				<button class="btn btn-primary" onclick={generateReport} disabled={loading}>
@@ -1279,6 +1351,27 @@
 							></path>
 						</svg>
 						<span>Click "Generate Report" to view the Trial Balance</span>
+					</div>
+				</div>
+			</div>
+		{/if}
+	{/if}
+
+	<!-- Quarterly executive summary -->
+	{#if activeReport === 'quarterly'}
+		{#if quarterlyReport}
+			<QuarterlySummary
+				report={quarterlyReport}
+				heading={reportHeading('Quarterly Executive Summary')}
+				{formatCurrency}
+				{formatDate}
+				onExport={handleExportPdf}
+			/>
+		{:else}
+			<div class="card bg-base-100 shadow-xl">
+				<div class="card-body">
+					<div class="alert alert-info">
+						<span>Click "Generate Report" to view the quarterly executive summary</span>
 					</div>
 				</div>
 			</div>

@@ -3,7 +3,12 @@ import { z } from 'zod';
 import db from '../db/connection.js';
 import { journalEntries, subledgerAccounts, glAccounts, currencies, budgets, appSettings } from '../db/schema.js';
 import { eq, and, lte, gte, sql, desc, asc, isNotNull } from 'drizzle-orm';
-import { getFinancialYearUTC, getUtcCalendarMonthBounds } from '../../lib/financial-year.js';
+import {
+	getFinancialYearUTC,
+	getFinancialQuarterUTCBounds,
+	formatFinancialQuarterLabel,
+	getUtcCalendarMonthBounds
+} from '../../lib/financial-year.js';
 import { buildCheckReferenceReport } from '../../lib/check-reference-report.js';
 
 async function getFinancialYearStartMonth(): Promise<number> {
@@ -331,6 +336,168 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			};
 		}
 	);
+
+	// GET /api/reports/quarterly — executive summary for one financial-year quarter
+	const quarterlySchema = z.object({
+		fyYear: z.coerce.number().int().min(1900).max(2500),
+		quarter: z.coerce.number().int().min(1).max(4),
+		currencyCode: z.string().length(3).default('USD')
+	});
+
+	fastify.get<{ Querystring: z.infer<typeof quarterlySchema> }>('/quarterly', async (request) => {
+		const { fyYear, quarter, currencyCode } = quarterlySchema.parse(request.query);
+		const fyStartMonth = await getFinancialYearStartMonth();
+		const quarterBounds = getFinancialQuarterUTCBounds(fyYear, fyStartMonth, quarter);
+
+		const start = new Date(quarterBounds.start);
+		start.setUTCHours(0, 0, 0, 0);
+		const end = new Date(quarterBounds.end);
+		end.setUTCHours(23, 59, 59, 999);
+
+		const accounts = await db
+			.select({
+				id: subledgerAccounts.id,
+				accountNumber: subledgerAccounts.accountNumber,
+				accountName: subledgerAccounts.name,
+				glAccountType: glAccounts.type
+			})
+			.from(subledgerAccounts)
+			.innerJoin(glAccounts, eq(subledgerAccounts.glAccountId, glAccounts.id))
+			.where(
+				and(eq(subledgerAccounts.isActive, true), sql`${glAccounts.type} != 'Opening Balance'`)
+			);
+
+		const accountById = new Map(accounts.map((account) => [account.id, account]));
+		const debitNormalTypes = new Set(['Asset', 'Cash', 'Accounts Receivable', 'Loss']);
+		const exchangeRate = await getExchangeRateToUsd(currencyCode);
+
+		const entries = await db
+			.select({
+				entryDate: journalEntries.entryDate,
+				amountInUSD: journalEntries.amountInUSD,
+				debitAccountId: journalEntries.debitAccountId,
+				creditAccountId: journalEntries.creditAccountId,
+				category: journalEntries.category
+			})
+			.from(journalEntries)
+			.where(and(gte(journalEntries.entryDate, start), lte(journalEntries.entryDate, end)));
+
+		const balances = new Map<number, number>();
+		const monthTotals = quarterBounds.months.map((month) => ({
+			year: month.year,
+			month: month.month,
+			label: month.label,
+			income: 0,
+			expenses: 0,
+			netIncome: 0
+		}));
+
+		function signedDelta(accountId: number, isDebit: boolean, amount: number): number {
+			const account = accountById.get(accountId);
+			if (!account) return 0;
+			const debitNormal = debitNormalTypes.has(account.glAccountType);
+			if (isDebit) return debitNormal ? amount : -amount;
+			return debitNormal ? -amount : amount;
+		}
+
+		const startYear = quarterBounds.months[0].year;
+		const startMonthIndex = quarterBounds.months[0].month - 1;
+
+		for (const entry of entries) {
+			if (entry.category === 'Year-end close') continue;
+			const entryDate = new Date(entry.entryDate);
+			const monthIndex =
+				(entryDate.getUTCFullYear() - startYear) * 12 +
+				(entryDate.getUTCMonth() - startMonthIndex);
+			if (monthIndex < 0 || monthIndex > 2) continue;
+
+			const amount = fromUsd(entry.amountInUSD, exchangeRate);
+			const sides: Array<[number, boolean]> = [
+				[entry.debitAccountId, true],
+				[entry.creditAccountId, false]
+			];
+			for (const [accountId, isDebit] of sides) {
+				const account = accountById.get(accountId);
+				if (!account || (account.glAccountType !== 'Profit' && account.glAccountType !== 'Loss')) {
+					continue;
+				}
+				const delta = signedDelta(accountId, isDebit, amount);
+				balances.set(accountId, (balances.get(accountId) ?? 0) + delta);
+				if (account.glAccountType === 'Profit') monthTotals[monthIndex].income += delta;
+				else monthTotals[monthIndex].expenses += delta;
+			}
+		}
+
+		function roundMoney(amount: number): number {
+			return Math.round(amount * 100) / 100;
+		}
+		function isZero(amount: number): boolean {
+			return Math.abs(amount) < 0.005;
+		}
+
+		const incomeItems: Array<{
+			accountId: number;
+			accountNumber: string;
+			name: string;
+			amount: number;
+		}> = [];
+		const expenseItems: Array<{
+			accountId: number;
+			accountNumber: string;
+			name: string;
+			amount: number;
+		}> = [];
+		let totalIncome = 0;
+		let totalExpenses = 0;
+
+		for (const account of accounts) {
+			if (account.glAccountType !== 'Profit' && account.glAccountType !== 'Loss') continue;
+			const amount = roundMoney(balances.get(account.id) ?? 0);
+			if (isZero(amount)) continue;
+			const item = {
+				accountId: account.id,
+				accountNumber: account.accountNumber,
+				name: account.accountName,
+				amount
+			};
+			if (account.glAccountType === 'Profit') {
+				totalIncome += amount;
+				incomeItems.push(item);
+			} else {
+				totalExpenses += amount;
+				expenseItems.push(item);
+			}
+		}
+
+		totalIncome = roundMoney(totalIncome);
+		totalExpenses = roundMoney(totalExpenses);
+		incomeItems.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name));
+		expenseItems.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name));
+
+		const months = monthTotals
+			.map((month) => ({
+				...month,
+				income: roundMoney(month.income),
+				expenses: roundMoney(month.expenses),
+				netIncome: roundMoney(month.income - month.expenses)
+			}))
+			.filter((month) => !isZero(month.income) || !isZero(month.expenses));
+
+		return {
+			fyYear,
+			quarter,
+			label: formatFinancialQuarterLabel(fyYear, fyStartMonth, quarter),
+			startDate: start,
+			endDate: end,
+			currencyCode,
+			income: totalIncome,
+			expenses: totalExpenses,
+			netIncome: roundMoney(totalIncome - totalExpenses),
+			months,
+			incomeItems,
+			expenseItems
+		};
+	});
 
 	// GET /api/reports/monthly-overview - Past N complete months of net income + equity
 	// Single-pass over journal entries (avoids N× full report recalculations).

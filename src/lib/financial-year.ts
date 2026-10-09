@@ -79,6 +79,71 @@ export function getUtcCalendarMonthBounds(year: number, month: number): { start:
 	return { start, end };
 }
 
+export type FinancialQuarter = 1 | 2 | 3 | 4;
+
+/** Quarter (1–4) of the financial year that contains `date`. */
+export function getFinancialQuarter(date: Date, startMonth: number): FinancialQuarter {
+	const m = clampMonth(startMonth);
+	const fyYear = getFinancialYear(date, m);
+	const offset = (date.getFullYear() - fyYear) * 12 + (date.getMonth() + 1 - m);
+	const clamped = Math.min(11, Math.max(0, offset));
+	return (Math.floor(clamped / 3) + 1) as FinancialQuarter;
+}
+
+/**
+ * Inclusive UTC day bounds for one financial-year quarter.
+ * Q1 starts in `startMonth` of `fyYear`. Each quarter is three calendar months.
+ */
+export function getFinancialQuarterUTCBounds(
+	fyYear: number,
+	startMonth: number,
+	quarter: number
+): {
+	start: Date;
+	end: Date;
+	months: Array<{ year: number; month: number; label: string }>;
+} {
+	const q = Math.min(4, Math.max(1, Math.round(Number(quarter)))) as FinancialQuarter;
+	const m = clampMonth(startMonth);
+	const months: Array<{ year: number; month: number; label: string }> = [];
+	for (let i = 0; i < 3; i++) {
+		const index = m - 1 + (q - 1) * 3 + i;
+		const year = fyYear + Math.floor(index / 12);
+		const month = (index % 12) + 1;
+		const bounds = getUtcCalendarMonthBounds(year, month);
+		months.push({
+			year,
+			month,
+			label: bounds.start.toLocaleDateString('en-US', {
+				month: 'short',
+				year: 'numeric',
+				timeZone: 'UTC'
+			})
+		});
+	}
+	const start = getUtcCalendarMonthBounds(months[0].year, months[0].month).start;
+	const end = getUtcCalendarMonthBounds(months[2].year, months[2].month).end;
+	return { start, end, months };
+}
+
+/** "Q1 FY 2026 · Jan–Mar 2026" */
+export function formatFinancialQuarterLabel(
+	fyYear: number,
+	startMonth: number,
+	quarter: number
+): string {
+	const { months } = getFinancialQuarterUTCBounds(fyYear, startMonth, quarter);
+	const q = Math.min(4, Math.max(1, Math.round(Number(quarter))));
+	const startName = MONTH_NAMES[months[0].month - 1].slice(0, 3);
+	const endName = MONTH_NAMES[months[2].month - 1].slice(0, 3);
+	const fy = formatFinancialYearLabel(fyYear, startMonth);
+	const span =
+		months[0].year === months[2].year
+			? `${startName}–${endName} ${months[2].year}`
+			: `${startName} ${months[0].year}–${endName} ${months[2].year}`;
+	return `Q${q} ${fy} · ${span}`;
+}
+
 /** Human label, e.g. "FY 2025" or "FY 2025–2026" when year spans two calendars. */
 export function formatFinancialYearLabel(fyYear: number, startMonth: number): string {
 	const m = clampMonth(startMonth);

@@ -874,6 +874,40 @@ export interface ProfitLossReport {
 	netIncome: number;
 }
 
+export interface QuarterlyLineItem {
+	accountId: number;
+	accountNumber: string;
+	name: string;
+	amount: number;
+}
+
+export interface QuarterlyMonth {
+	year: number;
+	month: number;
+	label: string;
+	income: number;
+	expenses: number;
+	netIncome: number;
+}
+
+export interface QuarterlyReport {
+	fyYear: number;
+	quarter: number;
+	label: string;
+	startDate: Date;
+	endDate: Date;
+	currencyCode: string;
+	income: number;
+	expenses: number;
+	netIncome: number;
+	/** Months in the quarter that had income or expenses. Zero months are omitted. */
+	months: QuarterlyMonth[];
+	/** Profit accounts with a non-zero balance, largest first. */
+	incomeItems: QuarterlyLineItem[];
+	/** Expense accounts with a non-zero balance, largest first. */
+	expenseItems: QuarterlyLineItem[];
+}
+
 export interface MonthlyOverviewPoint {
 	year: number;
 	month: number;
@@ -935,6 +969,18 @@ export const reportsAPI = {
 
 		const queryString = query.toString();
 		return apiFetch(`/api/reports/profit-loss${queryString ? `?${queryString}` : ''}`);
+	},
+
+	async quarterly(params: {
+		fyYear: number;
+		quarter: number;
+		currencyCode?: string;
+	}): Promise<QuarterlyReport> {
+		const query = new URLSearchParams();
+		query.set('fyYear', String(params.fyYear));
+		query.set('quarter', String(params.quarter));
+		if (params.currencyCode) query.set('currencyCode', params.currencyCode);
+		return apiFetch(`/api/reports/quarterly?${query.toString()}`);
 	},
 
 	async monthlyOverview(params?: {
