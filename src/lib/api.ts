@@ -890,6 +890,37 @@ export interface QuarterlyAccountGroup {
 	subaccounts: QuarterlyLineItem[];
 }
 
+/** A budgeted subaccount compared with this quarter's share of the financial-year budget. */
+export interface QuarterlyBudgetLine {
+	accountId: number;
+	accountNumber: string;
+	name: string;
+	kind: 'income' | 'expense';
+	actual: number;
+	/** One quarter of the financial-year budget. */
+	budget: number;
+	/** How much of the quarter budget this period reached. May exceed 100. */
+	percent: number;
+	/** Expense actual is above the quarter budget. */
+	overBudget: boolean;
+	/** Income actual is below the quarter budget. */
+	shortBudget: boolean;
+}
+
+/** Budgeted general-ledger account, then its budgeted subaccounts. */
+export interface QuarterlyBudgetGroup {
+	glAccountId: number;
+	accountNumber: string;
+	name: string;
+	kind: 'income' | 'expense';
+	actual: number;
+	budget: number;
+	percent: number;
+	overBudget: boolean;
+	shortBudget: boolean;
+	subaccounts: QuarterlyBudgetLine[];
+}
+
 export interface QuarterlyMonth {
 	year: number;
 	month: number;
@@ -919,6 +950,14 @@ export interface QuarterlyReport {
 	cashTotal: number;
 	/** Cash accounts as of the end of the quarter, by general-ledger account, then subaccount. */
 	cashGroups: QuarterlyAccountGroup[];
+	/** True when the Budgets module is turned on. */
+	budgetsEnabled: boolean;
+	/** Budgeted income and expense accounts. Empty when budgets are off or none are set. */
+	budgetGroups: QuarterlyBudgetGroup[];
+	/** Expense subaccounts above their quarter budget. */
+	overBudgetCount: number;
+	/** Income subaccounts below their quarter budget. */
+	shortBudgetCount: number;
 }
 
 export interface MonthlyOverviewPoint {

@@ -533,6 +533,7 @@
 				<p class="text-sm text-base-content/60 mb-3">
 					A one-page overview of income, expenses, net income, and cash on hand for a financial-year quarter.
 					Accounts and months with a zero balance are left out. Cash is the balance at the end of the quarter.
+					When budgets are enabled, each position is compared with one quarter of its financial-year budget.
 				</p>
 			{/if}
 			<div class="flex gap-4 items-end flex-wrap">

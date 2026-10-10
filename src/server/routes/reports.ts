@@ -512,6 +512,132 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		const totalExpenses = roundMoney(expenseGroups.reduce((sum, group) => sum + group.amount, 0));
 		const cashTotal = roundMoney(cashGroups.reduce((sum, group) => sum + group.amount, 0));
 
+		const budgetSetting = await db
+			.select()
+			.from(appSettings)
+			.where(eq(appSettings.key, 'budgets'))
+			.limit(1);
+		const budgetsEnabled = budgetSetting[0]?.value === 'true';
+		const budgetByAccount = new Map<number, number>();
+		if (budgetsEnabled) {
+			const yearBudgets = await db.select().from(budgets).where(eq(budgets.year, fyYear));
+			for (const row of yearBudgets) {
+				const quarterBudget = roundMoney(fromUsd(row.amount, exchangeRate) / 4);
+				if (quarterBudget > 0) budgetByAccount.set(row.subledgerAccountId, quarterBudget);
+			}
+		}
+
+		type BudgetLine = {
+			accountId: number;
+			accountNumber: string;
+			name: string;
+			kind: 'income' | 'expense';
+			actual: number;
+			budget: number;
+			percent: number;
+			overBudget: boolean;
+			shortBudget: boolean;
+		};
+		type BudgetGroup = {
+			glAccountId: number;
+			accountNumber: string;
+			name: string;
+			kind: 'income' | 'expense';
+			actual: number;
+			budget: number;
+			percent: number;
+			overBudget: boolean;
+			shortBudget: boolean;
+			subaccounts: BudgetLine[];
+		};
+
+		function budgetStatus(kind: 'income' | 'expense', actual: number, budget: number) {
+			const overBudget = kind === 'expense' && actual > budget + 0.004;
+			const shortBudget = kind === 'income' && actual + 0.004 < budget;
+			let percent = budget > 0 ? Math.round((actual / budget) * 100) : 0;
+			if (overBudget && percent <= 100) percent = 101;
+			if (shortBudget && percent >= 100) percent = 99;
+			return { percent, overBudget, shortBudget };
+		}
+
+		const budgetGroupsByKey = new Map<number, BudgetGroup>();
+		if (budgetsEnabled) {
+			for (const account of accounts) {
+				if (account.glAccountType !== 'Profit' && account.glAccountType !== 'Loss') continue;
+				const budget = budgetByAccount.get(account.id);
+				if (budget == null) continue;
+				const kind: 'income' | 'expense' = account.glAccountType === 'Profit' ? 'income' : 'expense';
+				const actual = roundMoney(balances.get(account.id) ?? 0);
+				let group = budgetGroupsByKey.get(account.glAccountId);
+				if (!group) {
+					group = {
+						glAccountId: account.glAccountId,
+						accountNumber: account.glAccountNumber,
+						name: account.glAccountName,
+						kind,
+						actual: 0,
+						budget: 0,
+						percent: 0,
+						overBudget: false,
+						shortBudget: false,
+						subaccounts: []
+					};
+					budgetGroupsByKey.set(account.glAccountId, group);
+				}
+				group.actual += actual;
+				group.budget += budget;
+				group.subaccounts.push({
+					accountId: account.id,
+					accountNumber: account.accountNumber,
+					name: account.accountName,
+					kind,
+					actual,
+					budget,
+					...budgetStatus(kind, actual, budget)
+				});
+			}
+		}
+
+		const budgetGroups = [...budgetGroupsByKey.values()];
+		for (const group of budgetGroups) {
+			group.actual = roundMoney(group.actual);
+			group.budget = roundMoney(group.budget);
+			const status = budgetStatus(group.kind, group.actual, group.budget);
+			group.percent = status.percent;
+			group.overBudget = status.overBudget;
+			group.shortBudget = status.shortBudget;
+			group.subaccounts.sort((a, b) => {
+				const rank = (line: BudgetLine) => (line.overBudget || line.shortBudget ? 0 : 1);
+				const byPercent = group.kind === 'expense' ? b.percent - a.percent : a.percent - b.percent;
+				return (
+					rank(a) - rank(b) ||
+					byPercent ||
+					a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true })
+				);
+			});
+		}
+		budgetGroups.sort((a, b) => {
+			if (a.kind !== b.kind) return a.kind === 'income' ? -1 : 1;
+			const rank = (group: BudgetGroup) =>
+				group.overBudget || group.shortBudget || group.subaccounts.some((line) => line.overBudget || line.shortBudget)
+					? 0
+					: 1;
+			const byPercent = a.kind === 'expense' ? b.percent - a.percent : a.percent - b.percent;
+			return (
+				rank(a) - rank(b) ||
+				byPercent ||
+				a.accountNumber.localeCompare(b.accountNumber, undefined, { numeric: true })
+			);
+		});
+		const overBudgetCount = budgetGroups.reduce(
+			(sum, group) => sum + group.subaccounts.filter((line) => line.overBudget).length,
+			0
+		);
+		const shortBudgetCount = budgetGroups.reduce(
+			(sum, group) => sum + group.subaccounts.filter((line) => line.shortBudget).length,
+			0
+		);
+
 		const months = monthTotals
 			.map((month) => ({
 				...month,
@@ -535,7 +661,11 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			incomeGroups,
 			expenseGroups,
 			cashTotal,
-			cashGroups
+			cashGroups,
+			budgetsEnabled,
+			budgetGroups,
+			overBudgetCount,
+			shortBudgetCount
 		};
 	});
 

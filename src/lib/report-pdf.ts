@@ -446,6 +446,54 @@ function buildCheckReferenceHtml(report: CheckReferenceReport, opts: ReportPdfOp
 	`;
 }
 
+function budgetSection(report: QuarterlyReport, symbol: string): string {
+	if (!report.budgetsEnabled) return '';
+	const groups = report.budgetGroups ?? [];
+	if (groups.length === 0) {
+		return `<h2>Budget</h2><p class="empty">No budgets are set for this financial year.</p>`;
+	}
+	const overCount = report.overBudgetCount ?? 0;
+	const shortCount = report.shortBudgetCount ?? 0;
+	const notes = [
+		overCount === 1
+			? '1 expense position is over budget.'
+			: overCount > 1
+				? `${overCount} expense positions are over budget.`
+				: '',
+		shortCount === 1
+			? '1 income position is under budget.'
+			: shortCount > 1
+				? `${shortCount} income positions are under budget.`
+				: ''
+	].filter(Boolean);
+	const summary = notes.length > 0 ? notes.join(' ') : 'Every budgeted position is within its quarter budget.';
+	const rows = groups
+		.map((group) => {
+			const lines = [group, ...group.subaccounts];
+			return lines
+				.map((line, index) => {
+					const width = Math.max(line.percent > 0 ? 2 : 0, Math.min(100, line.percent));
+					const fill = line.overBudget ? 'over' : line.shortBudget ? 'expense' : 'income';
+					const flag = line.overBudget ? 'Over budget' : line.shortBudget ? 'Under budget' : '';
+					return `<div class="rank-row ${index === 0 ? '' : 'sub'}">
+						<div class="rank-label">
+							<span>${escapeHtml(line.name)}</span>
+							<span class="muted mono">${escapeHtml(line.accountNumber)}</span>
+							<span class="muted">${escapeHtml(formatAmount(line.actual, symbol))} of ${escapeHtml(formatAmount(line.budget, symbol))}</span>
+						</div>
+						<div class="bar-track"><div class="bar-fill ${fill}" style="width:${width.toFixed(1)}%"></div></div>
+						<div class="num">${line.percent}%${flag ? `<div class="${line.overBudget ? 'bad' : 'open'}">${escapeHtml(flag)}</div>` : ''}</div>
+					</div>`;
+				})
+				.join('');
+		})
+		.join('');
+	return `<h2>Budget</h2>
+		<p class="empty">Compared with one quarter of the financial-year budget.</p>
+		<p>${escapeHtml(summary)}</p>
+		${rows}`;
+}
+
 function buildQuarterlyHtml(report: QuarterlyReport, opts: ReportPdfOptions): string {
 	const symbol = opts.currencySymbol;
 	const title = reportTitle('quarterly', opts.organizationName);
@@ -554,6 +602,7 @@ function buildQuarterlyHtml(report: QuarterlyReport, opts: ReportPdfOptions): st
 		${groupedRows(report.incomeGroups, maxIncome, 'income')}
 		<h2>Biggest expenses</h2>
 		${groupedRows(report.expenseGroups, maxExpense, 'expense')}
+		${budgetSection(report, symbol)}
 		<h2>Cash accounts</h2>
 		<p class="empty">Balances as of ${escapeHtml(formatDateUtc(report.endDate))}. Zero balances are omitted.</p>
 		${groupedRows(report.cashGroups, maxCash, 'cash')}
@@ -614,6 +663,7 @@ const PRINT_STYLES = `
 	.bar-fill.income, .vbar.income, .swatch.income { background: #0a7a3e; }
 	.bar-fill.expense, .vbar.expense, .swatch.expense { background: #b45309; }
 	.bar-fill.cash { background: #1d4ed8; }
+	.bar-fill.over { background: #b42318; }
 	.rank-row.sub { margin-left: 16px; }
 	.rank-row.sub .rank-label { font-size: 9pt; font-weight: 400; }
 	.month-chart { display: flex; gap: 18px; align-items: flex-end; height: 140px; margin: 8px 0 4px; }

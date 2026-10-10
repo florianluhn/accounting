@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { QuarterlyAccountGroup, QuarterlyReport } from '$lib/api';
+	import type { QuarterlyAccountGroup, QuarterlyBudgetGroup, QuarterlyReport } from '$lib/api';
 
 	let {
 		report,
@@ -32,6 +32,10 @@
 	let expenseScale = $derived(groupScale(report.expenseGroups));
 	let cashScale = $derived(groupScale(report.cashGroups));
 	let mixTotal = $derived(Math.max(0, report.income) + Math.max(0, report.expenses));
+	let budgetGroups = $derived(report.budgetGroups ?? []);
+	let budgetsEnabled = $derived(report.budgetsEnabled ?? false);
+	let incomeBudgets = $derived(budgetGroups.filter((group) => group.kind === 'income'));
+	let expenseBudgets = $derived(budgetGroups.filter((group) => group.kind === 'expense'));
 
 	function barWidth(amount: number, scale: number): number {
 		if (scale <= 0) return 0;
@@ -225,6 +229,64 @@
 			</section>
 		</div>
 
+		{#if budgetsEnabled}
+			<section class="mb-8">
+				<h3 class="font-semibold mb-1">Budget</h3>
+				<p class="text-sm text-base-content/60 mb-4">
+					Compared with one quarter of the financial-year budget. The percentage is how much of that quarter budget this period reached.
+				</p>
+				{#if budgetGroups.length === 0}
+					<p class="text-base-content/60">No budgets are set for this financial year.</p>
+				{:else}
+					{#if (report.overBudgetCount ?? 0) > 0 || (report.shortBudgetCount ?? 0) > 0}
+						{@const overCount = report.overBudgetCount ?? 0}
+						{@const shortCount = report.shortBudgetCount ?? 0}
+						{@const budgetNotes = [
+							overCount === 1
+								? '1 expense position is over budget.'
+								: overCount > 1
+									? `${overCount} expense positions are over budget.`
+									: '',
+							shortCount === 1
+								? '1 income position is under budget.'
+								: shortCount > 1
+									? `${shortCount} income positions are under budget.`
+									: ''
+						].filter(Boolean)}
+						<div class="alert alert-warning mb-4">
+							<span>{budgetNotes.join(' ')}</span>
+						</div>
+					{:else}
+						<div class="alert alert-success mb-4">
+							<span>Every budgeted position is within its quarter budget.</span>
+						</div>
+					{/if}
+					<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+						<section>
+							<h4 class="font-medium mb-3">Income</h4>
+							{#if incomeBudgets.length === 0}
+								<p class="text-base-content/60">No income budgets.</p>
+							{:else}
+								{#each incomeBudgets as group (group.glAccountId)}
+									{@render budgetGroup(group)}
+								{/each}
+							{/if}
+						</section>
+						<section>
+							<h4 class="font-medium mb-3">Expenses</h4>
+							{#if expenseBudgets.length === 0}
+								<p class="text-base-content/60">No expense budgets.</p>
+							{:else}
+								{#each expenseBudgets as group (group.glAccountId)}
+									{@render budgetGroup(group)}
+								{/each}
+							{/if}
+						</section>
+					</div>
+				{/if}
+			</section>
+		{/if}
+
 		<section>
 			<h3 class="font-semibold mb-1">Cash accounts</h3>
 			<p class="text-sm text-base-content/60 mb-4">
@@ -242,6 +304,56 @@
 		</section>
 	</div>
 </div>
+
+{#snippet budgetGroup(group: QuarterlyBudgetGroup)}
+	<div class="mb-5">
+		{@render budgetRow(group.name, group.accountNumber, group.actual, group.budget, group.percent, group.overBudget, group.shortBudget, true)}
+		<div class="mt-2 ml-4 border-l border-base-300 pl-3">
+			{#each group.subaccounts as item (item.accountId)}
+				{@render budgetRow(item.name, item.accountNumber, item.actual, item.budget, item.percent, item.overBudget, item.shortBudget, false)}
+			{/each}
+		</div>
+	</div>
+{/snippet}
+
+{#snippet budgetRow(
+	name: string,
+	accountNumber: string,
+	actual: number,
+	budget: number,
+	percent: number,
+	overBudget: boolean,
+	shortBudget: boolean,
+	isAccount: boolean
+)}
+	<div class="mb-3">
+		<div class="flex items-baseline justify-between gap-3 mb-1">
+			<div class="min-w-0">
+				<p class="{isAccount ? 'font-semibold' : 'font-medium text-sm'} truncate">{name}</p>
+				<p class="text-xs text-base-content/50 font-mono">{accountNumber}</p>
+			</div>
+			<div class="text-right shrink-0">
+				<p class="font-mono {isAccount ? 'font-semibold' : 'text-sm'} {overBudget ? 'text-error' : shortBudget ? 'text-warning' : ''}">
+					{percent}%
+				</p>
+				{#if overBudget}
+					<p class="text-xs font-medium text-error">Over budget</p>
+				{:else if shortBudget}
+					<p class="text-xs font-medium text-warning">Under budget</p>
+				{/if}
+			</div>
+		</div>
+		<p class="text-xs text-base-content/60 mb-1">
+			{formatCurrency(actual)} of {formatCurrency(budget)}
+		</p>
+		<div class="{isAccount ? 'h-2.5' : 'h-1.5'} rounded-full bg-base-200 overflow-hidden">
+			<div
+				class="h-full rounded-full {overBudget ? 'bg-error' : shortBudget ? 'bg-warning' : 'bg-success'}"
+				style="width: {Math.max(percent > 0 ? 2 : 0, Math.min(100, percent))}%"
+			></div>
+		</div>
+	</div>
+{/snippet}
 
 {#snippet accountGroup(group: QuarterlyAccountGroup, scale: number, barClass: string, sectionTotal: number)}
 	<div class="mb-5">
