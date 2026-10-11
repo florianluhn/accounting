@@ -230,17 +230,17 @@
 
 	async function loadAttachments() {
 		try {
+			const visibleIds = new Set(entries.map((entry) => entry.id));
+			const attachments = await attachmentsAPI.list();
 			const attachmentsMap = new Map<number, Attachment[]>();
 
-			// Load attachments for each entry
-			await Promise.all(
-				entries.map(async (entry) => {
-					const attachments = await attachmentsAPI.list({ journalEntryId: entry.id });
-					if (attachments.length > 0) {
-						attachmentsMap.set(entry.id, attachments);
-					}
-				})
-			);
+			for (const attachment of attachments) {
+				const entryId = attachment.journalEntryId;
+				if (entryId == null || !visibleIds.has(entryId)) continue;
+				const list = attachmentsMap.get(entryId);
+				if (list) list.push(attachment);
+				else attachmentsMap.set(entryId, [attachment]);
+			}
 
 			entryAttachments = attachmentsMap;
 		} catch (e) {
