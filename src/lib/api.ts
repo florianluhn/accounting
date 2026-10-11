@@ -879,6 +879,12 @@ export interface QuarterlyLineItem {
 	accountNumber: string;
 	name: string;
 	amount: number;
+	/** Full financial-year budget. Null when this subaccount has no budget. */
+	budget: number | null;
+	/** This quarter's amount as a percent of the annual budget. */
+	budgetPercent: number | null;
+	/** This quarter's amount is above the full-year budget. */
+	overBudget: boolean;
 }
 
 /** A general-ledger account with its non-zero subaccounts. */
@@ -887,38 +893,11 @@ export interface QuarterlyAccountGroup {
 	accountNumber: string;
 	name: string;
 	amount: number;
+	/** Sum of annual budgets for subaccounts in this group that have one. */
+	budget: number | null;
+	budgetPercent: number | null;
+	overBudget: boolean;
 	subaccounts: QuarterlyLineItem[];
-}
-
-/** A budgeted subaccount compared with this quarter's share of the financial-year budget. */
-export interface QuarterlyBudgetLine {
-	accountId: number;
-	accountNumber: string;
-	name: string;
-	kind: 'income' | 'expense';
-	actual: number;
-	/** One quarter of the financial-year budget. */
-	budget: number;
-	/** How much of the quarter budget this period reached. May exceed 100. */
-	percent: number;
-	/** Expense actual is above the quarter budget. */
-	overBudget: boolean;
-	/** Income actual is below the quarter budget. */
-	shortBudget: boolean;
-}
-
-/** Budgeted general-ledger account, then its budgeted subaccounts. */
-export interface QuarterlyBudgetGroup {
-	glAccountId: number;
-	accountNumber: string;
-	name: string;
-	kind: 'income' | 'expense';
-	actual: number;
-	budget: number;
-	percent: number;
-	overBudget: boolean;
-	shortBudget: boolean;
-	subaccounts: QuarterlyBudgetLine[];
 }
 
 export interface QuarterlyMonth {
@@ -952,12 +931,6 @@ export interface QuarterlyReport {
 	cashGroups: QuarterlyAccountGroup[];
 	/** True when the Budgets module is turned on. */
 	budgetsEnabled: boolean;
-	/** Budgeted income and expense accounts. Empty when budgets are off or none are set. */
-	budgetGroups: QuarterlyBudgetGroup[];
-	/** Expense subaccounts above their quarter budget. */
-	overBudgetCount: number;
-	/** Income subaccounts below their quarter budget. */
-	shortBudgetCount: number;
 }
 
 export interface MonthlyOverviewPoint {

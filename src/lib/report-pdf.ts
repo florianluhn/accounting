@@ -446,54 +446,6 @@ function buildCheckReferenceHtml(report: CheckReferenceReport, opts: ReportPdfOp
 	`;
 }
 
-function budgetSection(report: QuarterlyReport, symbol: string): string {
-	if (!report.budgetsEnabled) return '';
-	const groups = report.budgetGroups ?? [];
-	if (groups.length === 0) {
-		return `<h2>Budget</h2><p class="empty">No budgets are set for this financial year.</p>`;
-	}
-	const overCount = report.overBudgetCount ?? 0;
-	const shortCount = report.shortBudgetCount ?? 0;
-	const notes = [
-		overCount === 1
-			? '1 expense position is over budget.'
-			: overCount > 1
-				? `${overCount} expense positions are over budget.`
-				: '',
-		shortCount === 1
-			? '1 income position is under budget.'
-			: shortCount > 1
-				? `${shortCount} income positions are under budget.`
-				: ''
-	].filter(Boolean);
-	const summary = notes.length > 0 ? notes.join(' ') : 'Every budgeted position is within its quarter budget.';
-	const rows = groups
-		.map((group) => {
-			const lines = [group, ...group.subaccounts];
-			return lines
-				.map((line, index) => {
-					const width = Math.max(line.percent > 0 ? 2 : 0, Math.min(100, line.percent));
-					const fill = line.overBudget ? 'over' : line.shortBudget ? 'expense' : 'income';
-					const flag = line.overBudget ? 'Over budget' : line.shortBudget ? 'Under budget' : '';
-					return `<div class="rank-row ${index === 0 ? '' : 'sub'}">
-						<div class="rank-label">
-							<span>${escapeHtml(line.name)}</span>
-							<span class="muted mono">${escapeHtml(line.accountNumber)}</span>
-							<span class="muted">${escapeHtml(formatAmount(line.actual, symbol))} of ${escapeHtml(formatAmount(line.budget, symbol))}</span>
-						</div>
-						<div class="bar-track"><div class="bar-fill ${fill}" style="width:${width.toFixed(1)}%"></div></div>
-						<div class="num">${line.percent}%${flag ? `<div class="${line.overBudget ? 'bad' : 'open'}">${escapeHtml(flag)}</div>` : ''}</div>
-					</div>`;
-				})
-				.join('');
-		})
-		.join('');
-	return `<h2>Budget</h2>
-		<p class="empty">Compared with one quarter of the financial-year budget.</p>
-		<p>${escapeHtml(summary)}</p>
-		${rows}`;
-}
-
 function buildQuarterlyHtml(report: QuarterlyReport, opts: ReportPdfOptions): string {
 	const symbol = opts.currencySymbol;
 	const title = reportTitle('quarterly', opts.organizationName);
@@ -515,6 +467,18 @@ function buildQuarterlyHtml(report: QuarterlyReport, opts: ReportPdfOptions): st
 		...report.months.flatMap((month) => [Math.abs(month.income), Math.abs(month.expenses)])
 	);
 
+	function budgetNote(budget: number | null, budgetPercent: number | null, overBudget: boolean): string {
+		if (budget == null || budgetPercent == null) return '';
+		const width = Math.max(budgetPercent > 0 ? 2 : 0, Math.min(100, budgetPercent));
+		const label = overBudget
+			? `Over budget · ${budgetPercent}% of ${formatAmount(budget, symbol)}`
+			: `${budgetPercent}% of ${formatAmount(budget, symbol)} annual budget`;
+		return `<div class="budget-note ${overBudget ? 'bad' : ''}">
+			<div class="bar-track"><div class="bar-fill ${overBudget ? 'over' : 'muted-fill'}" style="width:${width.toFixed(1)}%"></div></div>
+			<span>${escapeHtml(label)}</span>
+		</div>`;
+	}
+
 	function groupedRows(
 		groups: QuarterlyReport['incomeGroups'],
 		max: number,
@@ -524,16 +488,19 @@ function buildQuarterlyHtml(report: QuarterlyReport, opts: ReportPdfOptions): st
 		return groups
 			.map((group) => {
 				const width = max > 0 ? Math.max(2, (Math.abs(group.amount) / max) * 100) : 0;
+				const barClass = group.overBudget ? 'over' : fillClass;
 				const subs = group.subaccounts
 					.map((item) => {
 						const subWidth = max > 0 ? Math.max(2, (Math.abs(item.amount) / max) * 100) : 0;
+						const subBar = item.overBudget ? 'over' : fillClass;
 						return `<div class="rank-row sub">
 							<div class="rank-label">
 								<span>${escapeHtml(item.name)}</span>
 								<span class="muted mono">${escapeHtml(item.accountNumber)}</span>
 							</div>
-							<div class="bar-track"><div class="bar-fill ${fillClass}" style="width:${subWidth.toFixed(1)}%"></div></div>
+							<div class="bar-track"><div class="bar-fill ${subBar}" style="width:${subWidth.toFixed(1)}%"></div></div>
 							<div class="num">${escapeHtml(formatAmount(item.amount, symbol))}</div>
+							${budgetNote(item.budget, item.budgetPercent, item.overBudget)}
 						</div>`;
 					})
 					.join('');
@@ -542,8 +509,9 @@ function buildQuarterlyHtml(report: QuarterlyReport, opts: ReportPdfOptions): st
 						<span>${escapeHtml(group.name)}</span>
 						<span class="muted mono">${escapeHtml(group.accountNumber)}</span>
 					</div>
-					<div class="bar-track"><div class="bar-fill ${fillClass}" style="width:${width.toFixed(1)}%"></div></div>
+					<div class="bar-track"><div class="bar-fill ${barClass}" style="width:${width.toFixed(1)}%"></div></div>
 					<div class="num">${escapeHtml(formatAmount(group.amount, symbol))}</div>
+					${budgetNote(group.budget, group.budgetPercent, group.overBudget)}
 				</div>${subs}`;
 			})
 			.join('');
@@ -602,7 +570,6 @@ function buildQuarterlyHtml(report: QuarterlyReport, opts: ReportPdfOptions): st
 		${groupedRows(report.incomeGroups, maxIncome, 'income')}
 		<h2>Biggest expenses</h2>
 		${groupedRows(report.expenseGroups, maxExpense, 'expense')}
-		${budgetSection(report, symbol)}
 		<h2>Cash accounts</h2>
 		<p class="empty">Balances as of ${escapeHtml(formatDateUtc(report.endDate))}. Zero balances are omitted.</p>
 		${groupedRows(report.cashGroups, maxCash, 'cash')}
@@ -664,6 +631,9 @@ const PRINT_STYLES = `
 	.bar-fill.expense, .vbar.expense, .swatch.expense { background: #b45309; }
 	.bar-fill.cash { background: #1d4ed8; }
 	.bar-fill.over { background: #b42318; }
+	.bar-fill.muted-fill { background: #94a3b8; }
+	.budget-note { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: 8.5pt; color: #555; margin: -4px 0 6px; }
+	.budget-note .bar-track { width: 5rem; flex: none; }
 	.rank-row.sub { margin-left: 16px; }
 	.rank-row.sub .rank-label { font-size: 9pt; font-weight: 400; }
 	.month-chart { display: flex; gap: 18px; align-items: flex-end; height: 140px; margin: 8px 0 4px; }
