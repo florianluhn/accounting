@@ -11,7 +11,8 @@ export const CONFIG = {
 
 	// Server
 	PORT: parseInt(process.env.BACKEND_PORT || process.env.PORT || '3000', 10),
-	HOST: process.env.BACKEND_HOST || process.env.HOST || '0.0.0.0',
+	// Loopback only. The browser reaches the API through the SvelteKit proxy.
+	HOST: process.env.BACKEND_HOST || process.env.HOST || '127.0.0.1',
 	NODE_ENV: process.env.NODE_ENV || 'development',
 
 	// Database
@@ -32,6 +33,9 @@ export const CONFIG = {
 	BACKUP_NAS_PASSWORD: process.env.BACKUP_NAS_PASSWORD || '',
 	BACKUP_RETENTION_DAYS: parseInt(process.env.BACKUP_RETENTION_DAYS || '30', 10),
 	BACKUP_LOCAL_DIR: process.env.BACKUP_LOCAL_DIR || './backups',
+
+	// Set true when the site is served over HTTPS (Cloudflare Tunnel). Leave false for plain HTTP on the LAN.
+	COOKIE_SECURE: process.env.COOKIE_SECURE === 'true',
 
 	// Derived values
 	get MAX_FILE_SIZE_BYTES() {

@@ -4,11 +4,46 @@ import db, { saveDatabase } from '../db/connection.js';
 import { attachments, journalEntries, bookings, inventoryItems } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { join } from 'path';
-import { mkdir, writeFile, unlink, readFile, stat } from 'fs/promises';
+import { mkdir, writeFile, unlink, readFile, stat, readdir } from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { CONFIG } from '../config.js';
 import { existsSync } from 'fs';
 import { logAudit } from '../services/audit.js';
+
+function safeDownloadName(name: string): string {
+	const cleaned = name.replace(/[\r\n"\\]/g, '').replace(/[/]/g, '_').trim();
+	return cleaned.slice(0, 180) || 'file';
+}
+
+function sniffAttachment(buf: Buffer): { mime: string; ext: string } | null {
+	if (buf.length >= 5 && buf.subarray(0, 5).toString() === '%PDF-') return { mime: 'application/pdf', ext: 'pdf' };
+	if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+		return { mime: 'image/png', ext: 'png' };
+	}
+	if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return { mime: 'image/jpeg', ext: 'jpg' };
+	const gif = buf.subarray(0, 6).toString();
+	if (gif === 'GIF87a' || gif === 'GIF89a') return { mime: 'image/gif', ext: 'gif' };
+	if (
+		buf.length >= 12 &&
+		buf.subarray(0, 4).toString() === 'RIFF' &&
+		buf.subarray(8, 12).toString() === 'WEBP'
+	) {
+		return { mime: 'image/webp', ext: 'webp' };
+	}
+	return null;
+}
+
+async function directorySize(dir: string): Promise<number> {
+	if (!existsSync(dir)) return 0;
+	const entries = await readdir(dir, { withFileTypes: true });
+	let total = 0;
+	for (const entry of entries) {
+		const child = join(dir, entry.name);
+		if (entry.isDirectory()) total += await directorySize(child);
+		else if (entry.isFile()) total += (await stat(child)).size;
+	}
+	return total;
+}
 
 export default async function attachmentsRoutes(fastify: FastifyInstance) {
 	// GET /api/attachments - List all attachments
@@ -105,7 +140,8 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 
 			reply
 				.type(attachment[0].mimeType)
-				.header('Content-Disposition', `attachment; filename="${attachment[0].filename}"`)
+				.header('X-Content-Type-Options', 'nosniff')
+				.header('Content-Disposition', `attachment; filename="${safeDownloadName(attachment[0].filename)}"`)
 				.send(fileBuffer);
 		} catch (error) {
 			return reply.status(500).send({
@@ -212,6 +248,14 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 			const buffer = await data.toBuffer();
 			const fileSize = buffer.length;
 
+			const used = await directorySize(join(process.cwd(), CONFIG.ATTACHMENTS_PATH));
+			if (used + fileSize > CONFIG.MAX_STORAGE_BYTES) {
+				return reply.status(413).send({
+					error: 'Payload Too Large',
+					message: `Attachment storage limit of ${CONFIG.MAX_STORAGE_GB}GB would be exceeded`
+				});
+			}
+
 			if (fileSize > CONFIG.MAX_FILE_SIZE_BYTES) {
 				return reply.status(413).send({
 					error: 'Payload Too Large',
@@ -226,8 +270,15 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 			const uuid = randomUUID();
 
 			// Extract file extension
-			const originalFilename = data.filename;
-			const ext = originalFilename.split('.').pop() || 'bin';
+			const sniffed = sniffAttachment(buffer);
+			if (!sniffed) {
+				return reply.status(400).send({
+					error: 'Bad Request',
+					message: 'Upload a PDF or image (PNG, JPEG, GIF, WebP). HTML and SVG are not allowed.'
+				});
+			}
+			const originalFilename = safeDownloadName(data.filename || 'file');
+			const ext = sniffed.ext;
 			const storedFilename = `${year}/${month}/${ownerPrefix}_${uuid}.${ext}`;
 
 			// Create directory structure
@@ -247,7 +298,7 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 					inventoryItemId,
 					filename: originalFilename,
 					storedFilename,
-					mimeType: data.mimetype,
+					mimeType: sniffed.mime,
 					fileSize
 				})
 				.returning();

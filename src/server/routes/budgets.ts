@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import db from '../db/connection.js';
+import db, { saveDatabase } from '../db/connection.js';
 import { budgets, subledgerAccounts } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
+import { logAudit } from '../services/audit.js';
 
 const budgetSchema = z.object({
 	subledgerAccountId: z.number().int().positive(),
@@ -50,6 +51,13 @@ export default async function budgetsRoutes(fastify: FastifyInstance) {
 
 		try {
 			const result = await db.insert(budgets).values(data).returning();
+			await logAudit({
+				operation: 'CREATE',
+				resourceType: 'budget',
+				resourceId: result[0].id,
+				newData: result[0]
+			});
+			await saveDatabase();
 			return reply.status(201).send(result[0]);
 		} catch (error: any) {
 			// Handle unique constraint violation
@@ -79,6 +87,13 @@ export default async function budgetsRoutes(fastify: FastifyInstance) {
 				return reply.status(404).send({ error: 'Not Found', message: 'Budget not found' });
 			}
 
+			await logAudit({
+				operation: 'UPDATE',
+				resourceType: 'budget',
+				resourceId: id,
+				newData: result[0]
+			});
+			await saveDatabase();
 			return result[0];
 		}
 	);
@@ -94,6 +109,13 @@ export default async function budgetsRoutes(fastify: FastifyInstance) {
 			return reply.status(404).send({ error: 'Not Found', message: 'Budget not found' });
 		}
 
+		await logAudit({
+			operation: 'DELETE',
+			resourceType: 'budget',
+			resourceId: id,
+			oldData: result[0]
+		});
+		await saveDatabase();
 		return reply.status(204).send();
 	});
 }

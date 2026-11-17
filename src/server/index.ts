@@ -1,65 +1,12 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
-import fastifyStatic from '@fastify/static';
 import multipart from '@fastify/multipart';
+import { ZodError } from 'zod';
 import { CONFIG } from './config.js';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Create Fastify instance
-const fastify = Fastify({
-	logger: {
-		level: CONFIG.NODE_ENV === 'development' ? 'info' : 'warn'
-	},
-	bodyLimit: CONFIG.MAX_FILE_SIZE_BYTES
-});
-
-// ========================================
-// Plugins
-// ========================================
-
-// CORS - Allow requests from SvelteKit dev server and production deployment
-await fastify.register(cors, {
-	origin: CONFIG.NODE_ENV === 'development'
-		? 'http://localhost:5173'
-		: (origin, callback) => {
-			// In production, allow requests from any origin (frontend can be accessed via different IPs)
-			callback(null, true);
-		},
-	credentials: true
-});
-
-// Multipart for file uploads
-await fastify.register(multipart, {
-	limits: {
-		fileSize: CONFIG.MAX_FILE_SIZE_BYTES
-	}
-});
-
-// Static file serving for attachments
-await fastify.register(fastifyStatic, {
-	root: join(process.cwd(), CONFIG.ATTACHMENTS_PATH),
-	prefix: '/uploads/',
-	decorateReply: false
-});
-
-// ========================================
-// Routes
-// ========================================
-
-// Health check
-fastify.get('/api/health', async () => {
-	return {
-		status: 'ok',
-		timestamp: new Date().toISOString(),
-		version: '0.1.0'
-	};
-});
-
-// Register route handlers
+import { pathToFileURL } from 'url';
+import { resolve } from 'path';
+import { authenticateRequest } from './auth/guard.js';
+import { runWithAuthContext } from './auth/context.js';
 import currenciesRoutes from './routes/currencies.js';
 import glAccountsRoutes from './routes/gl-accounts.js';
 import subledgerAccountsRoutes from './routes/subledger-accounts.js';
@@ -78,6 +25,78 @@ import fixedAssetsRoutes from './routes/fixed-assets.js';
 import investmentsRoutes from './routes/investments.js';
 import budgetsRoutes from './routes/budgets.js';
 import financialYearsRoutes from './routes/financial-years.js';
+import authRoutes from './routes/auth.js';
+import usersRoutes from './routes/users.js';
+import appConfigRoutes from './routes/app-config.js';
+
+const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
+	.split(',')
+	.map((origin) => origin.trim())
+	.filter(Boolean);
+
+export async function buildServer(): Promise<FastifyInstance> {
+const fastify = Fastify({
+	logger: {
+		level: CONFIG.NODE_ENV === 'development' ? 'info' : 'warn'
+	},
+	bodyLimit: CONFIG.MAX_FILE_SIZE_BYTES
+});
+
+// ========================================
+// Plugins
+// ========================================
+
+// CORS - Allow requests from SvelteKit dev server and production deployment
+await fastify.register(cors, {
+	origin: (origin, callback) => {
+		if (!origin || allowedOrigins.includes(origin)) {
+			callback(null, true);
+			return;
+		}
+		callback(null, false);
+	},
+	credentials: true
+});
+
+// Multipart for file uploads
+await fastify.register(multipart, {
+	limits: {
+		fileSize: CONFIG.MAX_FILE_SIZE_BYTES
+	}
+});
+
+fastify.decorateRequest('currentUser', null);
+fastify.decorateRequest('authVia', null);
+fastify.addHook('onRequest', (request, reply, done) => {
+	authenticateRequest(request, reply)
+		.then(() => {
+			if (reply.sent || !request.currentUser) {
+				done();
+				return;
+			}
+			runWithAuthContext(
+				{
+					actor: { id: request.currentUser.id, username: request.currentUser.username },
+					source: request.authVia === 'token' ? 'API' : 'Web UI'
+				},
+				() => done()
+			);
+		})
+		.catch((error) => done(error));
+});
+
+// ========================================
+// Routes
+// ========================================
+
+// Health check
+fastify.get('/api/health', async () => {
+	return {
+		status: 'ok',
+		timestamp: new Date().toISOString(),
+		version: '0.1.0'
+	};
+});
 
 await fastify.register(currenciesRoutes, { prefix: '/api/currencies' });
 await fastify.register(glAccountsRoutes, { prefix: '/api/gl-accounts' });
@@ -97,6 +116,9 @@ await fastify.register(fixedAssetsRoutes, { prefix: '/api/fixed-assets' });
 await fastify.register(investmentsRoutes, { prefix: '/api/investments' });
 await fastify.register(budgetsRoutes, { prefix: '/api/budgets' });
 await fastify.register(financialYearsRoutes, { prefix: '/api/financial-years' });
+await fastify.register(authRoutes, { prefix: '/api/auth' });
+await fastify.register(usersRoutes, { prefix: '/api/users' });
+await fastify.register(appConfigRoutes, { prefix: '/api/app-config' });
 
 // ========================================
 // Error Handler
@@ -107,7 +129,23 @@ fastify.setErrorHandler((error, request, reply) => {
 	// Type guard for error object
 	const err = error as any;
 
-	// Zod validation errors
+	if (err.name === 'FormulaError') {
+		return reply.status(400).send({
+			error: 'Bad Request',
+			message: err.message
+		});
+	}
+
+	if (err instanceof ZodError || err.name === 'ZodError') {
+		const issues = err instanceof ZodError ? err.issues : [];
+		return reply.status(400).send({
+			error: 'Validation Error',
+			message: issues[0]?.message || err.message,
+			details: issues
+		});
+	}
+
+	// Fastify schema errors
 	if (err.validation) {
 		return reply.status(400).send({
 			error: 'Validation Error',
@@ -139,13 +177,16 @@ fastify.setErrorHandler((error, request, reply) => {
 		});
 	}
 
-	// Default error
 	const statusCode = err.statusCode || 500;
+	const safeMessage = statusCode < 500 ? err.message || 'An error occurred' : 'An error occurred';
 	reply.status(statusCode).send({
 		error: err.name || 'Internal Server Error',
-		message: CONFIG.NODE_ENV === 'development' ? (err.message || 'An error occurred') : 'An error occurred'
+		message: CONFIG.NODE_ENV === 'development' ? err.message || 'An error occurred' : safeMessage
 	});
 });
+
+	return fastify;
+}
 
 // ========================================
 // Start Server
@@ -153,6 +194,7 @@ fastify.setErrorHandler((error, request, reply) => {
 import { initializeScheduler, shutdownScheduler } from './services/scheduler.js';
 
 async function start() {
+	const fastify = await buildServer();
 	try {
 		await fastify.listen({
 			port: CONFIG.PORT,
@@ -184,9 +226,13 @@ signals.forEach((signal) => {
 	process.on(signal, async () => {
 		console.log(`\n${signal} received, shutting down gracefully...`);
 		shutdownScheduler();
-		await fastify.close();
 		process.exit(0);
 	});
 });
 
-start();
+const isDirectRun =
+	process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+
+if (isDirectRun) {
+	start();
+}

@@ -10,6 +10,7 @@ import {
 	getUtcCalendarMonthBounds
 } from '../../lib/financial-year.js';
 import { buildCheckReferenceReport } from '../../lib/check-reference-report.js';
+import { dollarsToCents, centsToDollars, sumMoney } from '../money.js';
 
 async function getFinancialYearStartMonth(): Promise<number> {
 	const rows = await db
@@ -39,13 +40,44 @@ async function getExchangeRateToUsd(currencyCode: string): Promise<number> {
 
 	const rate = rows[0]?.exchangeRate;
 	if (rate == null || !Number.isFinite(rate) || rate <= 0) {
-		return 1;
+		throw new Error(`No usable exchange rate for ${code}`);
 	}
 	return rate;
 }
 
+/** Cents in the requested reporting currency. Same-currency entries keep their original amount. */
+function reportCents(
+	entry: { amount: number; amountInUSD: number; currencyCode: string },
+	reportCurrency: string
+): number {
+	const code = (reportCurrency || 'USD').toUpperCase();
+	const entryCode = (entry.currencyCode || 'USD').toUpperCase();
+	if (code === entryCode) return dollarsToCents(entry.amount);
+	if (code === 'USD') return dollarsToCents(entry.amountInUSD);
+	return dollarsToCents(entry.amountInUSD);
+}
+
 function fromUsd(amountInUSD: number, exchangeRateToUsd: number): number {
-	return amountInUSD / exchangeRateToUsd;
+	return centsToDollars(Math.round(dollarsToCents(amountInUSD) / exchangeRateToUsd));
+}
+
+function entryAmount(
+	entry: { amount?: number | null; amountInUSD: number; currencyCode?: string | null },
+	currencyCode: string,
+	exchangeRate: number
+): number {
+	const code = (currencyCode || 'USD').toUpperCase();
+	if (
+		code !== 'USD' &&
+		entry.currencyCode &&
+		entry.currencyCode.toUpperCase() === code &&
+		entry.amount != null
+	) {
+		return centsToDollars(dollarsToCents(entry.amount));
+	}
+	const usdCents = dollarsToCents(entry.amountInUSD);
+	if (code === 'USD') return centsToDollars(usdCents);
+	return centsToDollars(Math.round(usdCents / exchangeRate));
 }
 
 // Validation schemas
@@ -84,7 +116,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		currencyCode: string = 'USD',
 		options?: { excludeYearEndClose?: boolean }
 	): Promise<AccountBalance[]> {
-		// Get all subledger accounts with their GL accounts (excluding Opening Balance accounts from reports)
+		// Include inactive accounts and Opening Balance so both sides of every entry stay visible.
 		const accounts = await db
 			.select({
 				id: subledgerAccounts.id,
@@ -96,13 +128,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				glAccountType: glAccounts.type
 			})
 			.from(subledgerAccounts)
-			.innerJoin(glAccounts, eq(subledgerAccounts.glAccountId, glAccounts.id))
-			.where(
-				and(
-					eq(subledgerAccounts.isActive, true),
-					sql`${glAccounts.type} != 'Opening Balance'`
-				)
-			);
+			.innerJoin(glAccounts, eq(subledgerAccounts.glAccountId, glAccounts.id));
 
 		// Build conditions for date range
 		const conditions: any[] = [];
@@ -132,37 +158,32 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		}
 		const entries = await entriesQuery;
 
-		// Convert stored USD amounts into the requested reporting currency
-		const exchangeRate = await getExchangeRateToUsd(currencyCode);
+		// Fail closed when the report currency has no rate. Same-currency rows use their original amount.
+		if (currencyCode.toUpperCase() !== 'USD') {
+			await getExchangeRateToUsd(currencyCode);
+		}
+		const reportCode = currencyCode.toUpperCase();
+		const reportRate = reportCode === 'USD' ? 1 : await getExchangeRateToUsd(reportCode);
 
-		// Calculate balances for each account
+		// Calculate balances for each account in integer cents
 		const balances: AccountBalance[] = accounts.map((account) => {
-			let balance = 0;
+			let cents = 0;
+			const debitNormal = ['Asset', 'Cash', 'Accounts Receivable', 'Loss'].includes(account.glAccountType);
 
-			// Sum debits and credits
 			for (const entry of entries) {
-				const amount = fromUsd(entry.amountInUSD, exchangeRate);
+				let amountCents = reportCents(entry, reportCode);
+				if (reportCode !== 'USD' && entry.currencyCode.toUpperCase() !== reportCode) {
+					amountCents = Math.round(dollarsToCents(entry.amountInUSD) / reportRate);
+				}
 
 				if (entry.debitAccountId === account.id) {
-					// Debit increases: Assets, Expenses (Loss)
-					// Debit decreases: Liabilities, Equity, Revenue (Profit)
-					if (['Asset', 'Cash', 'Accounts Receivable', 'Loss'].includes(account.glAccountType)) {
-						balance += amount;
-					} else {
-						balance -= amount;
-					}
+					cents += debitNormal ? amountCents : -amountCents;
 				}
-
 				if (entry.creditAccountId === account.id) {
-					// Credit decreases: Assets, Expenses (Loss)
-					// Credit increases: Liabilities, Equity, Revenue (Profit)
-					if (['Asset', 'Cash', 'Accounts Receivable', 'Loss'].includes(account.glAccountType)) {
-						balance -= amount;
-					} else {
-						balance += amount;
-					}
+					cents += debitNormal ? -amountCents : amountCents;
 				}
 			}
+			const balance = centsToDollars(cents);
 
 			return {
 				accountId: account.id,
@@ -197,8 +218,8 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				};
 				glMap.set(balance.glAccountId, group);
 			}
-			group.totalBalance += balance.balance;
 			group.subledgerAccounts.push(balance);
+			group.totalBalance = sumMoney(group.subledgerAccounts.map((row) => row.balance));
 		}
 
 		// Sort groups by GL account number, and subledger accounts within each group
@@ -228,24 +249,26 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				['Asset', 'Cash', 'Accounts Receivable'].includes(b.glAccountType)
 			);
 			const liabilityBalances = balances.filter((b) => b.glAccountType === 'Accounts Payable');
-			const equityBalances = balances.filter((b) => b.glAccountType === 'Equity');
+			const equityBalances = balances.filter((b) =>
+				b.glAccountType === 'Equity' || b.glAccountType === 'Opening Balance'
+			);
 
 			const assets = groupByGLAccount(assetBalances);
 			const liabilities = groupByGLAccount(liabilityBalances);
 			const equity = groupByGLAccount(equityBalances);
 
 			// Calculate totals
-			const totalAssets = assets.reduce((sum, g) => sum + g.totalBalance, 0);
-			const totalLiabilities = liabilities.reduce((sum, g) => sum + g.totalBalance, 0);
-			const totalEquity = equity.reduce((sum, g) => sum + g.totalBalance, 0);
+			const totalAssets = sumMoney(assets.map((g) => g.totalBalance));
+			const totalLiabilities = sumMoney(liabilities.map((g) => g.totalBalance));
+			const totalEquity = sumMoney(equity.map((g) => g.totalBalance));
 
 			// Unclosed net income still sitting in P&L accounts (after year-end close,
 			// closed years are zeroed into equity "Retained Earnings YYYY" accounts).
 			// Labelled as current-period earnings on the balance sheet.
 			const revenue = balances.filter((b) => b.glAccountType === 'Profit');
 			const expenses = balances.filter((b) => b.glAccountType === 'Loss');
-			const totalRevenue = revenue.reduce((sum, a) => sum + a.balance, 0);
-			const totalExpenses = expenses.reduce((sum, a) => sum + a.balance, 0);
+			const totalRevenue = sumMoney(revenue.map((a) => a.balance));
+			const totalExpenses = sumMoney(expenses.map((a) => a.balance));
 			const retainedEarnings = totalRevenue - totalExpenses;
 
 			return {
@@ -365,10 +388,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 				glAccountType: glAccounts.type
 			})
 			.from(subledgerAccounts)
-			.innerJoin(glAccounts, eq(subledgerAccounts.glAccountId, glAccounts.id))
-			.where(
-				and(eq(subledgerAccounts.isActive, true), sql`${glAccounts.type} != 'Opening Balance'`)
-			);
+			.innerJoin(glAccounts, eq(subledgerAccounts.glAccountId, glAccounts.id));
 
 		const accountById = new Map(accounts.map((account) => [account.id, account]));
 		const debitNormalTypes = new Set(['Asset', 'Cash', 'Accounts Receivable', 'Loss']);
@@ -379,7 +399,9 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		const entries = await db
 			.select({
 				entryDate: journalEntries.entryDate,
+				amount: journalEntries.amount,
 				amountInUSD: journalEntries.amountInUSD,
+				currencyCode: journalEntries.currencyCode,
 				debitAccountId: journalEntries.debitAccountId,
 				creditAccountId: journalEntries.creditAccountId,
 				category: journalEntries.category
@@ -415,7 +437,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			const monthIndex =
 				(entryDate.getUTCFullYear() - startYear) * 12 +
 				(entryDate.getUTCMonth() - startMonthIndex);
-			const amount = fromUsd(entry.amountInUSD, exchangeRate);
+			const amount = entryAmount(entry, currencyCode, exchangeRate);
 			const sides: Array<[number, boolean]> = [
 				[entry.debitAccountId, true],
 				[entry.creditAccountId, false]
@@ -621,9 +643,9 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			}> = [];
 
 			for (let i = months; i >= 1; i--) {
-				const anchor = new Date(now.getFullYear(), now.getMonth() - i, 1);
-				const year = anchor.getFullYear();
-				const month = anchor.getMonth() + 1;
+				const anchor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+				const year = anchor.getUTCFullYear();
+				const month = anchor.getUTCMonth() + 1;
 				const { start: startDate, end: endDate } = getUtcCalendarMonthBounds(year, month);
 				const label = startDate.toLocaleDateString('en-US', {
 					month: 'short',
@@ -641,13 +663,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 					glAccountType: glAccounts.type
 				})
 				.from(subledgerAccounts)
-				.innerJoin(glAccounts, eq(subledgerAccounts.glAccountId, glAccounts.id))
-				.where(
-					and(
-						eq(subledgerAccounts.isActive, true),
-						sql`${glAccounts.type} != 'Opening Balance'`
-					)
-				);
+				.innerJoin(glAccounts, eq(subledgerAccounts.glAccountId, glAccounts.id));
 
 			const accountTypeById = new Map(accounts.map((a) => [a.id, a.glAccountType]));
 			const debitNormalTypes = new Set(['Asset', 'Cash', 'Accounts Receivable', 'Loss']);
@@ -690,7 +706,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 
 					const isYearEndClose = entry.category === 'Year-end close';
 					const inPeriod = entryMs >= startMs && entryMs <= endMs;
-					const amount = fromUsd(entry.amountInUSD, exchangeRate);
+					const amount = entryAmount(entry, currencyCode, exchangeRate);
 
 					const debitType = accountTypeById.get(entry.debitAccountId);
 					const creditType = accountTypeById.get(entry.creditAccountId);
@@ -800,7 +816,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 
 		for (const entry of entries) {
 			const category = entry.category || 'Uncategorized';
-			const amountInCurrency = fromUsd(entry.amountInUSD, exchangeRate);
+			const amountInCurrency = entryAmount(entry, request.query.currencyCode || 'USD', exchangeRate);
 			let amount = 0;
 
 			if (entry.debitAccountId === accountId) {
@@ -877,7 +893,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 		return {
 			entries: entries.map((entry) => ({
 				...entry,
-				amountInUSD: fromUsd(entry.amountInUSD, exchangeRate)
+				amountInUSD: entryAmount(entry, request.query.currencyCode || 'USD', exchangeRate)
 			}))
 		};
 	});
@@ -996,46 +1012,39 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 			.select()
 			.from(journalEntries)
 			.where(and(...conditions))
-			.orderBy(desc(journalEntries.entryDate));
+			.orderBy(asc(journalEntries.entryDate), asc(journalEntries.id));
 
 		const transactions = await query;
 
-		// Calculate running balance
-		let runningBalance = 0;
+		// Oldest first so each line's balance is the cumulative position after that entry.
+		let runningCents = 0;
+		const debitNormal = ['Asset', 'Cash', 'Accounts Receivable', 'Loss'].includes(account[0].glAccountType);
 		const ledgerEntries = transactions.map((entry) => {
+			const amountCents = dollarsToCents(entry.amountInUSD);
 			let debit = 0;
 			let credit = 0;
 
 			if (entry.debitAccountId === accountId) {
 				debit = entry.amountInUSD;
-				if (['Asset', 'Cash', 'Accounts Receivable', 'Loss'].includes(account[0].glAccountType)) {
-					runningBalance += debit;
-				} else {
-					runningBalance -= debit;
-				}
+				runningCents += debitNormal ? amountCents : -amountCents;
 			}
-
 			if (entry.creditAccountId === accountId) {
 				credit = entry.amountInUSD;
-				if (['Asset', 'Cash', 'Accounts Receivable', 'Loss'].includes(account[0].glAccountType)) {
-					runningBalance -= credit;
-				} else {
-					runningBalance += credit;
-				}
+				runningCents += debitNormal ? -amountCents : amountCents;
 			}
 
 			return {
 				...entry,
 				debit,
 				credit,
-				balance: runningBalance
+				balance: centsToDollars(runningCents)
 			};
 		});
 
 		return {
 			account: account[0],
-			entries: ledgerEntries.reverse(), // Reverse to show oldest first
-			finalBalance: runningBalance
+			entries: ledgerEntries,
+			finalBalance: centsToDollars(runningCents)
 		};
 	});
 
@@ -1144,7 +1153,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 						{
 							id: entry.id,
 							entryDate: entry.entryDate,
-							amount: fromUsd(entry.amountInUSD, exchangeRate),
+							amount: entryAmount(entry, currencyCode, exchangeRate),
 							description: entry.description,
 							reference: entry.checkReference ?? '',
 							debitAccountName:

@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
 import { vendors, journalEntries } from '../db/schema.js';
-import { eq, like, desc } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
+import { likeContains } from '../like.js';
 import { logAudit, generateBatchId } from '../services/audit.js';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
@@ -34,7 +35,7 @@ export default async function vendorsRoutes(fastify: FastifyInstance) {
 			let query = db.select().from(vendors);
 
 			if (request.query.search) {
-				query = query.where(like(vendors.name, `%${request.query.search}%`)) as any;
+				query = query.where(likeContains(vendors.name, request.query.search)) as any;
 			}
 
 			const result = await query;

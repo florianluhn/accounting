@@ -15,9 +15,42 @@ const DEFAULT_AVAILABILITY_PATH = '~/villaluhna/VillaLuhna_Website_Claude/availa
 function expandPath(p: string): string {
 	if (!p) return p;
 	if (p === '~' || p.startsWith('~/') || p.startsWith('~\\')) {
-		return path.join(os.homedir(), p.slice(2));
+		return path.join(os.homedir(), p.slice(p.startsWith('~\\') ? 2 : 2));
 	}
 	return p;
+}
+
+function nightsBetween(checkIn: string, checkOut: string): number {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(checkIn) || !/^\d{4}-\d{2}-\d{2}$/.test(checkOut)) {
+		throw new Error('Check-in and check-out must be YYYY-MM-DD');
+	}
+	const start = Date.parse(`${checkIn}T00:00:00Z`);
+	const end = Date.parse(`${checkOut}T00:00:00Z`);
+	if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+		throw new Error('Check-out must be on or after check-in');
+	}
+	return Math.round((end - start) / 86_400_000);
+}
+
+function localToday(): string {
+	const now = new Date();
+	const month = String(now.getMonth() + 1).padStart(2, '0');
+	const day = String(now.getDate()).padStart(2, '0');
+	return `${now.getFullYear()}-${month}-${day}`;
+}
+
+/** Keep the availability file inside AVAILABILITY_ROOT (default: the home directory). */
+export function resolveAvailabilityPath(rawPath: string): string {
+	const root = path.resolve(expandPath(process.env.AVAILABILITY_ROOT || os.homedir()));
+	const target = path.resolve(expandPath(rawPath));
+	const relative = path.relative(root, target);
+	if (relative.startsWith('..') || path.isAbsolute(relative)) {
+		throw new Error(`Availability path must stay inside ${root}`);
+	}
+	if (path.basename(target) !== 'availability.json') {
+		throw new Error('Availability file must be named availability.json');
+	}
+	return target;
 }
 
 const createBookingSchema = z.object({
@@ -69,7 +102,7 @@ export default async function bookingsRoutes(fastify: FastifyInstance) {
 
 	fastify.put<{ Body: Partial<{ cleaningFee: number; salesTaxRate: number; touristTaxRate: number; websiteAvailabilityPath: string }> }>(
 		'/config',
-		async (request) => {
+		async (request, reply) => {
 			const body = request.body || {};
 			const numPairs: Record<string, number | undefined> = {
 				booking_cleaning_fee: body.cleaningFee,
@@ -85,6 +118,14 @@ export default async function bookingsRoutes(fastify: FastifyInstance) {
 			}
 			if (typeof body.websiteAvailabilityPath === 'string') {
 				const v = body.websiteAvailabilityPath.trim();
+				try {
+					resolveAvailabilityPath(v);
+				} catch (error) {
+					return reply.status(400).send({
+						error: 'Bad Request',
+						message: error instanceof Error ? error.message : 'Invalid availability path'
+					});
+				}
 				await db.insert(appSettings)
 					.values({ key: 'website_availability_path', value: v })
 					.onConflictDoUpdate({ target: appSettings.key, set: { value: v } });
@@ -106,7 +147,15 @@ export default async function bookingsRoutes(fastify: FastifyInstance) {
 				message: 'Website availability path is not configured'
 			});
 		}
-		const targetPath = expandPath(rawPath);
+		let targetPath: string;
+		try {
+			targetPath = resolveAvailabilityPath(rawPath);
+		} catch (error) {
+			return reply.status(400).send({
+				error: 'Bad Request',
+				message: error instanceof Error ? error.message : 'Invalid availability path'
+			});
+		}
 
 		// Verify the parent directory exists — refuse to silently create a tree
 		try {
@@ -236,12 +285,28 @@ export default async function bookingsRoutes(fastify: FastifyInstance) {
 			return reply.status(409).send({ error: 'Conflict', message: 'Booking dates overlap with an existing booking' });
 		}
 
-		const today = new Date().toISOString().slice(0, 10);
+		const today = localToday();
+		let nights = data.nights;
+		try {
+			nights = nightsBetween(data.checkInDate, data.checkOutDate);
+		} catch (error) {
+			return reply.status(400).send({
+				error: 'Bad Request',
+				message: error instanceof Error ? error.message : 'Invalid dates'
+			});
+		}
 		const inserted = await db.insert(bookings).values({
 			...data,
+			nights,
 			comment: data.comment ?? null,
 			addedDate: data.addedDate || today
 		}).returning();
+		await logAudit({
+			operation: 'CREATE',
+			resourceType: 'booking',
+			resourceId: inserted[0].id,
+			newData: inserted[0]
+		});
 		await saveDatabase();
 		return reply.status(201).send(inserted[0]);
 	});
@@ -266,7 +331,25 @@ export default async function bookingsRoutes(fastify: FastifyInstance) {
 		if (overlaps.length > 0) {
 			return reply.status(409).send({ error: 'Conflict', message: 'Booking dates overlap with an existing booking' });
 		}
-		const updated = await db.update(bookings).set(data).where(eq(bookings.id, id)).returning();
+		const next = { ...data };
+		if (next.checkInDate || next.checkOutDate) {
+			try {
+				next.nights = nightsBetween(checkIn, checkOut);
+			} catch (error) {
+				return reply.status(400).send({
+					error: 'Bad Request',
+					message: error instanceof Error ? error.message : 'Invalid dates'
+				});
+			}
+		}
+		const updated = await db.update(bookings).set(next).where(eq(bookings.id, id)).returning();
+		await logAudit({
+			operation: 'UPDATE',
+			resourceType: 'booking',
+			resourceId: id,
+			oldData: existing[0],
+			newData: updated[0]
+		});
 		await saveDatabase();
 		return updated[0];
 	});
@@ -277,6 +360,12 @@ export default async function bookingsRoutes(fastify: FastifyInstance) {
 		const existing = await db.select().from(bookings).where(eq(bookings.id, id)).limit(1);
 		if (existing.length === 0) return reply.status(404).send({ error: 'Not Found', message: 'Booking not found' });
 		await db.delete(bookings).where(eq(bookings.id, id));
+		await logAudit({
+			operation: 'DELETE',
+			resourceType: 'booking',
+			resourceId: id,
+			oldData: existing[0]
+		});
 		await saveDatabase();
 		return reply.status(204).send();
 	});

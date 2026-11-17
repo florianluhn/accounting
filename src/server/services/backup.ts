@@ -170,8 +170,22 @@ async function transferToNAS(localPath: string): Promise<string> {
 			const gid = gidOutput.trim();
 
 			// Mount NAS share with proper permissions and file ownership
-			const mountCmd = `sudo mount -t cifs "//${CONFIG.BACKUP_NAS_HOST}/${CONFIG.BACKUP_NAS_SHARE}" ${mountPoint} -o username=${CONFIG.BACKUP_NAS_USERNAME},password="${CONFIG.BACKUP_NAS_PASSWORD}",uid=${uid},gid=${gid},file_mode=0777,dir_mode=0777,forceuid,forcegid`;
-			await execAsync(mountCmd);
+			const credPath = `/tmp/accounting-cifs-${process.pid}.credentials`;
+			const { writeFile, unlink, chmod } = await import('fs/promises');
+			await writeFile(
+				credPath,
+				`username=${CONFIG.BACKUP_NAS_USERNAME}\npassword=${CONFIG.BACKUP_NAS_PASSWORD}\n`,
+				{ mode: 0o600 }
+			);
+			await chmod(credPath, 0o600);
+			const host = CONFIG.BACKUP_NAS_HOST.replace(/[^A-Za-z0-9._-]/g, '');
+			const share = CONFIG.BACKUP_NAS_SHARE.replace(/[^A-Za-z0-9._-]/g, '');
+			const mountCmd = `sudo mount -t cifs "//${host}/${share}" ${mountPoint} -o credentials=${credPath},uid=${uid},gid=${gid},file_mode=0660,dir_mode=0770,forceuid,forcegid`;
+			try {
+				await execAsync(mountCmd);
+			} finally {
+				await unlink(credPath).catch(() => {});
+			}
 
 			// Verify mount worked
 			const { stdout: mountCheck } = await execAsync(`mount | grep ${mountPoint}`);

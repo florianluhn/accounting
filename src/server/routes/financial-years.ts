@@ -93,8 +93,8 @@ export default async function financialYearsRoutes(fastify: FastifyInstance) {
 			const result = await closeFinancialYear(fyYear);
 			await logAudit({
 				operation: 'CREATE',
-				resourceType: 'journal_entry',
-				resourceId: result.id,
+				resourceType: 'financial_year',
+				resourceId: result.fyYear,
 				source: 'Web UI',
 				batchSummary: `Year-end close: ${result.label} (net income ${result.netIncome})`,
 				description: `Closed financial year ${result.fyYear}: posted net income ${result.netIncome} to ${result.label}`,
@@ -114,7 +114,7 @@ export default async function financialYearsRoutes(fastify: FastifyInstance) {
 			const result = await openFinancialYear(fyYear);
 			await logAudit({
 				operation: 'DELETE',
-				resourceType: 'journal_entry',
+				resourceType: 'financial_year',
 				resourceId: result.fyYear,
 				source: 'Web UI',
 				batchSummary: `Reopened FY ${result.fyYear}: deleted ${result.deletedJournalEntries} year-end close entries`,

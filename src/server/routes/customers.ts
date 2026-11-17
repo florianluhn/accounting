@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
 import { customers, journalEntries, inventoryItems, subledgerAccounts, glAccounts, bookings, bookingPlatforms } from '../db/schema.js';
-import { eq, like, or, desc } from 'drizzle-orm';
+import { eq, or, desc } from 'drizzle-orm';
+import { likeContains } from '../like.js';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { logAudit, generateBatchId } from '../services/audit.js';
 import { parse } from 'csv-parse/sync';
@@ -47,12 +48,11 @@ export default async function customersRoutes(fastify: FastifyInstance) {
 			let query = db.select().from(customers);
 
 			if (request.query.search) {
-				const search = `%${request.query.search}%`;
 				query = query.where(
 					or(
-						like(customers.firstName, search),
-						like(customers.lastName, search),
-						like(customers.email, search)
+						likeContains(customers.firstName, request.query.search),
+						likeContains(customers.lastName, request.query.search),
+						likeContains(customers.email, request.query.search)
 					)
 				) as any;
 			}

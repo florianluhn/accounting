@@ -3,7 +3,7 @@
  * Retained Earnings equity account and lock the year against further postings.
  */
 
-import db from '../db/connection.js';
+import db, { withTransaction } from '../db/connection.js';
 import {
 	closedFinancialYears,
 	journalEntries,
@@ -260,7 +260,7 @@ export async function previewYearClose(fyYear: number): Promise<ClosePreview> {
 		.limit(1);
 
 	const balances = await periodBalances(start, end);
-	const lines = balances.filter((b) => Math.abs(b.balance) >= 0.005);
+	const lines = balances.filter((b) => round2(b.balance) !== 0);
 	const profitLines = lines.filter((b) => b.glAccountType === 'Profit');
 	const lossLines = lines.filter((b) => b.glAccountType === 'Loss');
 	const totalRevenue = round2(profitLines.reduce((s, b) => s + b.balance, 0));
@@ -365,6 +365,10 @@ async function nextRetainedEarningsAccountNumber(fyYear: number): Promise<string
  * Retained Earnings equity subledger, then lock the year.
  */
 export async function closeFinancialYear(fyYear: number): Promise<ClosedYearInfo> {
+	return withTransaction(() => closeFinancialYearUnlocked(fyYear));
+}
+
+async function closeFinancialYearUnlocked(fyYear: number): Promise<ClosedYearInfo> {
 	const preview = await previewYearClose(fyYear);
 
 	if (preview.alreadyClosed) {
@@ -406,7 +410,7 @@ export async function closeFinancialYear(fyYear: number): Promise<ClosedYearInfo
 	// Close each non-zero Profit/Loss account against retained earnings
 	for (const line of lines) {
 		const amount = Math.abs(line.balance);
-		if (amount < 0.005) continue;
+		if (round2(amount) === 0) continue;
 
 		const amountInUSD = round2(amount); // balances are already USD
 		// Entry amount in account currency: convert from USD if default currency ≠ USD
@@ -650,6 +654,10 @@ export async function previewOpenYear(fyYear: number): Promise<OpenYearPreview> 
  * Later closed years must be opened first (newest → oldest).
  */
 export async function openFinancialYear(fyYear: number): Promise<OpenYearResult> {
+	return withTransaction(() => openFinancialYearUnlocked(fyYear));
+}
+
+async function openFinancialYearUnlocked(fyYear: number): Promise<OpenYearResult> {
 	const preview = await previewOpenYear(fyYear);
 
 	if (!preview.canOpen) {

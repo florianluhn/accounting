@@ -7,6 +7,7 @@ import { mkdir, writeFile, unlink, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { CONFIG } from '../config.js';
 import { hasAnyClosedYear } from '../services/year-close.js';
+import { logAudit } from '../services/audit.js';
 
 const SETTING_KEYS = [
 	'vendors',
@@ -24,7 +25,7 @@ const CHECK_CLEARING_ACCOUNT_KEY = 'checkClearingAccountId';
 const ORGANIZATION_NAME_KEY = 'organizationName';
 const LOGO_SETTING_KEY = 'app_logo_filename';
 const LOGO_MIME_KEY = 'app_logo_mime';
-const ALLOWED_LOGO_MIMES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif', 'image/svg+xml']);
+const ALLOWED_LOGO_MIMES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif']);
 const MAX_ORGANIZATION_NAME_LENGTH = 120;
 
 function parseCheckClearingAccountId(value: string | null | undefined): number | null {
@@ -141,6 +142,12 @@ export default async function settingsRoutes(fastify: FastifyInstance) {
 			const name = body[ORGANIZATION_NAME_KEY].trim().slice(0, MAX_ORGANIZATION_NAME_LENGTH);
 			await setSetting(ORGANIZATION_NAME_KEY, name);
 		}
+		await logAudit({
+			operation: 'UPDATE',
+			resourceType: 'app_settings',
+			resourceId: 'settings',
+			newData: body
+		});
 		await saveDatabase();
 		return getAllSettings();
 	});
@@ -160,7 +167,8 @@ export default async function settingsRoutes(fastify: FastifyInstance) {
 		const mime = (await getSetting(LOGO_MIME_KEY)) || 'image/png';
 		const buf = await readFile(filePath);
 		reply.header('Content-Type', mime);
-		reply.header('Cache-Control', 'public, max-age=3600');
+		reply.header('X-Content-Type-Options', 'nosniff');
+		reply.header('Cache-Control', 'private, max-age=3600');
 		return reply.send(buf);
 	});
 
