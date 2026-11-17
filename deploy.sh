@@ -29,12 +29,9 @@ echo ""
 
 # Step 2: Install/Update dependencies
 echo "Step 2: Installing dependencies..."
-npm install --legacy-peer-deps
+npm ci
 
-# Ensure correct Vite version
-echo "Ensuring Vite 5.4.11 is installed..."
-npm uninstall vite 2>/dev/null || true
-npm install --legacy-peer-deps vite@5.4.11
+echo "Using the Vite version from package-lock.json"
 echo ""
 
 # Step 3: Build application

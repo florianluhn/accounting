@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { canEdit, canDelete } from '$lib/auth.svelte';
 	import { goto } from '$app/navigation';
 	import {
 		fixedAssetsAPI,
@@ -335,8 +336,8 @@
 									<td><span class="badge badge-xs {badge.cls}">{badge.label}</span></td>
 									<td onclick={(e) => e.stopPropagation()}>
 										<div class="flex gap-1">
-											<button class="btn btn-ghost btn-xs" onclick={() => openEdit(a)}>Edit</button>
-											<button class="btn btn-ghost btn-xs text-error" onclick={() => handleDelete(a)}>Del</button>
+											{#if canEdit()}<button class="btn btn-ghost btn-xs" onclick={() => openEdit(a)}>Edit</button>{/if}
+											{#if canDelete()}<button class="btn btn-ghost btn-xs text-error" onclick={() => handleDelete(a)}>Del</button>{/if}
 										</div>
 									</td>
 								</tr>

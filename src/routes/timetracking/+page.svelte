@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { canEdit, canDelete } from '$lib/auth.svelte';
 	import { timeEntriesAPI, type TimeEntry } from '$lib/api';
 
 	let entries = $state<TimeEntry[]>([]);
@@ -205,15 +206,6 @@
 		[...new Set(entries.map(e => e.who))].sort()
 	);
 
-	// Calculate total time from filtered entries
-	let totalMinutes = $derived(
-		filteredEntries.reduce((sum, e) => sum + e.hours * 60 + e.minutes, 0)
-	);
-
-	let totalTimeDisplay = $derived(
-		`${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`
-	);
-
 	let filteredEntries = $derived(
 		searchQuery
 			? entries.filter(entry =>
@@ -222,6 +214,14 @@
 					entry.who.toLowerCase().includes(searchQuery.toLowerCase())
 				)
 			: entries
+	);
+
+	let totalMinutes = $derived(
+		filteredEntries.reduce((sum, e) => sum + e.hours * 60 + e.minutes, 0)
+	);
+
+	let totalTimeDisplay = $derived(
+		`${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`
 	);
 </script>
 
@@ -395,15 +395,19 @@
 									<td class="font-mono font-bold">{formatTime(entry.hours, entry.minutes)}</td>
 									<td>
 										<div class="flex gap-2">
+											{#if canEdit()}
 											<button class="btn btn-sm btn-ghost" onclick={() => openEditModal(entry)}>
 												Edit
 											</button>
+											{/if}
+											{#if canDelete()}
 											<button
 												class="btn btn-sm btn-ghost text-error"
 												onclick={() => handleDelete(entry.id)}
 											>
 												Delete
 											</button>
+											{/if}
 										</div>
 									</td>
 								</tr>

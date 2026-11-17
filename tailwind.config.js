@@ -5,7 +5,6 @@ export default {
 		extend: {
 			fontFamily: {
 				sans: [
-					'"Plus Jakarta Sans"',
 					'ui-sans-serif',
 					'system-ui',
 					'-apple-system',
@@ -14,7 +13,6 @@ export default {
 					'sans-serif'
 				],
 				mono: [
-					'"JetBrains Mono"',
 					'ui-monospace',
 					'SFMono-Regular',
 					'Menlo',
@@ -22,7 +20,7 @@ export default {
 					'Consolas',
 					'monospace'
 				],
-				display: ['"Plus Jakarta Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif']
+				display: ['ui-sans-serif', 'system-ui', 'sans-serif']
 			},
 			fontSize: {
 				'2xs': ['0.6875rem', { lineHeight: '1rem' }]

@@ -25,11 +25,19 @@ export const handle: Handle = async ({ event, resolve }) => {
 		try {
 			const response = await fetch(proxiedRequest);
 
-			// Return the backend response
+			const headers = new Headers();
+			response.headers.forEach((value, key) => {
+				if (key.toLowerCase() === 'set-cookie') return;
+				headers.append(key, value);
+			});
+			for (const cookie of response.headers.getSetCookie?.() ?? []) {
+				headers.append('set-cookie', cookie);
+			}
+
 			return new Response(response.body, {
 				status: response.status,
 				statusText: response.statusText,
-				headers: response.headers
+				headers
 			});
 		} catch (error) {
 			console.error('Proxy error:', error);

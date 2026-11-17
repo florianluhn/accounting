@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { canEdit } from '$lib/auth.svelte';
 	import {
 		subledgerAccountsAPI,
 		budgetsAPI,
@@ -296,7 +297,7 @@
 				</div>
 
 				<div class="card-actions justify-end mt-6">
-					<button class="btn btn-primary" onclick={saveBudgets} disabled={saving}>
+					<button class="btn btn-primary" onclick={saveBudgets} disabled={saving || !canEdit()}>
 						{#if saving}
 							<span class="loading loading-spinner"></span>
 							Saving...

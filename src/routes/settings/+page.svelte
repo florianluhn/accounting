@@ -1,4 +1,5 @@
 <script lang="ts">
+	import UserAdmin from './UserAdmin.svelte';
 	import {
 		currenciesAPI,
 		type Currency,
@@ -563,8 +564,10 @@
 	<div class="mb-8">
 		<p class="section-label mb-2">Preferences</p>
 		<h1 class="page-title">Settings</h1>
-		<p class="page-subtitle">Currencies, modules, and application options</p>
+		<p class="page-subtitle">Currencies, modules, users, and application options</p>
 	</div>
+
+	<UserAdmin />
 
 	{#if error}
 		<div class="alert alert-error mb-6">

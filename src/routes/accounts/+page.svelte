@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { canEdit, canDelete } from '$lib/auth.svelte';
 	import {
 		glAccountsAPI,
 		subledgerAccountsAPI,
@@ -334,18 +335,22 @@
 										</td>
 										<td>
 											<div class="flex gap-2">
+												{#if canEdit()}
 												<button
 													class="btn btn-sm btn-ghost"
 													onclick={() => openEditGLModal(account)}
 												>
 													Edit
 												</button>
+												{/if}
+												{#if canDelete()}
 												<button
 													class="btn btn-sm btn-ghost text-error"
 													onclick={() => handleGLDelete(account.id)}
 												>
 													Delete
 												</button>
+												{/if}
 											</div>
 										</td>
 									</tr>
@@ -442,18 +447,22 @@
 										</td>
 										<td>
 											<div class="flex gap-2">
+												{#if canEdit()}
 												<button
 													class="btn btn-sm btn-ghost"
 													onclick={() => openEditSubledgerModal(account)}
 												>
 													Edit
 												</button>
+												{/if}
+												{#if canDelete()}
 												<button
 													class="btn btn-sm btn-ghost text-error"
 													onclick={() => handleSubledgerDelete(account.id)}
 												>
 													Delete
 												</button>
+												{/if}
 											</div>
 										</td>
 									</tr>
