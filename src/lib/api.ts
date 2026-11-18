@@ -1998,3 +1998,59 @@ export const investmentsAPI = {
 		});
 	}
 };
+
+export interface RepeatingLine {
+	id?: number;
+	amount: number;
+	currencyCode: string;
+	debitAccountId: number;
+	creditAccountId: number;
+	description: string;
+	category?: string | null;
+	comment?: string | null;
+	checkReference?: string | null;
+	vendorId?: number | null;
+	customerId?: number | null;
+	inventoryItemId?: number | null;
+	inventoryLinkType?: 'sale' | 'own_use' | 'gift' | '' | null;
+	fixedAssetId?: number | null;
+	investmentId?: number | null;
+	investmentQuantity?: number | null;
+}
+
+export interface RepeatingPosting {
+	id: number;
+	name: string;
+	lineCount?: number;
+	lines?: RepeatingLine[];
+}
+
+export const repeatingPostingsAPI = {
+	async list(): Promise<RepeatingPosting[]> {
+		return apiFetch('/api/repeating-postings');
+	},
+	async get(id: number): Promise<RepeatingPosting & { lines: RepeatingLine[] }> {
+		return apiFetch(`/api/repeating-postings/${id}`);
+	},
+	async createFromEntries(name: string, journalEntryIds: number[]): Promise<RepeatingPosting> {
+		return apiFetch('/api/repeating-postings', {
+			method: 'POST',
+			body: JSON.stringify({ name, journalEntryIds })
+		});
+	},
+	async update(id: number, data: { name?: string; lines?: RepeatingLine[] }): Promise<RepeatingPosting> {
+		return apiFetch(`/api/repeating-postings/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify(data)
+		});
+	},
+	async delete(id: number): Promise<void> {
+		return apiFetch(`/api/repeating-postings/${id}`, { method: 'DELETE' });
+	},
+	async post(id: number, entryDate: string, lines: RepeatingLine[]): Promise<{ count: number }> {
+		return apiFetch(`/api/repeating-postings/${id}/post`, {
+			method: 'POST',
+			body: JSON.stringify({ entryDate, lines })
+		});
+	}
+};

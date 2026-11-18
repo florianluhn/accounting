@@ -2,6 +2,9 @@
 	import { canEdit, canDelete } from '$lib/auth.svelte';
 	import {
 		journalEntriesAPI,
+		repeatingPostingsAPI,
+		type RepeatingLine,
+		type RepeatingPosting,
 		subledgerAccountsAPI,
 		currenciesAPI,
 		attachmentsAPI,
@@ -810,6 +813,155 @@
 		selectedIds = new Set();
 	}
 
+	let repeatingTemplates = $state<RepeatingPosting[]>([]);
+	let showRepeatingList = $state(false);
+	let showCreateTemplate = $state(false);
+	let templateName = $state('');
+	let templateError = $state('');
+	let templateSaving = $state(false);
+	let activeTemplate = $state<(RepeatingPosting & { lines: RepeatingLine[] }) | null>(null);
+	let templateDate = $state(getLocalDateString());
+	let templateLines = $state<RepeatingLine[]>([]);
+
+	function blankLine(): RepeatingLine {
+		return {
+			description: '',
+			category: '',
+			comment: '',
+			debitAccountId: subledgerAccounts[0]?.id ?? 0,
+			creditAccountId: subledgerAccounts[1]?.id ?? 0,
+			amount: 0,
+			currencyCode: currencies[0]?.code ?? 'USD',
+			checkReference: '',
+			vendorId: 0,
+			customerId: 0,
+			inventoryItemId: 0,
+			inventoryLinkType: null,
+			fixedAssetId: 0,
+			investmentId: 0,
+			investmentQuantity: null
+		};
+	}
+
+	function optionalId(value: number | null | undefined): number | null {
+		const id = Number(value);
+		return id > 0 ? id : null;
+	}
+
+	async function refreshTemplates() {
+		repeatingTemplates = await repeatingPostingsAPI.list();
+	}
+
+	function openCreateTemplate() {
+		templateName = '';
+		templateError = '';
+		showCreateTemplate = true;
+	}
+
+	async function saveTemplateFromSelection() {
+		templateSaving = true;
+		templateError = '';
+		try {
+			await repeatingPostingsAPI.createFromEntries(templateName.trim(), [...selectedIds]);
+			showCreateTemplate = false;
+			clearSelection();
+			await refreshTemplates();
+		} catch (e) {
+			templateError = e instanceof Error ? e.message : 'Could not save the template';
+		} finally {
+			templateSaving = false;
+		}
+	}
+
+	async function openTemplate(id: number) {
+		templateError = '';
+		const full = await repeatingPostingsAPI.get(id);
+		activeTemplate = full;
+		templateName = full.name;
+		templateDate = getLocalDateString();
+		templateLines = full.lines.map((line) => ({
+			...line,
+			category: line.category ?? '',
+			comment: line.comment ?? '',
+			checkReference: line.checkReference ?? '',
+			vendorId: line.vendorId ?? 0,
+			customerId: line.customerId ?? 0,
+			inventoryItemId: line.inventoryItemId ?? 0,
+			inventoryLinkType: line.inventoryLinkType ?? '',
+			fixedAssetId: line.fixedAssetId ?? 0,
+			investmentId: line.investmentId ?? 0
+		}));
+		showRepeatingList = false;
+	}
+
+	function normalizeTemplateLines(lines: RepeatingLine[]): RepeatingLine[] {
+		return lines.map((line) => {
+			const investmentId = optionalId(line.investmentId);
+			const inventoryItemId = optionalId(line.inventoryItemId);
+			return {
+				...line,
+				amount: Number(line.amount),
+				debitAccountId: Number(line.debitAccountId),
+				creditAccountId: Number(line.creditAccountId),
+				category: line.category || null,
+				comment: line.comment || null,
+				checkReference: line.checkReference || null,
+				vendorId: optionalId(line.vendorId),
+				customerId: optionalId(line.customerId),
+				fixedAssetId: optionalId(line.fixedAssetId),
+				investmentId,
+				investmentQuantity: investmentId ? Number(line.investmentQuantity) : null,
+				inventoryItemId,
+				inventoryLinkType: inventoryItemId && line.inventoryLinkType ? line.inventoryLinkType : null
+			};
+		});
+	}
+
+	async function saveActiveTemplate() {
+		if (!activeTemplate || !canEdit()) return;
+		templateSaving = true;
+		templateError = '';
+		try {
+			const lines = normalizeTemplateLines(templateLines);
+			const updated = await repeatingPostingsAPI.update(activeTemplate.id, {
+				name: templateName.trim(),
+				lines
+			});
+			activeTemplate = { ...activeTemplate, ...updated, lines: templateLines };
+		} catch (e) {
+			templateError = e instanceof Error ? e.message : 'Could not save the template';
+		} finally {
+			templateSaving = false;
+		}
+	}
+
+	async function postActiveTemplate() {
+		if (!activeTemplate) return;
+		templateSaving = true;
+		templateError = '';
+		try {
+			await repeatingPostingsAPI.post(
+				activeTemplate.id,
+				new Date(templateDate).toISOString(),
+				normalizeTemplateLines(templateLines)
+			);
+			activeTemplate = null;
+			await loadData();
+		} catch (e) {
+			templateError = e instanceof Error ? e.message : 'Could not post the template';
+		} finally {
+			templateSaving = false;
+		}
+	}
+
+	async function deleteTemplate(id: number) {
+		if (!canDelete()) return;
+		if (!confirm('Delete this repeating posting?')) return;
+		await repeatingPostingsAPI.delete(id);
+		if (activeTemplate?.id === id) activeTemplate = null;
+		await refreshTemplates();
+	}
+
 	function openSelectionModal() {
 		if (selectedIds.size === 0) return;
 		selectionError = '';
@@ -985,6 +1137,16 @@
 				/>
 			</div>
 			<div class="flex gap-2 flex-wrap">
+				<button
+					class="btn btn-outline"
+					onclick={async () => {
+						templateError = '';
+						await refreshTemplates();
+						showRepeatingList = true;
+					}}
+				>
+					Repeating postings
+				</button>
 				{#if canEdit()}
 				<button
 					class="btn btn-outline"
@@ -1073,8 +1235,13 @@
 				<span class="font-semibold text-sm">
 					{selectedCount} selected
 				</span>
+				{#if canEdit()}
 				<button type="button" class="btn btn-primary btn-sm" onclick={openSelectionModal}>
 					Edit selected…
+				</button>
+				{/if}
+				<button type="button" class="btn btn-outline btn-sm" onclick={openCreateTemplate}>
+					Create repeating posting
 				</button>
 				<button type="button" class="btn btn-ghost btn-sm" onclick={clearSelection}>
 					Clear selection
@@ -2132,5 +2299,211 @@
 			</div>
 		</div>
 		<div class="modal-backdrop" onclick={closeSelectionModal}></div>
+	</div>
+{/if}
+
+{#if showCreateTemplate}
+	<div class="modal modal-open">
+		<div class="modal-box">
+			<h3 class="font-bold text-lg">Create repeating posting</h3>
+			<p class="text-sm py-2">Save the {selectedCount} selected posting{selectedCount === 1 ? '' : 's'} as a named template. The date and attachments are not stored.</p>
+			{#if templateError}<div class="alert alert-error text-sm mb-2"><span>{templateError}</span></div>{/if}
+			<input class="input input-bordered w-full" placeholder="Template name" bind:value={templateName} />
+			<div class="modal-action">
+				<button class="btn btn-ghost" type="button" onclick={() => (showCreateTemplate = false)}>Cancel</button>
+				<button class="btn btn-primary" type="button" disabled={templateSaving || !templateName.trim()} onclick={saveTemplateFromSelection}>Save template</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if showRepeatingList}
+	<div class="modal modal-open">
+		<div class="modal-box max-w-lg">
+			<h3 class="font-bold text-lg">Repeating postings</h3>
+			{#if repeatingTemplates.length === 0}
+				<p class="py-4 text-sm">None yet. Select journal rows and choose Create repeating posting.</p>
+			{:else}
+				<ul class="py-2 space-y-2">
+					{#each repeatingTemplates as template}
+						<li class="flex items-center justify-between gap-2">
+							<button class="btn btn-ghost btn-sm justify-start flex-1" type="button" onclick={() => openTemplate(template.id)}>
+								{template.name} <span class="opacity-60">({template.lineCount})</span>
+							</button>
+							{#if canDelete()}
+								<button class="btn btn-ghost btn-xs text-error" type="button" onclick={() => deleteTemplate(template.id)}>Delete</button>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+			<div class="modal-action">
+				<button class="btn" type="button" onclick={() => (showRepeatingList = false)}>Close</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if activeTemplate}
+	<div class="modal modal-open">
+		<div class="modal-box max-w-5xl">
+			<h3 class="font-bold text-lg">Post {activeTemplate.name}</h3>
+			<p class="text-sm py-1">Each line becomes its own journal entry. The date applies to every line and defaults to today.</p>
+			{#if templateError}<div class="alert alert-error text-sm"><span>{templateError}</span></div>{/if}
+			<div class="flex flex-wrap gap-3 items-end py-2">
+				<label class="form-control">
+					<span class="label-text">Name</span>
+					<input class="input input-bordered" bind:value={templateName} disabled={!canEdit()} />
+				</label>
+				<label class="form-control">
+					<span class="label-text">Date</span>
+					<input class="input input-bordered" type="date" bind:value={templateDate} />
+				</label>
+			</div>
+			<div class="overflow-x-auto max-h-[50vh]">
+				<table class="table table-xs">
+					<thead>
+						<tr>
+							<th>Description</th>
+							<th>Debit</th>
+							<th>Credit</th>
+							<th>Amount</th>
+							<th>Currency</th>
+							<th>Category</th>
+							<th></th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each templateLines as line, index}
+							<tr>
+								<td><input class="input input-bordered input-xs w-40" bind:value={line.description} /></td>
+								<td>
+									<select class="select select-bordered select-xs w-36" bind:value={line.debitAccountId}>
+										{#each subledgerAccounts as account}
+											<option value={account.id}>{account.accountNumber} {account.name}</option>
+										{/each}
+									</select>
+								</td>
+								<td>
+									<select class="select select-bordered select-xs w-36" bind:value={line.creditAccountId}>
+										{#each subledgerAccounts as account}
+											<option value={account.id}>{account.accountNumber} {account.name}</option>
+										{/each}
+									</select>
+								</td>
+								<td><input class="input input-bordered input-xs w-24" type="number" step="0.01" min="0" bind:value={line.amount} /></td>
+								<td>
+									<select class="select select-bordered select-xs" bind:value={line.currencyCode}>
+										{#each currencies as currency}
+											<option value={currency.code}>{currency.code}</option>
+										{/each}
+									</select>
+								</td>
+								<td><input class="input input-bordered input-xs w-28" bind:value={line.category} /></td>
+								<td>
+									<button class="btn btn-ghost btn-xs text-error" type="button" disabled={templateLines.length === 1} onclick={() => (templateLines = templateLines.filter((_, i) => i !== index))}>Remove</button>
+								</td>
+							</tr>
+							<tr>
+								<td colspan="7" class="pt-0">
+									<div class="flex flex-wrap gap-2 items-end pb-2">
+										<label class="form-control">
+											<span class="label-text text-xs">Comment</span>
+											<input class="input input-bordered input-xs w-48" bind:value={line.comment} />
+										</label>
+										{#if modules.checkReferences}
+											<label class="form-control">
+												<span class="label-text text-xs">Check / ref</span>
+												<input class="input input-bordered input-xs w-28 font-mono" maxlength="100" bind:value={line.checkReference} />
+											</label>
+										{/if}
+										{#if modules.vendors}
+											<label class="form-control">
+												<span class="label-text text-xs">Vendor</span>
+												<select class="select select-bordered select-xs w-36" bind:value={line.vendorId}>
+													<option value={0}>None</option>
+													{#each vendors as vendor}
+														<option value={vendor.id}>{vendor.name}</option>
+													{/each}
+												</select>
+											</label>
+										{/if}
+										{#if modules.customers}
+											<label class="form-control">
+												<span class="label-text text-xs">Customer</span>
+												<select class="select select-bordered select-xs w-36" bind:value={line.customerId}>
+													<option value={0}>None</option>
+													{#each customers as customer}
+														<option value={customer.id}>{customer.lastName}, {customer.firstName}</option>
+													{/each}
+												</select>
+											</label>
+										{/if}
+										{#if modules.fixedAssets && fixedAssets.length > 0}
+											<label class="form-control">
+												<span class="label-text text-xs">Fixed asset</span>
+												<select class="select select-bordered select-xs w-36" bind:value={line.fixedAssetId}>
+													<option value={0}>None</option>
+													{#each fixedAssets as asset}
+														<option value={asset.id}>{asset.name}</option>
+													{/each}
+												</select>
+											</label>
+										{/if}
+										{#if modules.investments && investments.length > 0}
+											<label class="form-control">
+												<span class="label-text text-xs">Investment</span>
+												<select class="select select-bordered select-xs w-36" bind:value={line.investmentId}>
+													<option value={0}>None</option>
+													{#each investments as inv}
+														<option value={inv.id}>{inv.name}</option>
+													{/each}
+												</select>
+											</label>
+											{#if line.investmentId}
+												<label class="form-control">
+													<span class="label-text text-xs">Quantity</span>
+													<input class="input input-bordered input-xs w-24" type="number" step="any" bind:value={line.investmentQuantity} />
+												</label>
+											{/if}
+										{/if}
+										{#if modules.inventory && finishedGoodItems.length > 0}
+											<label class="form-control">
+												<span class="label-text text-xs">Inventory item</span>
+												<select class="select select-bordered select-xs w-40" bind:value={line.inventoryItemId}>
+													<option value={0}>None</option>
+													{#each finishedGoodItems as item}
+														<option value={item.id}>{item.name}</option>
+													{/each}
+												</select>
+											</label>
+											{#if line.inventoryItemId}
+												<label class="form-control">
+													<span class="label-text text-xs">Link type</span>
+													<select class="select select-bordered select-xs" bind:value={line.inventoryLinkType}>
+														<option value="">Related cost</option>
+														<option value="sale">Sale</option>
+														<option value="own_use">Own use</option>
+														<option value="gift">Gift</option>
+													</select>
+												</label>
+											{/if}
+										{/if}
+									</div>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			<button class="btn btn-ghost btn-sm mt-2" type="button" onclick={() => (templateLines = [...templateLines, blankLine()])}>Add line</button>
+			<div class="modal-action">
+				<button class="btn btn-ghost" type="button" onclick={() => (activeTemplate = null)}>Close</button>
+				{#if canEdit()}
+					<button class="btn" type="button" disabled={templateSaving} onclick={saveActiveTemplate}>Save template</button>
+				{/if}
+				<button class="btn btn-primary" type="button" disabled={templateSaving} onclick={postActiveTemplate}>Post entries</button>
+			</div>
+		</div>
 	</div>
 {/if}
