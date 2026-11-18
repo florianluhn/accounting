@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/connection.js';
 import { auditLogs } from '../db/schema.js';
+import { currentAuthContext } from '../auth/context.js';
 
 // Types for audit operations
 export type AuditOperation = 'CREATE' | 'UPDATE' | 'DELETE';
@@ -16,7 +17,15 @@ export type ResourceType =
 	| 'inventory_category'
 	| 'inventory_item'
 	| 'fixed_asset'
-	| 'investment';
+	| 'investment'
+	| 'booking'
+	| 'booking_platform'
+	| 'budget'
+	| 'app_settings'
+	| 'financial_year'
+	| 'material_allocation'
+	| 'user'
+	| 'api_token';
 export type AuditSource = 'Web UI' | 'CSV Import' | 'API';
 
 interface LogAuditParams {
@@ -29,6 +38,7 @@ interface LogAuditParams {
 	oldData?: any;
 	newData?: any;
 	description?: string;
+	actor?: { id: number; username: string } | null;
 }
 
 /**
@@ -97,13 +107,20 @@ export async function logAudit(params: LogAuditParams): Promise<void> {
 			operation,
 			resourceType,
 			resourceId,
-			source = 'Web UI',
 			batchId,
 			batchSummary,
 			oldData,
 			newData,
 			description
 		} = params;
+
+		const ctx = currentAuthContext();
+		let source = params.source ?? 'Web UI';
+		// Calls that pass the historical default still record bearer-token use as API.
+		if (ctx?.source === 'API' && source === 'Web UI') {
+			source = 'API';
+		}
+		const actor = params.actor !== undefined ? params.actor : (ctx?.actor ?? null);
 
 		// Sanitize and serialize data
 		const sanitizedOldData = oldData ? sanitizeData(oldData) : null;
@@ -130,7 +147,9 @@ export async function logAudit(params: LogAuditParams): Promise<void> {
 			batchSummary: batchSummary || null,
 			oldData: oldDataJson,
 			newData: newDataJson,
-			description: finalDescription
+			description: finalDescription,
+			actorUserId: actor?.id ?? null,
+			actorUsername: actor?.username ?? null
 		});
 	} catch (error) {
 		// Log the error but don't throw - audit failures should not block operations

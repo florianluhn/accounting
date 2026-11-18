@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { canEdit, canDelete } from '$lib/auth.svelte';
 	import { inventoryAPI, type InventoryCategory, type InventorySummary, type FinishedGoodSummaryItem, type FieldDefinition } from '$lib/api';
 
 	let categories = $state<InventoryCategory[]>([]);
@@ -194,7 +195,7 @@
 	<div class="mb-8">
 		<p class="section-label mb-2">Stock</p>
 		<h1 class="page-title">Inventory</h1>
-		<p class="page-subtitle">Categories, materials, and finished goods</p>
+		<p class="page-subtitle">Categories, materials, and finished goods. Inventory value is tracked here and is not rolled into the balance sheet unless you journal it.</p>
 	</div>
 
 	{#if error}
@@ -370,8 +371,8 @@
 									<td>
 										<div class="flex gap-2">
 											<a href="/inventory/{cat.id}" class="btn btn-sm btn-ghost">View</a>
-											<button class="btn btn-sm btn-ghost" onclick={() => openEdit(cat)}>Edit</button>
-											<button class="btn btn-sm btn-ghost text-error" onclick={() => handleDelete(cat.id, cat.name)}>Delete</button>
+											{#if canEdit()}<button class="btn btn-sm btn-ghost" onclick={() => openEdit(cat)}>Edit</button>{/if}
+											{#if canDelete()}<button class="btn btn-sm btn-ghost text-error" onclick={() => handleDelete(cat.id, cat.name)}>Delete</button>{/if}
 										</div>
 									</td>
 								</tr>

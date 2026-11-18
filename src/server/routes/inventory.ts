@@ -9,7 +9,7 @@ import {
 } from '../db/schema.js';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { logAudit } from '../services/audit.js';
-import { computeTotalValue, resolveFields, type FieldDefinition } from '../services/formula.js';
+import { computeTotalValue, evaluateFormula, resolveFields, type FieldDefinition } from '../services/formula.js';
 import { parse as csvParse } from 'csv-parse/sync';
 import { stringify as csvStringify } from 'csv-stringify/sync';
 
@@ -73,7 +73,7 @@ async function recalculateRemaining(rawMaterialItemId: number): Promise<void> {
 	const allocs = await db.select().from(materialAllocations).where(eq(materialAllocations.rawMaterialItemId, rawMaterialItemId));
 	const consumedQuantity = allocs.reduce((sum, a) => sum + a.quantityUsed, 0);
 
-	const remainingQuantity = Math.max(0, totalQuantity - consumedQuantity);
+	const remainingQuantity = totalQuantity - consumedQuantity;
 	const remainingValue = totalQuantity > 0 ? item.totalValue * (remainingQuantity / totalQuantity) : 0;
 
 	await db.update(inventoryItems)
@@ -298,9 +298,28 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 		return { ...row, fieldDefinitions: JSON.parse(row.fieldDefinitions as string) };
 	});
 
+	function assertFormulas(defs: { key: string; type: string; formula?: string }[], valueFormula?: string) {
+		const sample: Record<string, number> = {};
+		for (const field of defs) {
+			if (field.type === 'number') sample[field.key] = 1;
+		}
+		if (valueFormula) evaluateFormula(valueFormula, sample);
+		for (const field of defs) {
+			if (field.type === 'computed') sample[field.key] = field.formula ? evaluateFormula(field.formula, sample) : 0;
+		}
+	}
+
 	// POST /api/inventory/categories
 	fastify.post<{ Body: z.infer<typeof createCategorySchema> }>('/categories', async (request, reply) => {
 		const data = createCategorySchema.parse(request.body);
+		try {
+			assertFormulas(data.fieldDefinitions, data.valueFormula);
+		} catch (error) {
+			return reply.status(400).send({
+				error: 'Bad Request',
+				message: error instanceof Error ? error.message : 'Invalid formula'
+			});
+		}
 
 		const inserted = await db.insert(inventoryCategories).values({
 			name: data.name,
@@ -765,6 +784,12 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 
 		await recalculateRemaining(data.rawMaterialItemId);
 		await recalculateFinishedGoodValue(data.finishedGoodItemId);
+		await logAudit({
+			operation: 'CREATE',
+			resourceType: 'material_allocation',
+			resourceId: inserted[0].id,
+			newData: inserted[0]
+		});
 		await saveDatabase();
 		return reply.status(201).send(inserted[0]);
 	});
@@ -782,6 +807,12 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
 		await db.delete(materialAllocations).where(eq(materialAllocations.id, id));
 		await recalculateRemaining(rawMaterialItemId);
 		await recalculateFinishedGoodValue(finishedGoodItemId);
+		await logAudit({
+			operation: 'DELETE',
+			resourceType: 'material_allocation',
+			resourceId: id,
+			oldData: existing
+		});
 		await saveDatabase();
 		return reply.status(204).send();
 	});

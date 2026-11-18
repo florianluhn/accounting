@@ -14,7 +14,7 @@ module.exports = {
       env: {
         NODE_ENV: process.env.NODE_ENV || 'production',
         BACKEND_PORT: process.env.BACKEND_PORT || '3000',
-        BACKEND_HOST: process.env.BACKEND_HOST || '0.0.0.0',
+        BACKEND_HOST: process.env.BACKEND_HOST || '127.0.0.1',
         DATABASE_PATH: process.env.DATABASE_PATH || './data/accounting.db',
         ATTACHMENTS_PATH: process.env.ATTACHMENTS_PATH || './data/attachments',
         MAX_FILE_SIZE_MB: process.env.MAX_FILE_SIZE_MB || '10',

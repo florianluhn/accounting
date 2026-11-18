@@ -1,7 +1,9 @@
 import initSqlJs from 'sql.js';
+import { migrate as runDrizzleMigrations } from 'drizzle-orm/sql-js/migrator';
+import { migrateMoneyUnits } from './money-migration.js';
 import { drizzle } from 'drizzle-orm/sql-js';
 import * as schema from './schema.js';
-import { mkdir, readFile, writeFile } from 'fs/promises';
+import { chmod, mkdir, open, readFile, rename, writeFile, copyFile } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import { existsSync } from 'fs';
 
@@ -25,7 +27,7 @@ if (existsSync(DATABASE_PATH)) {
 
 	// Debug: check what's in the loaded database
 	const tablesResult = sqlite.exec("SELECT name FROM sqlite_master WHERE type='table'");
-	const tables = tablesResult.length > 0 ? tablesResult[0].values.map(v => v[0]).join(', ') : 'none';
+	const tables = tablesResult.length > 0 ? tablesResult[0].values.map((v: unknown[]) => v[0]).join(', ') : 'none';
 	console.log('Tables in loaded database:', tables);
 } else {
 	// Create new database
@@ -44,40 +46,84 @@ export const db = drizzle(sqlite, { schema });
 // ========================================
 
 /**
- * Save database to disk
+ * One writer at a time. Nested calls (save inside a transaction) run inline.
+ * Concurrent requests wait, so a transaction cannot be saved halfway by autosave.
+ */
+let writeDepth = 0;
+let writeTail: Promise<void> = Promise.resolve();
+
+function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+	if (writeDepth > 0) return fn();
+	const prev = writeTail;
+	let release: () => void = () => {};
+	writeTail = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	return prev.then(async () => {
+		writeDepth++;
+		try {
+			return await fn();
+		} finally {
+			writeDepth--;
+			release();
+		}
+	});
+}
+
+async function writeDatabaseFile(): Promise<void> {
+	const data = sqlite.export();
+	const tmp = `${DATABASE_PATH}.tmp`;
+	await writeFile(tmp, data);
+	const handle = await open(tmp, 'r+');
+	try {
+		await handle.sync();
+	} finally {
+		await handle.close();
+	}
+	await rename(tmp, DATABASE_PATH);
+	await chmod(DATABASE_PATH, 0o600);
+	if (process.env.DEBUG_DB === '1') {
+		console.log(`[${new Date().toISOString()}] Saved database (${data.byteLength} bytes)`);
+	}
+}
+
+/**
+ * Save database to disk. Atomic replace, mode 0600, serialized with other writers.
+ * No-op while a transaction is open; the transaction commits the file itself.
  */
 export async function saveDatabase(): Promise<void> {
-	// Check what's in the database before export
-	const checkResult = sqlite.exec('SELECT COUNT(*) as count FROM currencies');
-	const count = checkResult.length > 0 ? checkResult[0].values[0][0] : 0;
-	console.log(`[${new Date().toISOString()}] Currencies count before export: ${count}`);
+	if (writeDepth > 0) return;
+	await runExclusive(() => writeDatabaseFile());
+}
 
-	// Check database page count to see if it's been modified
-	const pageCountResult = sqlite.exec('PRAGMA page_count');
-	const pageCount = pageCountResult.length > 0 ? pageCountResult[0].values[0][0] : 0;
-	console.log(`[${new Date().toISOString()}] Database page count: ${pageCount}`);
+/** Run several statements as one SQLite transaction and persist only on success. */
+export async function withTransaction<T>(fn: () => Promise<T>): Promise<T> {
+	return runExclusive(async () => {
+		sqlite.run('BEGIN');
+		try {
+			const result = await fn();
+			sqlite.run('COMMIT');
+			await writeDatabaseFile();
+			return result;
+		} catch (error) {
+			try {
+				sqlite.run('ROLLBACK');
+			} catch {
+				/* already rolled back */
+			}
+			throw error;
+		}
+	});
+}
 
-	// Log who's calling this to debug race conditions
-	const stack = new Error().stack?.split('\n')[2]?.trim() || 'unknown';
-	console.log(`[${new Date().toISOString()}] saveDatabase called from:`, stack);
-
-	const data = sqlite.export();
-	console.log(`[${new Date().toISOString()}] Saving database to ${DATABASE_PATH}, size: ${data.byteLength} bytes`);
-
-	// Try loading the exported data into a new database to check it
-	const SQL = await import('sql.js').then(m => m.default());
-	const testDb = new SQL.Database(data);
-	const testResult = testDb.exec('SELECT COUNT(*) as count FROM currencies');
-	const testCount = testResult.length > 0 ? testResult[0].values[0][0] : 0;
-	console.log(`Currencies count in exported data: ${testCount}`);
-	testDb.close();
-
-	await writeFile(DATABASE_PATH, data);
-	console.log('Write complete');
-
-	// Verify the write by reading back
-	const verify = await readFile(DATABASE_PATH);
-	console.log(`Verified file size: ${verify.byteLength} bytes`);
+export async function backupDatabaseFile(reason: string): Promise<string | null> {
+	if (!existsSync(DATABASE_PATH)) return null;
+	const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+	const dest = `${DATABASE_PATH}.${reason}-${stamp}.bak`;
+	await copyFile(DATABASE_PATH, dest);
+	await chmod(dest, 0o600);
+	console.log(`✓ Database backup written to ${dest}`);
+	return dest;
 }
 
 /**
@@ -134,7 +180,8 @@ export function stopAutoSave() {
 
 // Only start auto-save if not running as a script (migration, seed, etc.)
 const isScript = process.argv[1]?.includes('scripts');
-if (!isScript) {
+const isTest = process.env.NODE_ENV === 'test';
+if (!isScript && !isTest) {
 	startAutoSave();
 
 	// Save on process exit
@@ -1176,6 +1223,26 @@ function setupTriggers() {
 		END;
 	`);
 
+	sqlite.run(`DROP TRIGGER IF EXISTS prevent_same_account_debit_credit_update`);
+	sqlite.run(`
+		CREATE TRIGGER prevent_same_account_debit_credit_update
+		BEFORE UPDATE ON journal_entries
+		WHEN NEW.debit_account_id = NEW.credit_account_id
+		BEGIN
+			SELECT RAISE(ABORT, 'Debit and credit accounts must be different');
+		END;
+	`);
+
+	sqlite.run(`DROP TRIGGER IF EXISTS ensure_positive_amount_update`);
+	sqlite.run(`
+		CREATE TRIGGER ensure_positive_amount_update
+		BEFORE UPDATE ON journal_entries
+		WHEN NEW.amount <= 0 AND NEW.inventory_item_id IS NULL
+		BEGIN
+			SELECT RAISE(ABORT, 'Amount must be positive');
+		END;
+	`);
+
 	sqlite.run(`
 		CREATE TRIGGER IF NOT EXISTS update_currencies_timestamp
 		AFTER UPDATE ON currencies
@@ -1211,6 +1278,146 @@ function setupTriggers() {
 			UPDATE journal_entries SET updated_at = unixepoch() WHERE id = NEW.id;
 		END;
 	`);
+}
+
+const AUDIT_RESOURCE_SQL = [
+	'currency',
+	'gl_account',
+	'subledger_account',
+	'journal_entry',
+	'attachment',
+	'vendor',
+	'customer',
+	'time_entry',
+	'inventory_category',
+	'inventory_item',
+	'fixed_asset',
+	'investment',
+	'booking',
+	'booking_platform',
+	'budget',
+	'app_settings',
+	'financial_year',
+	'material_allocation',
+	'user',
+	'api_token'
+]
+	.map((name) => `'${name}'`)
+	.join(', ');
+
+/**
+ * Users, sessions, API tokens, and audit actor columns.
+ * Safe to re-run on an existing production database.
+ */
+function migrateAuth(): void {
+	sqlite.run(`
+		CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
+			is_admin INTEGER NOT NULL DEFAULT 0,
+			rights TEXT NOT NULL DEFAULT 'add_edit_delete' CHECK(rights IN ('add', 'add_edit', 'add_edit_delete')),
+			is_active INTEGER NOT NULL DEFAULT 1,
+			created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+			updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+		)
+	`);
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)');
+
+	sqlite.run(`
+		CREATE TABLE IF NOT EXISTS sessions (
+			token_hash TEXT PRIMARY KEY,
+			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			expires_at INTEGER NOT NULL,
+			created_at INTEGER NOT NULL DEFAULT (unixepoch())
+		)
+	`);
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)');
+
+	sqlite.run(`
+		CREATE TABLE IF NOT EXISTS api_tokens (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			token_hash TEXT NOT NULL UNIQUE,
+			token_prefix TEXT NOT NULL,
+			created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+			last_used_at INTEGER,
+			revoked_at INTEGER
+		)
+	`);
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id)');
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash)');
+
+	const tableCheck = sqlite.exec(
+		"SELECT name FROM sqlite_master WHERE type='table' AND name='audit_logs'"
+	);
+	if (tableCheck.length === 0 || tableCheck[0].values.length === 0) {
+		return;
+	}
+
+	const info = sqlite.exec('PRAGMA table_info(audit_logs)');
+	const colNames = info.length > 0 ? info[0].values.map((c: unknown[]) => String(c[1])) : [];
+	const createRows = sqlite.exec(
+		"SELECT sql FROM sqlite_master WHERE type='table' AND name='audit_logs'"
+	);
+	const createSql = createRows.length > 0 ? String(createRows[0].values[0][0]) : '';
+	const needsActor = !colNames.includes('actor_user_id');
+	const needsTypes = !createSql.includes("'booking'") || !createSql.includes("'api_token'");
+	if (!needsActor && !needsTypes) {
+		sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_user_id)');
+		console.log('✓ users, sessions, and audit actors ready');
+		return;
+	}
+
+	console.log('Updating audit_logs for actors and additional resource types...');
+	sqlite.run(`
+		CREATE TABLE audit_logs_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			operation TEXT NOT NULL CHECK(operation IN ('CREATE', 'UPDATE', 'DELETE')),
+			resource_type TEXT NOT NULL CHECK(resource_type IN (${AUDIT_RESOURCE_SQL})),
+			resource_id TEXT NOT NULL,
+			source TEXT NOT NULL DEFAULT 'Web UI' CHECK(source IN ('Web UI', 'CSV Import', 'API')),
+			batch_id TEXT,
+			batch_summary TEXT,
+			old_data TEXT,
+			new_data TEXT,
+			timestamp INTEGER NOT NULL DEFAULT (unixepoch()),
+			description TEXT,
+			actor_user_id INTEGER,
+			actor_username TEXT
+		)
+	`);
+
+	const newCols = [
+		'id',
+		'operation',
+		'resource_type',
+		'resource_id',
+		'source',
+		'batch_id',
+		'batch_summary',
+		'old_data',
+		'new_data',
+		'timestamp',
+		'description',
+		'actor_user_id',
+		'actor_username'
+	];
+	const shared = newCols.filter((col) => colNames.includes(col));
+	sqlite.run(
+		`INSERT INTO audit_logs_new (${shared.join(', ')}) SELECT ${shared.join(', ')} FROM audit_logs`
+	);
+	sqlite.run('DROP TABLE audit_logs');
+	sqlite.run('ALTER TABLE audit_logs_new RENAME TO audit_logs');
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)');
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type, resource_id)');
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_operation ON audit_logs(operation)');
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_source ON audit_logs(source)');
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_batch ON audit_logs(batch_id)');
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_user_id)');
+	console.log('✓ audit_logs updated with actor columns and resource types');
+	console.log('✓ users, sessions, and audit actors ready');
 }
 
 // Run migrations
@@ -1305,6 +1512,15 @@ function migrateClosedFinancialYears(): void {
 	}
 }
 
+const baseTable = sqlite.exec(
+	"SELECT name FROM sqlite_master WHERE type='table' AND name='journal_entries'"
+);
+if (baseTable.length === 0 || baseTable[0].values.length === 0) {
+	console.log('Applying base Drizzle migrations...');
+	runDrizzleMigrations(db, { migrationsFolder: resolve(process.cwd(), 'src/server/db/migrations') });
+	console.log('✓ Base schema ready');
+}
+
 migrateAuditLogs();
 migrateVendors();
 migrateTimeEntries();
@@ -1322,6 +1538,15 @@ migrateInvestments();
 migrateBudgets();
 migrateCheckReference();
 migrateClosedFinancialYears();
+migrateAuth();
+
+try {
+	migrateMoneyUnits(sqlite, DATABASE_PATH);
+} catch (error) {
+	console.error('❌ Money migration failed. The database file was restored if it had been modified.');
+	console.error(error);
+	process.exit(1);
+}
 
 setupTriggers();
 

@@ -56,6 +56,17 @@ export function getFinancialYearBounds(
 	return { start, end };
 }
 
+/** Date-only query strings expand to the full UTC day so lists match reports. */
+export function parseQueryDate(value: string, bound: 'start' | 'end'): Date | null {
+	if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+		const date = new Date(`${value}T00:00:00.000Z`);
+		if (bound === 'end') date.setUTCHours(23, 59, 59, 999);
+		return date;
+	}
+	const date = new Date(value);
+	return Number.isNaN(date.getTime()) ? null : date;
+}
+
 /** YYYY-MM-DD for local date (no timezone shift). */
 export function toLocalDateString(date: Date): string {
 	const year = date.getFullYear();

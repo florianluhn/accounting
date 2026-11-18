@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer, real, unique, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
+import { money } from '../money.js';
 
 // Account Types Enum
 export const ACCOUNT_TYPES = [
@@ -97,12 +98,14 @@ export const journalEntries = sqliteTable(
 	{
 		id: integer('id').primaryKey({ autoIncrement: true }),
 		entryDate: integer('entry_date', { mode: 'timestamp' }).notNull(), // Transaction date
-		amount: real('amount').notNull(), // Always positive, in entry currency
+		amount: money('amount').notNull(), // Always positive, in entry currency
 		currencyCode: text('currency_code')
 			.notNull()
 			.references(() => currencies.code, { onDelete: 'restrict' })
 			.default('USD'),
-		amountInUSD: real('amount_in_usd').notNull(), // Converted amount for reporting
+		amountInUSD: money('amount_in_usd').notNull(), // Historical USD amount
+		/** Units of this entry's currency per 1 USD? No: USD per 1 unit, snapshotted at posting. */
+		exchangeRateToUsd: real('exchange_rate_to_usd'),
 		debitAccountId: integer('debit_account_id')
 			.notNull()
 			.references(() => subledgerAccounts.id, { onDelete: 'restrict' }),
@@ -243,9 +246,9 @@ export const accountBalances = sqliteTable(
 			.references(() => subledgerAccounts.id, { onDelete: 'cascade' }),
 		year: integer('year').notNull(),
 		month: integer('month').notNull(), // 1-12
-		debitTotal: real('debit_total').notNull().default(0),
-		creditTotal: real('credit_total').notNull().default(0),
-		balance: real('balance').notNull().default(0), // In USD
+		debitTotal: money('debit_total').notNull().default(0),
+		creditTotal: money('credit_total').notNull().default(0),
+		balance: money('balance').notNull().default(0), // In USD
 		updatedAt: integer('updated_at', { mode: 'timestamp' })
 			.notNull()
 			.default(sql`(unixepoch())`)
@@ -303,7 +306,7 @@ export const budgets = sqliteTable(
 			.notNull()
 			.references(() => subledgerAccounts.id, { onDelete: 'cascade' }),
 		year: integer('year').notNull(),
-		amount: real('amount').notNull().default(0), // Budget amount in USD
+		amount: money('amount').notNull().default(0), // Budget amount in USD
 		createdAt: integer('created_at', { mode: 'timestamp' })
 			.notNull()
 			.default(sql`(unixepoch())`),
@@ -364,7 +367,7 @@ export const inventoryItems = sqliteTable(
 		// JSON object: { fieldKey: value }
 		fieldValues: text('field_values').notNull().default('{}'),
 		// Stored monetary value computed from category's valueFormula — used for balance sheet SUM()
-		totalValue: real('total_value').notNull().default(0),
+		totalValue: money('total_value').notNull().default(0),
 		// For finished goods: 1 = in stock, 0 = sold/consumed. User-managed.
 		quantity: integer('quantity').notNull().default(1),
 		// For finished goods: how the item was disposed of ('sale' | 'own_use'), set directly or via journal entry
@@ -372,7 +375,7 @@ export const inventoryItems = sqliteTable(
 		// Raw material only: how much quantity remains after consumption allocations
 		remainingQuantity: real('remaining_quantity'),
 		// Raw material only: monetary value of remaining quantity (used for balance sheet)
-		remainingValue: real('remaining_value'),
+		remainingValue: money('remaining_value'),
 		createdAt: integer('created_at', { mode: 'timestamp' })
 			.notNull()
 			.default(sql`(unixepoch())`),
@@ -442,7 +445,7 @@ export const fixedAssets = sqliteTable(
 		depreciationMethod: text('depreciation_method').notNull(), // 'SL' | '200DB' | '150DB' | 'Immediate'
 		convention: text('convention').notNull(), // 'half_year' | 'mid_month' | 'mid_quarter'
 		usefulLifeMonths: integer('useful_life_months').notNull(), // e.g. 60 = 5 years
-		salvageValue: real('salvage_value').notNull().default(0),
+		salvageValue: money('salvage_value').notNull().default(0),
 		// Date the asset was placed in service (ISO date string, null = not yet activated)
 		activationDate: text('activation_date'),
 		// Timestamps
@@ -481,7 +484,7 @@ export const investments = sqliteTable(
 			.notNull()
 			.references(() => subledgerAccounts.id, { onDelete: 'restrict' }),
 		/** Memo market price per unit — overview only, not booked to the GL. */
-		currentPrice: real('current_price').notNull().default(0),
+		currentPrice: money('current_price').notNull().default(0),
 		description: text('description'),
 		createdAt: integer('created_at', { mode: 'timestamp' })
 			.notNull()
@@ -520,7 +523,7 @@ export const closedFinancialYears = sqliteTable(
 		/** FY start month (1–12) in effect when the year was closed. */
 		startMonth: integer('start_month').notNull(),
 		/** Net income transferred to retained earnings (revenue − expenses). */
-		netIncome: real('net_income').notNull(),
+		netIncome: money('net_income').notNull(),
 		/** Equity subledger that holds this year's retained earnings. */
 		retainedEarningsAccountId: integer('retained_earnings_account_id')
 			.notNull()
@@ -576,13 +579,13 @@ export const bookings = sqliteTable(
 		checkInDate: text('check_in_date').notNull(), // ISO date yyyy-mm-dd
 		checkOutDate: text('check_out_date').notNull(),
 		nights: integer('nights').notNull().default(0),
-		totalPaid: real('total_paid').notNull().default(0),
-		netAmount: real('net_amount').notNull().default(0),
-		cleaningFee: real('cleaning_fee').notNull().default(0),
-		salesTax: real('sales_tax').notNull().default(0),
-		touristTax: real('tourist_tax').notNull().default(0),
-		platformFee: real('platform_fee').notNull().default(0),
-		rentalFee: real('rental_fee').notNull().default(0),
+		totalPaid: money('total_paid').notNull().default(0),
+		netAmount: money('net_amount').notNull().default(0),
+		cleaningFee: money('cleaning_fee').notNull().default(0),
+		salesTax: money('sales_tax').notNull().default(0),
+		touristTax: money('tourist_tax').notNull().default(0),
+		platformFee: money('platform_fee').notNull().default(0),
+		rentalFee: money('rental_fee').notNull().default(0),
 		comment: text('comment'),
 		// When the booking was recorded in the system (editable calendar date, yyyy-mm-dd)
 		addedDate: text('added_date').notNull().default(sql`(date('now'))`),
@@ -626,7 +629,15 @@ export const auditLogs = sqliteTable(
 				'inventory_category',
 				'inventory_item',
 				'fixed_asset',
-				'investment'
+				'investment',
+				'booking',
+				'booking_platform',
+				'budget',
+				'app_settings',
+				'financial_year',
+				'material_allocation',
+				'user',
+				'api_token'
 			]
 		}).notNull(),
 		resourceId: text('resource_id').notNull(),
@@ -636,16 +647,91 @@ export const auditLogs = sqliteTable(
 		oldData: text('old_data'),
 		newData: text('new_data'),
 		timestamp: integer('timestamp', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-		description: text('description')
+		description: text('description'),
+		/** User who performed the action. Null for rows written before accounts existed. */
+		actorUserId: integer('actor_user_id'),
+		/** Username at the time of the action. Kept if the user is later renamed. */
+		actorUsername: text('actor_username')
 	},
 	(table) => ({
 		timestampIdx: index('idx_audit_logs_timestamp').on(table.timestamp),
 		resourceIdx: index('idx_audit_logs_resource').on(table.resourceType, table.resourceId),
 		operationIdx: index('idx_audit_logs_operation').on(table.operation),
 		sourceIdx: index('idx_audit_logs_source').on(table.source),
-		batchIdx: index('idx_audit_logs_batch').on(table.batchId)
+		batchIdx: index('idx_audit_logs_batch').on(table.batchId),
+		actorIdx: index('idx_audit_logs_actor').on(table.actorUserId)
 	})
 );
+
+export const USER_RIGHTS = ['add', 'add_edit', 'add_edit_delete'] as const;
+export type UserRights = (typeof USER_RIGHTS)[number];
+
+// ========================================
+// Users, sessions, and API tokens
+// ========================================
+export const users = sqliteTable(
+	'users',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		username: text('username').notNull().unique(),
+		passwordHash: text('password_hash').notNull(),
+		isAdmin: integer('is_admin', { mode: 'boolean' }).notNull().default(false),
+		rights: text('rights', { enum: USER_RIGHTS }).notNull().default('add_edit_delete'),
+		isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+		createdAt: integer('created_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer('updated_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`)
+	},
+	(table) => ({
+		usernameIdx: index('idx_users_username').on(table.username)
+	})
+);
+
+export const sessions = sqliteTable(
+	'sessions',
+	{
+		tokenHash: text('token_hash').primaryKey(),
+		userId: integer('user_id')
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
+		expiresAt: integer('expires_at').notNull(),
+		createdAt: integer('created_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`)
+	},
+	(table) => ({
+		userIdx: index('idx_sessions_user').on(table.userId)
+	})
+);
+
+export const apiTokens = sqliteTable(
+	'api_tokens',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		userId: integer('user_id')
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
+		name: text('name').notNull(),
+		tokenHash: text('token_hash').notNull().unique(),
+		tokenPrefix: text('token_prefix').notNull(),
+		createdAt: integer('created_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		lastUsedAt: integer('last_used_at', { mode: 'timestamp' }),
+		revokedAt: integer('revoked_at', { mode: 'timestamp' })
+	},
+	(table) => ({
+		userIdx: index('idx_api_tokens_user').on(table.userId),
+		hashIdx: index('idx_api_tokens_hash').on(table.tokenHash)
+	})
+);
+
+export type User = typeof users.$inferSelect;
+export type Session = typeof sessions.$inferSelect;
+export type ApiToken = typeof apiTokens.$inferSelect;
 
 // ========================================
 // Type exports for TypeScript

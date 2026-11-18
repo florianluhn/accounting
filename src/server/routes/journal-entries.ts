@@ -14,6 +14,7 @@ import {
 } from '../db/schema.js';
 import { eq, and, gte, lte, desc, or, isNull, isNotNull, ne, inArray, count } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
+import { parseQueryDate } from '../../lib/financial-year.js';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { logAudit, generateBatchId } from '../services/audit.js';
@@ -300,8 +301,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 		}
 
 		if (request.query.endDate) {
-			const endDate = new Date(request.query.endDate);
-			if (!isNaN(endDate.getTime())) {
+			const endDate = parseQueryDate(request.query.endDate, 'end');
+			if (endDate) {
 				conditions.push(lte(journalEntries.entryDate, endDate));
 			}
 		}
@@ -863,6 +864,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 
 			// Calculate amount in USD (round to 2 decimal places)
 			const amountInUSD = Math.round(validatedData.amount * currency[0].exchangeRate * 100) / 100;
+			const exchangeRateToUsd = currency[0].exchangeRate;
 
 			const linkType = validatedData.inventoryItemId ? (validatedData.inventoryLinkType ?? null) : null;
 
@@ -904,6 +906,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 				.values({
 					...validatedData,
 					amountInUSD,
+					exchangeRateToUsd,
 					checkReference: checkRef,
 					customerId: validatedData.customerId ?? null,
 					inventoryItemId: validatedData.inventoryItemId ?? null,
@@ -980,14 +983,13 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			throw e;
 		}
 
-		// Validate debit and credit accounts are different if both provided
-		if (validatedData.debitAccountId && validatedData.creditAccountId) {
-			if (validatedData.debitAccountId === validatedData.creditAccountId) {
-				return reply.status(400).send({
-					error: 'Bad Request',
-					message: 'Debit and credit accounts must be different'
-				});
-			}
+		const nextDebit = validatedData.debitAccountId ?? existing[0].debitAccountId;
+		const nextCredit = validatedData.creditAccountId ?? existing[0].creditAccountId;
+		if (nextDebit === nextCredit) {
+			return reply.status(400).send({
+				error: 'Bad Request',
+				message: 'Debit and credit accounts must be different'
+			});
 		}
 
 		// If updating debit account, check it exists
@@ -1031,10 +1033,10 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 					: String(validatedData.checkReference).trim();
 		}
 
-		// If amount or currency changed, recalculate amountInUSD
-		if (validatedData.amount || validatedData.currencyCode) {
+		// Recalculate USD amount when the amount or currency is present, including an explicit 0.
+		if (validatedData.amount !== undefined || validatedData.currencyCode) {
 			const currencyCode = validatedData.currencyCode || existing[0].currencyCode;
-			const amount = validatedData.amount ?? existing[0].amount;
+			const amount = validatedData.amount !== undefined ? validatedData.amount : existing[0].amount;
 
 			// Get exchange rate
 			const currency = await db
@@ -1051,6 +1053,7 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			}
 
 			updateData.amountInUSD = Math.round(amount * currency[0].exchangeRate * 100) / 100;
+			updateData.exchangeRateToUsd = currency[0].exchangeRate;
 		}
 
 		// Clear quantity when investment is unlinked
@@ -1252,8 +1255,8 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 		}
 
 		if (request.query.endDate) {
-			const endDate = new Date(request.query.endDate);
-			if (!isNaN(endDate.getTime())) {
+			const endDate = parseQueryDate(request.query.endDate, 'end');
+			if (endDate) {
 				conditions.push(lte(journalEntries.entryDate, endDate));
 			}
 		}
@@ -1400,7 +1403,11 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 			const record = records[i];
 			try {
 				// Parse date
-				const entryDate = new Date(record.Date);
+				const dateText = String(record.Date ?? '').trim();
+				if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText)) {
+					throw new Error(`Date must be YYYY-MM-DD: ${record.Date}`);
+				}
+				const entryDate = new Date(`${dateText}T00:00:00.000Z`);
 				if (isNaN(entryDate.getTime())) {
 					throw new Error(`Invalid date: ${record.Date}`);
 				}

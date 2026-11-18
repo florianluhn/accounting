@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { canEdit, canDelete, auth } from '$lib/auth.svelte';
 	import {
 		bookingsAPI,
 		customersAPI,
@@ -16,7 +17,8 @@
 	let config = $state<BookingConfig>({
 		cleaningFee: 0,
 		salesTaxRate: 0,
-		touristTaxRate: 0
+		touristTaxRate: 0,
+		websiteAvailabilityPath: ''
 	});
 	let loading = $state(true);
 	let error = $state('');
@@ -583,7 +585,7 @@
 	<div class="mb-8">
 		<p class="section-label mb-2">Hospitality</p>
 		<h1 class="page-title">Bookings</h1>
-		<p class="page-subtitle">Overnight stays and platform bookings</p>
+		<p class="page-subtitle">Overnight stays and platform bookings. These figures are operational and are not posted to the general ledger.</p>
 	</div>
 
 	{#if error}
@@ -626,6 +628,7 @@
 			Upload CSV
 		</button>
 
+		{#if auth.user?.isAdmin}
 		<button class="btn btn-outline" onclick={syncToWebsite} disabled={syncing}>
 			{#if syncing}
 				<span class="loading loading-spinner loading-xs"></span>
@@ -634,6 +637,7 @@
 				Sync to Website
 			{/if}
 		</button>
+		{/if}
 		<button class="btn btn-primary" onclick={openCreate}>+ New Booking</button>
 	</div>
 
@@ -816,8 +820,8 @@
 									<td class="font-mono">{b.nights > 0 ? formatMoney(b.rentalFee / b.nights) : '-'}</td>
 									<td>
 										<div class="flex gap-2">
-											<button class="btn btn-sm btn-ghost" onclick={() => openEdit(b)}>Edit</button>
-											<button class="btn btn-sm btn-ghost text-error" onclick={() => handleDelete(b.id)}>Delete</button>
+											{#if canEdit()}<button class="btn btn-sm btn-ghost" onclick={() => openEdit(b)}>Edit</button>{/if}
+											{#if canDelete()}<button class="btn btn-sm btn-ghost text-error" onclick={() => handleDelete(b.id)}>Delete</button>{/if}
 										</div>
 									</td>
 								</tr>

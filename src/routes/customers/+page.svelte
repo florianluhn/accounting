@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { canEdit, canDelete } from '$lib/auth.svelte';
 	import { customersAPI, type Customer } from '$lib/api';
 
 	let customers = $state<Customer[]>([]);
@@ -323,15 +324,19 @@
 											<a href="/customers/{customer.id}" class="btn btn-sm btn-ghost">
 												View
 											</a>
+											{#if canEdit()}
 											<button class="btn btn-sm btn-ghost" onclick={() => openEditModal(customer)}>
 												Edit
 											</button>
+											{/if}
+											{#if canDelete()}
 											<button
 												class="btn btn-sm btn-ghost text-error"
 												onclick={() => handleDelete(customer.id)}
 											>
 												Delete
 											</button>
+											{/if}
 										</div>
 									</td>
 								</tr>

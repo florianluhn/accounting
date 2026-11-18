@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import db, { saveDatabase } from '../db/connection.js';
 import { timeEntries } from '../db/schema.js';
-import { eq, and, gte, lte, desc, like } from 'drizzle-orm';
+import { eq, and, gte, lte, desc } from 'drizzle-orm';
+import { likeContains } from '../like.js';
 import { logAudit, generateBatchId } from '../services/audit.js';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
@@ -62,7 +63,7 @@ export default async function timeEntriesRoutes(fastify: FastifyInstance) {
 		}
 
 		if (request.query.activity) {
-			conditions.push(like(timeEntries.activity, `%${request.query.activity}%`));
+			conditions.push(likeContains(timeEntries.activity, request.query.activity));
 		}
 
 		if (conditions.length > 0) {

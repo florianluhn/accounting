@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { canEdit, canDelete } from '$lib/auth.svelte';
 	import {
 		journalEntriesAPI,
 		subledgerAccountsAPI,
@@ -984,6 +985,7 @@
 				/>
 			</div>
 			<div class="flex gap-2 flex-wrap">
+				{#if canEdit()}
 				<button
 					class="btn btn-outline"
 					onclick={openBulkModal}
@@ -994,6 +996,7 @@
 					</svg>
 					Mass change
 				</button>
+				{/if}
 				<button
 					class="btn btn-outline"
 					onclick={handleDownloadCSV}
@@ -1248,12 +1251,16 @@
 									</td>
 									<td class="align-top">
 										<div class="flex flex-col gap-1">
+											{#if canEdit()}
 											<button class="btn btn-xs btn-ghost justify-start" onclick={() => openEditModal(entry)}>
 												Edit
 											</button>
+											{/if}
+											{#if canDelete()}
 											<button class="btn btn-xs btn-ghost text-error justify-start" onclick={() => handleDelete(entry.id)}>
 												Delete
 											</button>
+											{/if}
 										</div>
 									</td>
 								</tr>

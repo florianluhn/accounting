@@ -10,28 +10,8 @@ export type {
 // API base URL - configurable via environment variable or auto-detect
 // Priority: 1) PUBLIC_API_URL env var, 2) Auto-detect based on frontend port
 // In production, the frontend and backend can run on different ports
-const getApiBaseUrl = () => {
-	// Server-side rendering - return empty string (use relative paths)
-	if (typeof window === 'undefined') return '';
-
-	// Get public env vars (available at runtime)
-	const apiUrl = (globalThis as any).APP_CONFIG?.API_URL;
-	const backendPort = (globalThis as any).APP_CONFIG?.BACKEND_PORT || '3000';
-	const frontendPort = (globalThis as any).APP_CONFIG?.FRONTEND_PORT || '5173';
-
-	// If API_URL is explicitly set, use it
-	if (apiUrl) {
-		return apiUrl;
-	}
-
-	// Auto-detect: if frontend port matches, construct backend URL
-	if (window.location.port === frontendPort) {
-		return `http://${window.location.hostname}:${backendPort}`;
-	}
-
-	// Default: use relative path
-	return '';
-};
+/** Always same-origin. The SvelteKit server proxies /api to the loopback backend. */
+const getApiBaseUrl = () => '';
 
 // Generic fetch wrapper with error handling
 async function apiFetch<T>(
@@ -50,8 +30,15 @@ async function apiFetch<T>(
 
 		const response = await fetch(url, {
 			...options,
+			credentials: 'same-origin',
 			headers
 		});
+
+		if (response.status === 401 && typeof window !== 'undefined' && !endpoint.startsWith('/api/auth/')) {
+			if (!window.location.pathname.startsWith('/login')) {
+				window.location.assign('/login');
+			}
+		}
 
 		if (!response.ok) {
 			const error = await response.json().catch(() => ({
@@ -1204,6 +1191,8 @@ export interface AuditLog {
 	newData: any | null;
 	timestamp: Date;
 	description: string | null;
+	actorUserId: number | null;
+	actorUsername: string | null;
 }
 
 export interface AuditLogFilters {

@@ -171,6 +171,15 @@
 						<option value="attachment">Attachment</option>
 						<option value="vendor">Vendor</option>
 						<option value="time_entry">Time Entry</option>
+						<option value="booking">Booking</option>
+						<option value="budget">Budget</option>
+						<option value="customer">Customer</option>
+						<option value="inventory_item">Inventory item</option>
+						<option value="fixed_asset">Fixed asset</option>
+						<option value="investment">Investment</option>
+						<option value="financial_year">Financial year</option>
+						<option value="user">User</option>
+						<option value="app_settings">Settings</option>
 					</select>
 				</div>
 
@@ -259,6 +268,7 @@
 									<th>Operation</th>
 									<th>Resource</th>
 									<th>Resource ID</th>
+									<th>User</th>
 									<th>Source</th>
 									<th>Description</th>
 									<th>Actions</th>
@@ -275,6 +285,7 @@
 										</td>
 										<td>{formatResourceType(log.resourceType)}</td>
 										<td class="font-mono text-sm">{log.resourceId}</td>
+										<td>{log.actorUsername || '—'}</td>
 										<td>
 											<span class="badge {getSourceBadgeClass(log.source)}">
 												{log.source}
@@ -326,6 +337,10 @@
 						<span class="ml-2 badge {getOperationBadgeClass(selectedLog.operation)}">
 							{selectedLog.operation}
 						</span>
+					</div>
+					<div>
+						<span class="font-semibold">User:</span>
+						<span class="ml-2">{selectedLog.actorUsername || '—'}</span>
 					</div>
 					<div>
 						<span class="font-semibold">Source:</span>

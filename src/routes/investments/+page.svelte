@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { canEdit, canDelete } from '$lib/auth.svelte';
 	import { goto } from '$app/navigation';
 	import {
 		investmentsAPI,
@@ -469,8 +470,8 @@
 											{fmt(inv.unrealizedPL)}
 										</td>
 										<td class="text-right whitespace-nowrap" onclick={(e) => e.stopPropagation()}>
-											<button class="btn btn-ghost btn-xs" onclick={(e) => openEdit(inv, e)}>Edit</button>
-											<button class="btn btn-ghost btn-xs text-error" onclick={(e) => remove(inv, e)}>Delete</button>
+											{#if canEdit()}<button class="btn btn-ghost btn-xs" onclick={(e) => openEdit(inv, e)}>Edit</button>{/if}
+											{#if canDelete()}<button class="btn btn-ghost btn-xs text-error" onclick={(e) => remove(inv, e)}>Delete</button>{/if}
 										</td>
 									</tr>
 								{/each}

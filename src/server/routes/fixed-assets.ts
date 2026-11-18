@@ -436,6 +436,13 @@ export default async function fixedAssetsRoutes(fastify: FastifyInstance) {
 			isDepreciation: true,
 		}).returning();
 
+		await logAudit({
+			operation: 'CREATE',
+			resourceType: 'journal_entry',
+			resourceId: newEntry[0].id,
+			newData: newEntry[0],
+			description: `Depreciation posted for ${asset.name} (${month})`
+		});
 		await saveDatabase();
 
 		return reply.status(201).send(newEntry[0]);
@@ -526,6 +533,14 @@ export default async function fixedAssetsRoutes(fastify: FastifyInstance) {
 			}
 		}
 
+		if (posted > 0) {
+			await logAudit({
+				operation: 'CREATE',
+				resourceType: 'journal_entry',
+				resourceId: month,
+				description: `Depreciation posted for ${posted} asset(s) in ${month}`
+			});
+		}
 		await saveDatabase();
 
 		return { posted, skipped, errors };
@@ -611,6 +626,14 @@ export default async function fixedAssetsRoutes(fastify: FastifyInstance) {
 			postedCount++;
 		}
 
+		if (postedCount > 0) {
+			await logAudit({
+				operation: 'CREATE',
+				resourceType: 'journal_entry',
+				resourceId: id,
+				description: `Posted ${postedCount} past depreciation month(s) for ${asset.name}`
+			});
+		}
 		await saveDatabase();
 
 		return { posted: postedCount, entries };

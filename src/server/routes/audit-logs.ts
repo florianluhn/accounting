@@ -173,6 +173,8 @@ export default async function auditLogsRoutes(fastify: FastifyInstance) {
 			batchId: log.batchId || '',
 			batchSummary: log.batchSummary || '',
 			description: log.description || '',
+			actorUserId: log.actorUserId ?? '',
+			actorUsername: log.actorUsername || '',
 			oldData: log.oldData || '',
 			newData: log.newData || ''
 		}));
@@ -189,6 +191,8 @@ export default async function auditLogsRoutes(fastify: FastifyInstance) {
 				'batchId',
 				'batchSummary',
 				'description',
+				'actorUserId',
+				'actorUsername',
 				'oldData',
 				'newData'
 			]

@@ -3,8 +3,9 @@
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
 	import type { LayoutData } from './$types';
-	import { settingsAPI } from '$lib/api';
+	import { goto } from '$app/navigation';
 	import { modules, branding, applyModuleSettings } from '$lib/modules.svelte';
+	import { auth, loadSession, logout } from '$lib/auth.svelte';
 	let { data }: { data: LayoutData } = $props();
 
 	// Inject app config into window for API client to use
@@ -18,14 +19,31 @@
 	const appDescription = data.appConfig.APP_DESCRIPTION || 'Personal Finance';
 
 	let logoUrl = $derived(
-		branding.hasLogo ? settingsAPI.getLogoUrl(branding.logoVersion) : ''
+		branding.hasLogo ? `/api/app-config/logo?v=${branding.logoVersion}` : ''
 	);
 
 	// Load module settings once on app start
 	$effect(() => {
-		if (browser) {
-			settingsAPI.get().then(applyModuleSettings).catch(() => {});
-		}
+		if (!browser) return;
+		loadSession().then(async () => {
+			const path = window.location.pathname;
+			if (!auth.user && path !== '/login') {
+				await goto('/login');
+				return;
+			}
+			if (auth.user && path === '/login') {
+				await goto('/');
+				return;
+			}
+			if (auth.user && !auth.user.isAdmin && (path.startsWith('/settings') || path.startsWith('/audit'))) {
+				await goto('/');
+				return;
+			}
+			if (auth.user) {
+				const response = await fetch('/api/app-config', { credentials: 'same-origin' });
+				if (response.ok) applyModuleSettings(await response.json());
+			}
+		});
 	});
 
 	type NavItem = {
@@ -53,9 +71,10 @@
 	];
 
 	let navItems = $derived(
-		allNavItems.filter(
-			(item) => item.module === null || modules[item.module as keyof typeof modules]
-		)
+		allNavItems.filter((item) => {
+			if ((item.href === '/settings' || item.href === '/audit') && !auth.user?.isAdmin) return false;
+			return item.module === null || modules[item.module as keyof typeof modules];
+		})
 	);
 
 	function isActive(href: string, pathname: string): boolean {
@@ -88,6 +107,19 @@
 	<title>{appFullName}</title>
 </svelte:head>
 
+{#if !auth.loaded}
+	<div class="min-h-screen flex items-center justify-center">
+		<span class="loading loading-spinner loading-lg"></span>
+	</div>
+{:else if !auth.user && $page.url.pathname !== '/login'}
+	<div class="min-h-screen flex items-center justify-center">
+		<span class="loading loading-spinner loading-lg"></span>
+	</div>
+{:else if $page.url.pathname === '/login'}
+	<main class="p-4">
+		<slot />
+	</main>
+{:else}
 <div class="drawer lg:drawer-open">
 	<input id="drawer" type="checkbox" class="drawer-toggle" />
 
@@ -240,8 +272,8 @@
 			<div class="p-4 border-t border-base-300/50">
 				<div class="flex items-center justify-between gap-2">
 					<div class="min-w-0">
-						<p class="text-2xs font-semibold text-base-content/55">Double-entry ledger</p>
-						<p class="text-2xs text-base-content/35 mt-0.5">v0.1.0</p>
+						<p class="text-2xs font-semibold truncate">{auth.user?.username}</p>
+						<button class="text-2xs text-base-content/50 hover:underline" type="button" onclick={logout}>Sign out</button>
 					</div>
 					<button
 						class="btn btn-ghost btn-sm btn-square hidden lg:inline-flex"
@@ -264,6 +296,7 @@
 		</aside>
 	</div>
 </div>
+{/if}
 
 <style>
 	.app-sidebar {
