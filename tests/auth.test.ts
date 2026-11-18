@@ -229,6 +229,17 @@ test('rights and admin routes are enforced, and a bearer token acts as that user
 	});
 	assert.equal(token.statusCode, 201);
 	const secret = token.json().token as string;
+	assert.match(secret, /^acct_[A-Za-z0-9_-]{20,}$/);
+	assert.ok(secret.length > String(token.json().tokenPrefix).length);
+	const listed = await app.inject({
+		method: 'GET',
+		url: `/api/users/${clerkId}/tokens`,
+		headers: auth
+	});
+	assert.equal(listed.statusCode, 200);
+	const listedBody = JSON.stringify(listed.json());
+	assert.equal(listedBody.includes(secret), false);
+	assert.equal(listed.json().some((row: { tokenPrefix: string }) => row.tokenPrefix === secret.slice(0, 12)), true);
 	const viaToken = await app.inject({
 		method: 'POST',
 		url: '/api/vendors',
