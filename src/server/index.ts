@@ -28,6 +28,7 @@ import financialYearsRoutes from './routes/financial-years.js';
 import authRoutes from './routes/auth.js';
 import usersRoutes from './routes/users.js';
 import appConfigRoutes from './routes/app-config.js';
+import repeatingPostingsRoutes from './routes/repeating-postings.js';
 
 const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
 	.split(',')
@@ -119,6 +120,7 @@ await fastify.register(financialYearsRoutes, { prefix: '/api/financial-years' })
 await fastify.register(authRoutes, { prefix: '/api/auth' });
 await fastify.register(usersRoutes, { prefix: '/api/users' });
 await fastify.register(appConfigRoutes, { prefix: '/api/app-config' });
+await fastify.register(repeatingPostingsRoutes, { prefix: '/api/repeating-postings' });
 
 // ========================================
 // Error Handler

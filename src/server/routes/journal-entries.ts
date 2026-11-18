@@ -19,6 +19,7 @@ import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { logAudit, generateBatchId } from '../services/audit.js';
 import { assertDateNotInClosedYear, YearCloseError } from '../services/year-close.js';
+import { JournalPostError, postJournalEntry } from '../services/journal-post.js';
 import { assertInvestmentQuantityOk } from './investments.js';
 import { join } from 'path';
 import { unlink } from 'fs/promises';
@@ -810,134 +811,21 @@ export default async function journalEntriesRoutes(fastify: FastifyInstance) {
 	fastify.post<{ Body: z.infer<typeof createJournalEntrySchema> }>(
 		'/',
 		async (request, reply) => {
-			const validatedData = createJournalEntrySchema.parse(request.body);
-
 			try {
-				await assertDateNotInClosedYear(validatedData.entryDate);
-			} catch (e) {
-				const r = closedYearReply(e, reply);
-				if (r) return r;
-				throw e;
-			}
-
-			// Check if debit account exists
-			const debitAccount = await db
-				.select()
-				.from(subledgerAccounts)
-				.where(eq(subledgerAccounts.id, validatedData.debitAccountId))
-				.limit(1);
-
-			if (debitAccount.length === 0) {
-				return reply.status(404).send({
-					error: 'Not Found',
-					message: `Debit account ${validatedData.debitAccountId} not found`
-				});
-			}
-
-			// Check if credit account exists
-			const creditAccount = await db
-				.select()
-				.from(subledgerAccounts)
-				.where(eq(subledgerAccounts.id, validatedData.creditAccountId))
-				.limit(1);
-
-			if (creditAccount.length === 0) {
-				return reply.status(404).send({
-					error: 'Not Found',
-					message: `Credit account ${validatedData.creditAccountId} not found`
-				});
-			}
-
-			// Check if currency exists and get exchange rate
-			const currency = await db
-				.select()
-				.from(currencies)
-				.where(eq(currencies.code, validatedData.currencyCode))
-				.limit(1);
-
-			if (currency.length === 0) {
-				return reply.status(404).send({
-					error: 'Not Found',
-					message: `Currency ${validatedData.currencyCode} not found`
-				});
-			}
-
-			// Calculate amount in USD (round to 2 decimal places)
-			const amountInUSD = Math.round(validatedData.amount * currency[0].exchangeRate * 100) / 100;
-			const exchangeRateToUsd = currency[0].exchangeRate;
-
-			const linkType = validatedData.inventoryItemId ? (validatedData.inventoryLinkType ?? null) : null;
-
-			const checkRef =
-				validatedData.checkReference != null && String(validatedData.checkReference).trim() !== ''
-					? String(validatedData.checkReference).trim()
-					: null;
-
-			const investmentId = validatedData.investmentId ?? null;
-			const investmentQuantity =
-				investmentId != null ? (validatedData.investmentQuantity ?? null) : null;
-
-			if (investmentId != null) {
-				const inv = await db
-					.select({ id: investments.id })
-					.from(investments)
-					.where(eq(investments.id, investmentId))
-					.limit(1);
-				if (inv.length === 0) {
-					return reply.status(404).send({
-						error: 'Not Found',
-						message: `Investment ${investmentId} not found`
+				const newEntry = await postJournalEntry(request.body);
+				await saveDatabase();
+				return reply.status(201).send(newEntry);
+			} catch (error) {
+				const closed = closedYearReply(error, reply);
+				if (closed) return closed;
+				if (error instanceof JournalPostError) {
+					return reply.status(error.statusCode).send({
+						error: error.statusCode === 404 ? 'Not Found' : 'Bad Request',
+						message: error.message
 					});
 				}
-				const qtyCheck = await assertInvestmentQuantityOk({
-					investmentId,
-					quantity: investmentQuantity as number,
-					amountInUSD,
-					entryDate: validatedData.entryDate
-				});
-				if (!qtyCheck.ok) {
-					return reply.status(400).send({ error: 'Bad Request', message: qtyCheck.message });
-				}
+				throw error;
 			}
-
-			// Insert new journal entry
-			const newEntry = await db
-				.insert(journalEntries)
-				.values({
-					...validatedData,
-					amountInUSD,
-					exchangeRateToUsd,
-					checkReference: checkRef,
-					customerId: validatedData.customerId ?? null,
-					inventoryItemId: validatedData.inventoryItemId ?? null,
-					inventoryLinkType: linkType,
-					fixedAssetId: validatedData.fixedAssetId ?? null,
-					isDepreciation: validatedData.isDepreciation ?? false,
-					investmentId,
-					investmentQuantity
-				})
-				.returning();
-
-			// Sync dispositionType on linked inventory item (only for disposition types, not related costs)
-			if (validatedData.inventoryItemId && linkType && ['sale', 'own_use', 'gift'].includes(linkType)) {
-				await db.update(inventoryItems)
-					.set({ dispositionType: linkType, quantity: 0 })
-					.where(eq(inventoryItems.id, validatedData.inventoryItemId));
-			}
-
-			// Log audit entry
-			await logAudit({
-				operation: 'CREATE',
-				resourceType: 'journal_entry',
-				resourceId: newEntry[0].id,
-				source: 'Web UI',
-				newData: newEntry[0]
-			});
-
-			// Save database
-			await saveDatabase();
-
-			return reply.status(201).send(newEntry[0]);
 		}
 	);
 

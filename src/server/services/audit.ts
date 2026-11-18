@@ -25,7 +25,8 @@ export type ResourceType =
 	| 'financial_year'
 	| 'material_allocation'
 	| 'user'
-	| 'api_token';
+	| 'api_token'
+	| 'repeating_posting';
 export type AuditSource = 'Web UI' | 'CSV Import' | 'API';
 
 interface LogAuditParams {

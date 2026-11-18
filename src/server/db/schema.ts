@@ -208,6 +208,56 @@ export type Customer = typeof customers.$inferSelect;
 export type NewCustomer = typeof customers.$inferInsert;
 
 // ========================================
+// Repeating posting templates (no date, no attachments)
+// ========================================
+export const repeatingPostings = sqliteTable('repeating_postings', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	name: text('name').notNull(),
+	createdAt: integer('created_at', { mode: 'timestamp' })
+		.notNull()
+		.default(sql`(unixepoch())`),
+	updatedAt: integer('updated_at', { mode: 'timestamp' })
+		.notNull()
+		.default(sql`(unixepoch())`)
+});
+
+export const repeatingPostingLines = sqliteTable(
+	'repeating_posting_lines',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		templateId: integer('template_id')
+			.notNull()
+			.references(() => repeatingPostings.id, { onDelete: 'cascade' }),
+		sortOrder: integer('sort_order').notNull().default(0),
+		amount: money('amount').notNull(),
+		currencyCode: text('currency_code')
+			.notNull()
+			.references(() => currencies.code, { onDelete: 'restrict' })
+			.default('USD'),
+		debitAccountId: integer('debit_account_id')
+			.notNull()
+			.references(() => subledgerAccounts.id, { onDelete: 'restrict' }),
+		creditAccountId: integer('credit_account_id')
+			.notNull()
+			.references(() => subledgerAccounts.id, { onDelete: 'restrict' }),
+		description: text('description').notNull(),
+		category: text('category'),
+		comment: text('comment'),
+		checkReference: text('check_reference'),
+		vendorId: integer('vendor_id').references(() => vendors.id, { onDelete: 'set null' }),
+		customerId: integer('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+		inventoryItemId: integer('inventory_item_id'),
+		inventoryLinkType: text('inventory_link_type'),
+		fixedAssetId: integer('fixed_asset_id'),
+		investmentId: integer('investment_id'),
+		investmentQuantity: real('investment_quantity')
+	},
+	(table) => ({
+		templateIdx: index('idx_repeating_lines_template').on(table.templateId)
+	})
+);
+
+// ========================================
 // Attachments Table
 // ========================================
 export const attachments = sqliteTable(
@@ -637,7 +687,8 @@ export const auditLogs = sqliteTable(
 				'financial_year',
 				'material_allocation',
 				'user',
-				'api_token'
+				'api_token',
+				'repeating_posting'
 			]
 		}).notNull(),
 		resourceId: text('resource_id').notNull(),

@@ -1300,7 +1300,8 @@ const AUDIT_RESOURCE_SQL = [
 	'financial_year',
 	'material_allocation',
 	'user',
-	'api_token'
+	'api_token',
+	'repeating_posting'
 ]
 	.map((name) => `'${name}'`)
 	.join(', ');
@@ -1512,6 +1513,86 @@ function migrateClosedFinancialYears(): void {
 	}
 }
 
+function migrateRepeatingPostings(): void {
+	sqlite.run(`
+		CREATE TABLE IF NOT EXISTS repeating_postings (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+			updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+		)
+	`);
+	sqlite.run(`
+		CREATE TABLE IF NOT EXISTS repeating_posting_lines (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			template_id INTEGER NOT NULL REFERENCES repeating_postings(id) ON DELETE CASCADE,
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			amount INTEGER NOT NULL,
+			currency_code TEXT NOT NULL REFERENCES currencies(code),
+			debit_account_id INTEGER NOT NULL REFERENCES subledger_accounts(id),
+			credit_account_id INTEGER NOT NULL REFERENCES subledger_accounts(id),
+			description TEXT NOT NULL,
+			category TEXT,
+			comment TEXT,
+			check_reference TEXT,
+			vendor_id INTEGER REFERENCES vendors(id) ON DELETE SET NULL,
+			customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+			inventory_item_id INTEGER,
+			inventory_link_type TEXT,
+			fixed_asset_id INTEGER,
+			investment_id INTEGER,
+			investment_quantity REAL
+		)
+	`);
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_repeating_lines_template ON repeating_posting_lines(template_id)');
+
+	const createRows = sqlite.exec(
+		"SELECT sql FROM sqlite_master WHERE type='table' AND name='audit_logs'"
+	);
+	if (createRows.length === 0 || createRows[0].values.length === 0) return;
+	const createSql = String(createRows[0].values[0][0]);
+	if (createSql.includes("'repeating_posting'")) {
+		console.log('✓ Repeating postings ready');
+		return;
+	}
+
+	console.log('Updating audit_logs for repeating_posting...');
+	const info = sqlite.exec('PRAGMA table_info(audit_logs)');
+	const colNames = info.length > 0 ? info[0].values.map((c: unknown[]) => String(c[1])) : [];
+	sqlite.run(`
+		CREATE TABLE audit_logs_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			operation TEXT NOT NULL CHECK(operation IN ('CREATE', 'UPDATE', 'DELETE')),
+			resource_type TEXT NOT NULL CHECK(resource_type IN (${AUDIT_RESOURCE_SQL})),
+			resource_id TEXT NOT NULL,
+			source TEXT NOT NULL DEFAULT 'Web UI' CHECK(source IN ('Web UI', 'CSV Import', 'API')),
+			batch_id TEXT,
+			batch_summary TEXT,
+			old_data TEXT,
+			new_data TEXT,
+			timestamp INTEGER NOT NULL DEFAULT (unixepoch()),
+			description TEXT,
+			actor_user_id INTEGER,
+			actor_username TEXT
+		)
+	`);
+	const newCols = [
+		'id', 'operation', 'resource_type', 'resource_id', 'source', 'batch_id', 'batch_summary',
+		'old_data', 'new_data', 'timestamp', 'description', 'actor_user_id', 'actor_username'
+	];
+	const shared = newCols.filter((col) => colNames.includes(col));
+	sqlite.run(`INSERT INTO audit_logs_new (${shared.join(', ')}) SELECT ${shared.join(', ')} FROM audit_logs`);
+	sqlite.run('DROP TABLE audit_logs');
+	sqlite.run('ALTER TABLE audit_logs_new RENAME TO audit_logs');
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)');
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type, resource_id)');
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_operation ON audit_logs(operation)');
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_source ON audit_logs(source)');
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_batch ON audit_logs(batch_id)');
+	sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_user_id)');
+	console.log('✓ Repeating postings ready');
+}
+
 const baseTable = sqlite.exec(
 	"SELECT name FROM sqlite_master WHERE type='table' AND name='journal_entries'"
 );
@@ -1539,6 +1620,7 @@ migrateBudgets();
 migrateCheckReference();
 migrateClosedFinancialYears();
 migrateAuth();
+migrateRepeatingPostings();
 
 try {
 	migrateMoneyUnits(sqlite, DATABASE_PATH);
