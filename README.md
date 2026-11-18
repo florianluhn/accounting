@@ -13,7 +13,7 @@ chmod +x scripts/update.sh
 ./scripts/update.sh
 ```
 
-The script refuses a dirty working tree, copies the database and attachments into `backups/pre-update-<timestamp>/`, fast-forwards `main`, runs `npm ci` and the production build, applies startup migrations, restarts PM2, and calls `http://127.0.0.1:3000/api/health`. If any step fails it resets to the previous commit and restores that backup.
+The script refuses a dirty working tree, copies the database and attachments into `backups/pre-update-<timestamp>/`, fast-forwards `main`, runs `npm ci` and the production build, applies startup migrations, and restarts only `accounting-backend` and `accounting-frontend`. It writes the full transcript to `logs/update-<timestamp>.log` and prints that path. If a step fails it resets to the commit from before the pull, rebuilds that commit, and restarts those two processes only when that rebuild succeeds. Vite prints two "Build failed" lines for one `npm run build` because the browser bundle and the server bundle are separate.
 
 You can also seed or reset an administrator from the machine:
 

@@ -3,6 +3,18 @@ import { defineConfig } from 'vite';
 // import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+	resolve: {
+		// Kit resolves `#app/paths` with Node's "browser" export condition.
+		// Vite 6's client build does not apply that condition, so the client
+		// bundle loads the server implementation, which imports hooks.server.ts,
+		// and the Kit guard aborts the build. Add the condition for the client only.
+		conditions: ['browser']
+	},
+	ssr: {
+		resolve: {
+			conditions: ['module', 'node']
+		}
+	},
 	plugins: [
 		sveltekit(),
 		// Temporarily disabled VitePWA to fix build issues
