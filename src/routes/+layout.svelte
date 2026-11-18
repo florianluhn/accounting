@@ -6,17 +6,16 @@
 	import { goto } from '$app/navigation';
 	import { modules, branding, applyModuleSettings } from '$lib/modules.svelte';
 	import { auth, loadSession, logout } from '$lib/auth.svelte';
-	let { data }: { data: LayoutData } = $props();
+	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
 
-	// Inject app config into window for API client to use
-	if (browser) {
+	let appName = $derived(data.appConfig.APP_SHORT_NAME || 'Accounting');
+	let appFullName = $derived(data.appConfig.APP_NAME || 'Accounting App');
+	let appDescription = $derived(data.appConfig.APP_DESCRIPTION || 'Personal Finance');
+
+	$effect(() => {
+		if (!browser) return;
 		(globalThis as any).APP_CONFIG = data.appConfig;
-	}
-
-	// Get app name from server-loaded config
-	const appName = data.appConfig.APP_SHORT_NAME || 'Accounting';
-	const appFullName = data.appConfig.APP_NAME || 'Accounting App';
-	const appDescription = data.appConfig.APP_DESCRIPTION || 'Personal Finance';
+	});
 
 	let logoUrl = $derived(
 		branding.hasLogo ? `/api/app-config/logo?v=${branding.logoVersion}` : ''
@@ -117,7 +116,7 @@
 	</div>
 {:else if $page.url.pathname === '/login'}
 	<main class="p-4">
-		<slot />
+		{@render children()}
 	</main>
 {:else}
 <div class="drawer lg:drawer-open">
@@ -149,7 +148,7 @@
 				{#if logoUrl}
 					<img
 						src={logoUrl}
-						alt=""
+						alt={appName}
 						class="w-8 h-8 rounded-xl object-cover shadow-sm bg-base-200 shrink-0"
 					/>
 				{:else}
@@ -178,7 +177,7 @@
 
 		<!-- Page content -->
 		<main class="flex-1 p-4 sm:p-6 lg:p-8">
-			<slot />
+			{@render children()}
 		</main>
 	</div>
 
