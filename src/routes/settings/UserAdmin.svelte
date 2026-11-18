@@ -20,6 +20,8 @@
 	let error = $state('');
 	let notice = $state('');
 	let revealedToken = $state('');
+	let copyState = $state<'idle' | 'copied' | 'manual'>('idle');
+	let tokenField = $state<HTMLInputElement | null>(null);
 	let username = $state('');
 	let password = $state('');
 	let isAdmin = $state(false);
@@ -101,15 +103,21 @@
 		else notice = `Password updated for ${user.username}`;
 	}
 
-	async function openTokens(userId: number) {
-		tokenUserId = userId;
-		revealedToken = '';
+	async function loadTokens(userId: number) {
 		const response = await fetch(`/api/users/${userId}/tokens`, { credentials: 'same-origin' });
 		tokens = response.ok ? await response.json() : [];
 	}
 
+	async function openTokens(userId: number) {
+		tokenUserId = userId;
+		revealedToken = '';
+		copyState = 'idle';
+		await loadTokens(userId);
+	}
+
 	async function createToken() {
 		if (tokenUserId == null) return;
+		error = '';
 		const response = await fetch(`/api/users/${tokenUserId}/tokens`, {
 			method: 'POST',
 			credentials: 'same-origin',
@@ -121,9 +129,41 @@
 			error = body.message || 'Could not create token';
 			return;
 		}
+		if (typeof body.token !== 'string' || !body.token.startsWith('acct_') || body.token.length < 20) {
+			error = 'The server did not return the full token. No token was saved for you to copy.';
+			return;
+		}
 		revealedToken = body.token;
+		copyState = 'idle';
 		tokenName = '';
-		await openTokens(tokenUserId);
+		await loadTokens(tokenUserId);
+	}
+
+	function dismissToken() {
+		revealedToken = '';
+		copyState = 'idle';
+	}
+
+	async function copyToken() {
+		if (!revealedToken) return;
+		try {
+			if (navigator.clipboard && window.isSecureContext) {
+				await navigator.clipboard.writeText(revealedToken);
+				copyState = 'copied';
+				return;
+			}
+		} catch {
+			/* HTTP pages cannot use the clipboard API. Fall through to a selection. */
+		}
+		tokenField?.focus();
+		tokenField?.select();
+		let copied = false;
+		try {
+			copied = document.execCommand('copy');
+		} catch {
+			copied = false;
+		}
+		copyState = copied ? 'copied' : 'manual';
 	}
 
 	async function revokeToken(tokenId: number) {
@@ -150,8 +190,37 @@
 		{#if error}<div class="alert alert-error text-sm"><span>{error}</span></div>{/if}
 		{#if notice}<div class="alert alert-success text-sm"><span>{notice}</span></div>{/if}
 		{#if revealedToken}
-			<div class="alert alert-warning text-sm">
-				<span>Copy this token now. It is not shown again: <code class="break-all">{revealedToken}</code></span>
+			<div class="modal modal-open" role="dialog" aria-modal="true" aria-labelledby="new-token-title">
+				<div class="modal-box max-w-xl">
+					<h3 id="new-token-title" class="font-bold text-lg">API token created</h3>
+					<p class="py-2 text-sm">
+						This is the only time the full token is shown. Copy it now. After you close this
+						dialog, only a short prefix remains in the list.
+					</p>
+					<div class="alert alert-warning text-sm mb-3">
+						<span>It will not be shown again. If you lose it, revoke it and create a new one.</span>
+					</div>
+					<label class="form-control w-full">
+						<span class="label-text">Token</span>
+						<input
+							bind:this={tokenField}
+							class="input input-bordered w-full font-mono text-xs"
+							type="text"
+							readonly
+							value={revealedToken}
+							onclick={(event) => event.currentTarget.select()}
+						/>
+					</label>
+					<div class="modal-action">
+						<button class="btn btn-primary" type="button" onclick={copyToken}>
+							{copyState === 'copied' ? 'Copied' : 'Copy'}
+						</button>
+						<button class="btn" type="button" onclick={dismissToken}>I have copied it</button>
+					</div>
+					{#if copyState === 'manual'}
+						<p class="text-sm text-warning">The browser blocked clipboard access. The token is selected in the field above; copy it manually.</p>
+					{/if}
+				</div>
 			</div>
 		{/if}
 
@@ -212,7 +281,7 @@
 					{#each tokens as token}
 						<li class="flex items-center justify-between gap-3">
 							<span>
-								{token.name} · {token.tokenPrefix}…
+								{token.name} · prefix {token.tokenPrefix}
 								{#if token.revokedAt}<span class="badge badge-ghost badge-sm">revoked</span>{/if}
 							</span>
 							{#if !token.revokedAt}
