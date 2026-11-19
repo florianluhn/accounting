@@ -9,6 +9,9 @@ On the Raspberry Pi, from a clean checkout:
 
 ```bash
 # In .env set BACKEND_HOST=127.0.0.1 and, behind HTTPS, COOKIE_SECURE=true
+# Behind Cloudflare Tunnel also set ORIGIN to the public site, for example
+# ORIGIN=https://accounting.florianluhn.com
+# Leave BODY_SIZE_LIMIT unset unless it must differ from MAX_FILE_SIZE_MB + 2MB.
 chmod +x scripts/update.sh
 ./scripts/update.sh
 ```
@@ -79,7 +82,7 @@ A comprehensive double-entry bookkeeping system built with SvelteKit 5, TypeScri
 - **PWA Support**: Install as mobile app for offline access
 
 ### Journal Entries
-- **File Attachments**: Upload receipts, invoices, and supporting documents (max 10MB per file)
+- **File Attachments**: Upload receipts and invoices as PDF, PNG, JPEG, GIF, or WebP (max 10MB per file by default)
 - **Multiple Attachments**: Attach multiple files to each journal entry
 - **Download & Delete**: Manage attachments with download and delete capabilities
 - **Date Range Filtering**: Filter journal entries by start and end date
@@ -492,6 +495,18 @@ ATTACHMENTS_PATH=./data/attachments
 
 **Note**: Port configuration (HOST, PORT, NODE_ENV) is handled by the PM2 ecosystem config in the next step, not here. This avoids duplication and keeps all process management in one place.
 
+Attachment uploads need two more variables in **`.env`** (the file `ecosystem.config.cjs` loads with dotenv). `.env.production` is not read automatically.
+
+```env
+# Must match the browser URL exactly. Leave API_URL empty.
+ORIGIN=https://accounting.florianluhn.com
+
+# Optional. Leave unset for (MAX_FILE_SIZE_MB + 2) megabytes, 12M at the default 10MB file limit.
+# BODY_SIZE_LIMIT=12M
+```
+
+SvelteKit rejects multipart attachment posts when `ORIGIN` does not match the browser. A plain `pm2 restart` keeps the previous values; `./scripts/update.sh` reloads the ecosystem file.
+
 ### Step 4: Setup PM2 Process Manager
 
 A pre-configured PM2 ecosystem file (`ecosystem.config.cjs`) is included in the repository. You can use it directly or customize it:
@@ -537,7 +552,9 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 5173,
         HOST: '0.0.0.0',
-        ORIGIN: 'http://localhost:5173'
+        // Public https origin. Do not set this to http://localhost:5173.
+        ORIGIN: 'https://accounting.florianluhn.com',
+        BODY_SIZE_LIMIT: '12M'
       },
       error_file: './logs/frontend-error.log',
       out_file: './logs/frontend-out.log',

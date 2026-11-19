@@ -4,7 +4,7 @@
 	import { browser } from '$app/environment';
 	import type { LayoutData } from './$types';
 	import { goto } from '$app/navigation';
-	import { modules, branding, applyModuleSettings } from '$lib/modules.svelte';
+	import { modules, branding, applyModuleSettings, markModulesReady } from '$lib/modules.svelte';
 	import { auth, loadSession, logout } from '$lib/auth.svelte';
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
 
@@ -24,25 +24,35 @@
 	// Load module settings once on app start
 	$effect(() => {
 		if (!browser) return;
-		loadSession().then(async () => {
-			const path = window.location.pathname;
-			if (!auth.user && path !== '/login') {
-				await goto('/login');
-				return;
-			}
-			if (auth.user && path === '/login') {
-				await goto('/');
-				return;
-			}
-			if (auth.user && !auth.user.isAdmin && (path.startsWith('/settings') || path.startsWith('/audit'))) {
-				await goto('/');
-				return;
-			}
-			if (auth.user) {
-				const response = await fetch('/api/app-config', { credentials: 'same-origin' });
-				if (response.ok) applyModuleSettings(await response.json());
-			}
-		});
+		loadSession()
+			.then(async () => {
+				const path = window.location.pathname;
+				if (auth.user) {
+					try {
+						const response = await fetch('/api/app-config', { credentials: 'same-origin' });
+						if (response.ok) applyModuleSettings(await response.json());
+					} catch (e) {
+						console.error('Failed to load app config', e);
+					} finally {
+						// Journals waits for this so it does not call modules that are off.
+						markModulesReady();
+					}
+				}
+				if (!auth.user && path !== '/login') {
+					await goto('/login');
+					return;
+				}
+				if (auth.user && path === '/login') {
+					await goto('/');
+					return;
+				}
+				if (auth.user && !auth.user.isAdmin && (path.startsWith('/settings') || path.startsWith('/audit'))) {
+					await goto('/');
+				}
+			})
+			.catch((e) => {
+				console.error('Failed to load session', e);
+			});
 	});
 
 	type NavItem = {
