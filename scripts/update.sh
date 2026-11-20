@@ -53,17 +53,10 @@ restart_accounting() {
 		warn "pm2 is not installed; not restarting anything"
 		return 1
 	fi
-	# Only these two processes. Do not restart other apps on this Pi.
-	if pm2 describe "$BACKEND_NAME" >/dev/null 2>&1; then
-		pm2 restart "$BACKEND_NAME" --update-env
-	else
-		pm2 start ecosystem.config.cjs --only "$BACKEND_NAME"
-	fi
-	if pm2 describe "$FRONTEND_NAME" >/dev/null 2>&1; then
-		pm2 restart "$FRONTEND_NAME" --update-env
-	else
-		pm2 start ecosystem.config.cjs --only "$FRONTEND_NAME"
-	fi
+	# Re-read ecosystem.config.cjs. A plain `pm2 restart --update-env` keeps the
+	# ORIGIN and BODY_SIZE_LIMIT PM2 stored on the previous start, so attachment
+	# uploads stay broken. This file only defines the accounting processes.
+	pm2 startOrReload ecosystem.config.cjs --update-env
 }
 
 rollback() {

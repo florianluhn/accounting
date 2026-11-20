@@ -1513,57 +1513,59 @@ function migrateClosedFinancialYears(): void {
 	}
 }
 
-function migrateRepeatingPostings(): void {
-	sqlite.run(`
-		CREATE TABLE IF NOT EXISTS repeating_postings (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL,
-			created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-			updated_at INTEGER NOT NULL DEFAULT (unixepoch())
-		)
-	`);
-	sqlite.run(`
-		CREATE TABLE IF NOT EXISTS repeating_posting_lines (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			template_id INTEGER NOT NULL REFERENCES repeating_postings(id) ON DELETE CASCADE,
-			sort_order INTEGER NOT NULL DEFAULT 0,
-			amount INTEGER NOT NULL,
-			currency_code TEXT NOT NULL REFERENCES currencies(code),
-			debit_account_id INTEGER NOT NULL REFERENCES subledger_accounts(id),
-			credit_account_id INTEGER NOT NULL REFERENCES subledger_accounts(id),
-			description TEXT NOT NULL,
-			category TEXT,
-			comment TEXT,
-			check_reference TEXT,
-			vendor_id INTEGER REFERENCES vendors(id) ON DELETE SET NULL,
-			customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
-			inventory_item_id INTEGER,
-			inventory_link_type TEXT,
-			fixed_asset_id INTEGER,
-			investment_id INTEGER,
-			investment_quantity REAL
-		)
-	`);
-	sqlite.run('CREATE INDEX IF NOT EXISTS idx_repeating_lines_template ON repeating_posting_lines(template_id)');
+function sqliteTableExists(name: string): boolean {
+	if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return false;
+	const rows = sqlite.exec(
+		`SELECT name FROM sqlite_master WHERE type='table' AND name='${name}'`
+	);
+	return rows.length > 0 && rows[0].values.length > 0;
+}
+
+/** Known types plus any historical value already stored, so the CHECK rewrite cannot fail. */
+function auditResourceCheckSql(): string {
+	const known = new Set(
+		AUDIT_RESOURCE_SQL.split(',')
+			.map((part) => part.trim().replace(/^'/, '').replace(/'$/, ''))
+			.filter(Boolean)
+	);
+	if (!sqliteTableExists('audit_logs')) return AUDIT_RESOURCE_SQL;
+	const rows = sqlite.exec('SELECT DISTINCT resource_type FROM audit_logs');
+	if (rows.length === 0) return AUDIT_RESOURCE_SQL;
+	const extras: string[] = [];
+	for (const row of rows[0].values) {
+		const type = String(row[0] ?? '');
+		if (!/^[a-z0-9_]+$/.test(type) || known.has(type)) continue;
+		known.add(type);
+		extras.push(`'${type}'`);
+	}
+	return extras.length > 0 ? `${AUDIT_RESOURCE_SQL}, ${extras.join(', ')}` : AUDIT_RESOURCE_SQL;
+}
+
+function rewriteAuditLogsForRepeatingPostings(): void {
+	if (!sqliteTableExists('audit_logs') && sqliteTableExists('audit_logs_new')) {
+		console.log('Recovering audit_logs from a previous migration...');
+		sqlite.run('ALTER TABLE audit_logs_new RENAME TO audit_logs');
+	}
+	if (!sqliteTableExists('audit_logs')) return;
 
 	const createRows = sqlite.exec(
 		"SELECT sql FROM sqlite_master WHERE type='table' AND name='audit_logs'"
 	);
 	if (createRows.length === 0 || createRows[0].values.length === 0) return;
 	const createSql = String(createRows[0].values[0][0]);
-	if (createSql.includes("'repeating_posting'")) {
-		console.log('✓ Repeating postings ready');
-		return;
-	}
+	if (createSql.includes("'repeating_posting'")) return;
 
 	console.log('Updating audit_logs for repeating_posting...');
+	if (sqliteTableExists('audit_logs_new')) {
+		sqlite.run('DROP TABLE audit_logs_new');
+	}
 	const info = sqlite.exec('PRAGMA table_info(audit_logs)');
 	const colNames = info.length > 0 ? info[0].values.map((c: unknown[]) => String(c[1])) : [];
 	sqlite.run(`
 		CREATE TABLE audit_logs_new (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			operation TEXT NOT NULL CHECK(operation IN ('CREATE', 'UPDATE', 'DELETE')),
-			resource_type TEXT NOT NULL CHECK(resource_type IN (${AUDIT_RESOURCE_SQL})),
+			resource_type TEXT NOT NULL CHECK(resource_type IN (${auditResourceCheckSql()})),
 			resource_id TEXT NOT NULL,
 			source TEXT NOT NULL DEFAULT 'Web UI' CHECK(source IN ('Web UI', 'CSV Import', 'API')),
 			batch_id TEXT,
@@ -1590,6 +1592,65 @@ function migrateRepeatingPostings(): void {
 	sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_source ON audit_logs(source)');
 	sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_batch ON audit_logs(batch_id)');
 	sqlite.run('CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_user_id)');
+}
+
+function migrateRepeatingPostings(): void {
+	const required = ['currencies', 'subledger_accounts', 'vendors', 'customers'];
+	const missing = required.filter((name) => !sqliteTableExists(name));
+	if (missing.length > 0) {
+		throw new Error(
+			`Cannot create repeating postings; missing tables: ${missing.join(', ')}. Start the API again after the earlier migrations have run.`
+		);
+	}
+
+	sqlite.run('BEGIN');
+	try {
+		sqlite.run(`
+			CREATE TABLE IF NOT EXISTS repeating_postings (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				name TEXT NOT NULL,
+				created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+				updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+			)
+		`);
+		sqlite.run(`
+			CREATE TABLE IF NOT EXISTS repeating_posting_lines (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				template_id INTEGER NOT NULL REFERENCES repeating_postings(id) ON DELETE CASCADE,
+				sort_order INTEGER NOT NULL DEFAULT 0,
+				amount INTEGER NOT NULL,
+				currency_code TEXT NOT NULL REFERENCES currencies(code),
+				debit_account_id INTEGER NOT NULL REFERENCES subledger_accounts(id),
+				credit_account_id INTEGER NOT NULL REFERENCES subledger_accounts(id),
+				description TEXT NOT NULL,
+				category TEXT,
+				comment TEXT,
+				check_reference TEXT,
+				vendor_id INTEGER REFERENCES vendors(id) ON DELETE SET NULL,
+				customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+				inventory_item_id INTEGER,
+				inventory_link_type TEXT,
+				fixed_asset_id INTEGER,
+				investment_id INTEGER,
+				investment_quantity REAL
+			)
+		`);
+		sqlite.run('CREATE INDEX IF NOT EXISTS idx_repeating_lines_template ON repeating_posting_lines(template_id)');
+		rewriteAuditLogsForRepeatingPostings();
+		sqlite.run('COMMIT');
+	} catch (error) {
+		try {
+			sqlite.run('ROLLBACK');
+		} catch {
+			/* already rolled back */
+		}
+		console.error('Failed to migrate repeating postings:', error);
+		throw error;
+	}
+
+	if (!sqliteTableExists('repeating_postings') || !sqliteTableExists('repeating_posting_lines')) {
+		throw new Error('Repeating postings migration did not create its tables');
+	}
 	console.log('✓ Repeating postings ready');
 }
 
@@ -1631,6 +1692,9 @@ try {
 }
 
 setupTriggers();
+
+await saveDatabase();
+console.log('✓ Startup migrations saved');
 
 export { sqlite };
 export default db;

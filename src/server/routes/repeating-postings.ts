@@ -55,26 +55,51 @@ async function linesFor(templateId: number) {
 		.orderBy(asc(repeatingPostingLines.sortOrder), asc(repeatingPostingLines.id));
 }
 
+function missingRelation(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return /no such table|no such column/i.test(message);
+}
+
+const NOT_READY = {
+	error: 'Service Unavailable',
+	message:
+		'Repeating postings are not in the database yet. Restart the API so startup migrations can create them.'
+};
+
+function guard<T extends (request: any, reply: any) => any>(handler: T): T {
+	return (async (request, reply) => {
+		try {
+			return await handler(request, reply);
+		} catch (error) {
+			if (missingRelation(error)) {
+				request.log.error(error);
+				return reply.status(503).send(NOT_READY);
+			}
+			throw error;
+		}
+	}) as T;
+}
+
 export default async function repeatingPostingsRoutes(fastify: FastifyInstance) {
-	fastify.get('/', async () => {
+	fastify.get('/', guard(async () => {
 		const templates = await db.select().from(repeatingPostings).orderBy(asc(repeatingPostings.name));
 		const lines = await db.select().from(repeatingPostingLines);
 		return templates.map((template) => ({
 			...template,
 			lineCount: lines.filter((line) => line.templateId === template.id).length
 		}));
-	});
+	}));
 
-	fastify.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
+	fastify.get<{ Params: { id: string } }>('/:id', guard(async (request, reply) => {
 		const id = parseInt(request.params.id, 10);
 		const rows = await db.select().from(repeatingPostings).where(eq(repeatingPostings.id, id)).limit(1);
 		if (rows.length === 0) {
 			return reply.status(404).send({ error: 'Not Found', message: 'Repeating posting not found' });
 		}
 		return { ...rows[0], lines: await linesFor(id) };
-	});
+	}));
 
-	fastify.post('/', async (request, reply) => {
+	fastify.post('/', guard(async (request, reply) => {
 		const data = createSchema.parse(request.body);
 		let sourceLines: z.infer<typeof templateLineSchema>[] = data.lines ?? [];
 		if (data.journalEntryIds?.length) {
@@ -131,9 +156,9 @@ export default async function repeatingPostingsRoutes(fastify: FastifyInstance) 
 			return { ...inserted[0], lines: savedLines };
 		});
 		return reply.status(201).send(created);
-	});
+	}));
 
-	fastify.put<{ Params: { id: string } }>('/:id', async (request, reply) => {
+	fastify.put<{ Params: { id: string } }>('/:id', guard(async (request, reply) => {
 		const id = parseInt(request.params.id, 10);
 		const data = updateSchema.parse(request.body);
 		const existing = await db.select().from(repeatingPostings).where(eq(repeatingPostings.id, id)).limit(1);
@@ -165,9 +190,9 @@ export default async function repeatingPostingsRoutes(fastify: FastifyInstance) 
 			return { ...row[0], lines: savedLines };
 		});
 		return updated;
-	});
+	}));
 
-	fastify.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {
+	fastify.delete<{ Params: { id: string } }>('/:id', guard(async (request, reply) => {
 		const id = parseInt(request.params.id, 10);
 		const existing = await db.select().from(repeatingPostings).where(eq(repeatingPostings.id, id)).limit(1);
 		if (existing.length === 0) {
@@ -185,9 +210,9 @@ export default async function repeatingPostingsRoutes(fastify: FastifyInstance) 
 			});
 		});
 		return reply.status(204).send();
-	});
+	}));
 
-	fastify.post<{ Params: { id: string } }>('/:id/post', async (request, reply) => {
+	fastify.post<{ Params: { id: string } }>('/:id/post', guard(async (request, reply) => {
 		const id = parseInt(request.params.id, 10);
 		const data = postSchema.parse(request.body);
 		const existing = await db.select().from(repeatingPostings).where(eq(repeatingPostings.id, id)).limit(1);
@@ -218,5 +243,5 @@ export default async function repeatingPostingsRoutes(fastify: FastifyInstance) 
 			}
 			throw error;
 		}
-	});
+	}));
 }

@@ -23,7 +23,7 @@
 		type FixedAsset,
 		type Investment
 	} from '$lib/api';
-	import { modules } from '$lib/modules.svelte';
+	import { modules, moduleStatus, uploadLimits } from '$lib/modules.svelte';
 
 	let entries = $state<JournalEntry[]>([]);
 	let subledgerAccounts = $state<SubledgerAccount[]>([]);
@@ -36,6 +36,8 @@
 	let entryAttachments = $state<Map<number, Attachment[]>>(new Map());
 	let loading = $state(true);
 	let error = $state('');
+	/** Kept separate from `error` so a reload or a closed modal cannot hide a failed upload. */
+	let attachmentError = $state('');
 	let searchQuery = $state('');
 	let startDate = $state('');
 	let endDate = $state('');
@@ -133,7 +135,14 @@
 	let showCreditDropdown = $state(false);
 
 	$effect(() => {
-		loadData();
+		loadCoreData();
+	});
+
+	// Optional modules default to on until /api/app-config arrives. Wait so a
+	// disabled module is never requested (those calls are 403).
+	$effect(() => {
+		if (!moduleStatus.ready) return;
+		loadModuleData();
 	});
 
 	// Reload entries when date / category filters change
@@ -149,11 +158,13 @@
 		}
 	});
 
-	async function loadData() {
+	async function loadCoreData() {
+		await Promise.all([loadEntries(), loadSubledgerAccounts(), loadCurrencies()]);
+	}
+
+	async function loadModuleData() {
+		if (!moduleStatus.ready) return;
 		await Promise.all([
-			loadEntries(),
-			loadSubledgerAccounts(),
-			loadCurrencies(),
 			loadVendors(),
 			loadCustomers(),
 			loadFinishedGoodItems(),
@@ -162,8 +173,13 @@
 		]);
 	}
 
+	async function loadData() {
+		await Promise.all([loadCoreData(), loadModuleData()]);
+	}
+
 	async function loadCustomers() {
 		try {
+			if (!modules.customers) return;
 			customers = await customersAPI.list();
 			customers.sort((a, b) => a.lastName.localeCompare(b.lastName));
 		} catch (e) {
@@ -193,6 +209,7 @@
 
 	async function loadFinishedGoodItems() {
 		try {
+			if (!modules.inventory) return;
 			const categories = await inventoryAPI.listCategories();
 			const fgCategories = categories.filter(c => c.categoryType === 'finished_good');
 			const itemsPerCat = await Promise.all(
@@ -274,6 +291,7 @@
 
 	async function loadVendors() {
 		try {
+			if (!modules.vendors) return;
 			vendors = await vendorsAPI.list();
 		} catch (e) {
 			console.error('Error loading vendors:', e);
@@ -329,6 +347,7 @@
 	}
 
 	function openModal() {
+		attachmentError = '';
 		const defaultDebitId = subledgerAccounts.length > 0 ? subledgerAccounts[0].id : 0;
 		const defaultCreditId = subledgerAccounts.length > 1 ? subledgerAccounts[1].id : 0;
 
@@ -361,6 +380,7 @@
 	}
 
 	function openEditModal(entry: JournalEntry) {
+		attachmentError = '';
 		formData = {
 			entryDate: new Date(entry.entryDate).toISOString().split('T')[0],
 			amount: entry.amount.toString(),
@@ -460,6 +480,7 @@
 			}
 
 			let firstEntryId: number;
+			let createdEntry: JournalEntry | null = null;
 
 			if (editingEntry) {
 				await journalEntriesAPI.update(editingEntry.id, { ...baseData, amount: parseFloat(formData.amount) });
@@ -477,6 +498,7 @@
 
 				const created = await journalEntriesAPI.create({ ...baseData, amount: allAmounts[0] });
 				firstEntryId = created.id;
+				createdEntry = created;
 
 				// Extra split amounts share accounts/description but not investment quantity
 				// (quantity applies once to the primary buy/sell posting).
@@ -490,21 +512,41 @@
 				}
 			}
 
-			// Upload attachments to the first entry only
+			// A failed upload must retry as an update. Creating again would duplicate the entry.
+			// Extra amounts were already posted, so drop them from the form.
+			if (createdEntry) {
+				editingEntry = createdEntry;
+				extraAmounts = [];
+			}
+
+			// Upload attachments to the first entry only. Keep files that did not upload
+			// so a retry does not send the ones that already succeeded.
 			if (selectedFiles.length > 0) {
 				uploadingFiles = true;
+				const failures: string[] = [];
 				try {
-					await Promise.all(
-						selectedFiles.map(file => attachmentsAPI.upload(firstEntryId, file))
-					);
-				} catch (uploadError) {
-					console.error('Error uploading attachments:', uploadError);
-					error = uploadError instanceof Error ? uploadError.message : 'Failed to upload attachments';
+					for (const file of [...selectedFiles]) {
+						try {
+							await attachmentsAPI.upload(firstEntryId, file);
+							selectedFiles = selectedFiles.filter((item) => item !== file);
+						} catch (uploadError) {
+							console.error('Error uploading attachments:', uploadError);
+							const message = uploadError instanceof Error ? uploadError.message : 'Failed to upload attachments';
+							failures.push(`${file.name}: ${message}`);
+						}
+					}
 				} finally {
 					uploadingFiles = false;
 				}
+				if (failures.length > 0) {
+					const noun = failures.length === 1 ? 'attachment' : 'attachments';
+					attachmentError = `The journal entry was saved, but ${failures.length} ${noun} could not be uploaded. ${failures.join(' ')}`;
+					await loadEntries();
+					return;
+				}
 			}
 
+			attachmentError = '';
 			await loadEntries();
 			closeModal();
 		} catch (e) {
@@ -848,8 +890,16 @@
 		return id > 0 ? id : null;
 	}
 
-	async function refreshTemplates() {
-		repeatingTemplates = await repeatingPostingsAPI.list();
+	async function refreshTemplates(): Promise<boolean> {
+		try {
+			repeatingTemplates = await repeatingPostingsAPI.list();
+			templateError = '';
+			return true;
+		} catch (e) {
+			repeatingTemplates = [];
+			templateError = e instanceof Error ? e.message : 'Could not load repeating postings';
+			return false;
+		}
 	}
 
 	function openCreateTemplate() {
@@ -865,7 +915,7 @@
 			await repeatingPostingsAPI.createFromEntries(templateName.trim(), [...selectedIds]);
 			showCreateTemplate = false;
 			clearSelection();
-			await refreshTemplates();
+			if (!(await refreshTemplates())) error = templateError;
 		} catch (e) {
 			templateError = e instanceof Error ? e.message : 'Could not save the template';
 		} finally {
@@ -875,7 +925,13 @@
 
 	async function openTemplate(id: number) {
 		templateError = '';
-		const full = await repeatingPostingsAPI.get(id);
+		let full: Awaited<ReturnType<typeof repeatingPostingsAPI.get>>;
+		try {
+			full = await repeatingPostingsAPI.get(id);
+		} catch (e) {
+			templateError = e instanceof Error ? e.message : 'Could not open that repeating posting';
+			return;
+		}
 		activeTemplate = full;
 		templateName = full.name;
 		templateDate = getLocalDateString();
@@ -957,9 +1013,14 @@
 	async function deleteTemplate(id: number) {
 		if (!canDelete()) return;
 		if (!confirm('Delete this repeating posting?')) return;
-		await repeatingPostingsAPI.delete(id);
+		try {
+			await repeatingPostingsAPI.delete(id);
+		} catch (e) {
+			templateError = e instanceof Error ? e.message : 'Could not delete that repeating posting';
+			return;
+		}
 		if (activeTemplate?.id === id) activeTemplate = null;
-		await refreshTemplates();
+		if (!(await refreshTemplates())) error = templateError;
 	}
 
 	function openSelectionModal() {
@@ -1065,6 +1126,12 @@
 		<h1 class="page-title">Journal Entries</h1>
 		<p class="page-subtitle">Record double-entry transactions</p>
 	</div>
+
+	{#if attachmentError}
+		<div class="alert alert-error mb-6">
+			<span>{attachmentError}</span>
+		</div>
+	{/if}
 
 	{#if error}
 		<div class="alert alert-error mb-6">
@@ -1457,6 +1524,17 @@
 				{editingEntry ? 'Edit Journal Entry' : 'New Journal Entry'}
 			</h3>
 
+			{#if attachmentError}
+				<div class="alert alert-error mb-4 text-sm">
+					<span>{attachmentError}</span>
+				</div>
+			{/if}
+			{#if error}
+				<div class="alert alert-error mb-4 text-sm">
+					<span>{error}</span>
+				</div>
+			{/if}
+
 			<form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
 				<div class="grid grid-cols-2 gap-4">
 					<!-- Entry Date -->
@@ -1824,10 +1902,11 @@
 							type="file"
 							class="file-input file-input-bordered w-full"
 							multiple
+							accept="application/pdf,image/png,image/jpeg,image/gif,image/webp,.pdf,.png,.jpg,.jpeg,.gif,.webp"
 							onchange={handleFileSelect}
 						/>
 						<label class="label">
-							<span class="label-text-alt">Upload receipts, invoices, or other documents (max 10MB per file)</span>
+							<span class="label-text-alt">PDF, PNG, JPEG, GIF, or WebP. Maximum {uploadLimits.maxFileSizeMb}MB per file.</span>
 						</label>
 
 						{#if selectedFiles.length > 0}
@@ -2321,9 +2400,12 @@
 	<div class="modal modal-open">
 		<div class="modal-box max-w-lg">
 			<h3 class="font-bold text-lg">Repeating postings</h3>
-			{#if repeatingTemplates.length === 0}
+			{#if templateError}
+				<div class="alert alert-error text-sm my-2"><span>{templateError}</span></div>
+			{/if}
+			{#if repeatingTemplates.length === 0 && !templateError}
 				<p class="py-4 text-sm">None yet. Select journal rows and choose Create repeating posting.</p>
-			{:else}
+			{:else if repeatingTemplates.length > 0}
 				<ul class="py-2 space-y-2">
 					{#each repeatingTemplates as template}
 						<li class="flex items-center justify-between gap-2">

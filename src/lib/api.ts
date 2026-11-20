@@ -656,6 +656,19 @@ export interface Attachment {
 	uploadedAt: Date;
 }
 
+async function uploadErrorMessage(response: Response): Promise<string> {
+	const fallback = response.statusText || `Upload failed (HTTP ${response.status})`;
+	const raw = await response.text();
+	if (!raw.trim()) return fallback;
+	try {
+		const parsed = JSON.parse(raw) as { message?: string };
+		if (parsed.message) return parsed.message;
+	} catch {
+		// SvelteKit's CSRF and body-limit responses are plain text.
+	}
+	return raw.trim().slice(0, 300);
+}
+
 export const attachmentsAPI = {
 	async list(params?: { journalEntryId?: number; bookingId?: number; inventoryItemId?: number }): Promise<Attachment[]> {
 		const query = new URLSearchParams();
@@ -684,11 +697,7 @@ export const attachmentsAPI = {
 		);
 
 		if (!response.ok) {
-			const error = await response.json().catch(() => ({
-				error: 'Unknown Error',
-				message: response.statusText
-			}));
-			throw new Error(error.message || `HTTP ${response.status}`);
+			throw new Error(await uploadErrorMessage(response));
 		}
 
 		return response.json();
@@ -707,11 +716,7 @@ export const attachmentsAPI = {
 		);
 
 		if (!response.ok) {
-			const error = await response.json().catch(() => ({
-				error: 'Unknown Error',
-				message: response.statusText
-			}));
-			throw new Error(error.message || `HTTP ${response.status}`);
+			throw new Error(await uploadErrorMessage(response));
 		}
 
 		return response.json();
@@ -730,11 +735,7 @@ export const attachmentsAPI = {
 		);
 
 		if (!response.ok) {
-			const error = await response.json().catch(() => ({
-				error: 'Unknown Error',
-				message: response.statusText
-			}));
-			throw new Error(error.message || `HTTP ${response.status}`);
+			throw new Error(await uploadErrorMessage(response));
 		}
 
 		return response.json();

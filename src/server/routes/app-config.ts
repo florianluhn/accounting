@@ -35,7 +35,8 @@ export default async function appConfigRoutes(fastify: FastifyInstance) {
 			checkClearingAccountId: Number.isInteger(clearing) && clearing > 0 ? clearing : null,
 			financialYearStartMonth: Number.isFinite(month) && month >= 1 && month <= 12 ? month : 1,
 			organizationName: (map.organizationName ?? '').trim(),
-			hasLogo: !!(map[LOGO_SETTING_KEY] && map[LOGO_SETTING_KEY].length > 0)
+			hasLogo: !!(map[LOGO_SETTING_KEY] && map[LOGO_SETTING_KEY].length > 0),
+			maxFileSizeMb: CONFIG.MAX_FILE_SIZE_MB
 		};
 	});
 

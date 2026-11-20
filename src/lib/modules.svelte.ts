@@ -26,6 +26,16 @@ export const modules = $state<ModuleSettings>({
 	checkReferences: false
 });
 
+/** False until the layout has applied /api/app-config (or that request failed). */
+export const moduleStatus = $state({ ready: false });
+
+export function markModulesReady() {
+	moduleStatus.ready = true;
+}
+
+/** Matches CONFIG.MAX_FILE_SIZE_MB until app-config says otherwise. */
+export const uploadLimits = $state({ maxFileSizeMb: 10 });
+
 /** Shared branding state so Settings and the layout shell stay in sync. */
 export const branding = $state({
 	hasLogo: false,
@@ -45,6 +55,7 @@ export function applyModuleSettings(
 		hasLogo?: boolean;
 		financialYearStartMonth?: number;
 		organizationName?: string;
+		maxFileSizeMb?: number;
 	}
 ) {
 	if (settings.vendors !== undefined) modules.vendors = settings.vendors;
@@ -63,6 +74,10 @@ export function applyModuleSettings(
 	if (settings.financialYearStartMonth !== undefined) {
 		const m = Math.round(Number(settings.financialYearStartMonth));
 		financialYear.startMonth = Number.isFinite(m) && m >= 1 && m <= 12 ? m : 1;
+	}
+	if (settings.maxFileSizeMb !== undefined) {
+		const mb = Number(settings.maxFileSizeMb);
+		if (Number.isFinite(mb) && mb > 0) uploadLimits.maxFileSizeMb = mb;
 	}
 }
 
